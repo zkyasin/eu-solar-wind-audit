@@ -89,35 +89,58 @@ def test_interval_end_is_exclusive_at_week_boundaries(
     assert prices.index[-1] == end - pd.Timedelta(minutes=15)
 
 
-def test_autumn_week_keeps_its_extra_hour_and_nulls_become_nan(tmp_path: Path) -> None:
-    # The week of the 2025 autumn clock change lasts 169 hours in UTC.
-    first = pd.Timestamp("2025-10-19 22:00", tz="UTC")
-    stamps = pd.date_range(first, periods=169, freq="h")
-    ms = [int(stamp.timestamp() * 1000) for stamp in stamps]
+# The week of the 2025 autumn clock change starts on Monday 00:00 Berlin time and lasts 169 hours.
+AUTUMN_WEEK = pd.date_range("2025-10-19 22:00", periods=169, freq="h", tz="UTC")
+
+
+def autumn_files(values: list[float | None]) -> dict[str, bytes]:
+    ms = [int(stamp.timestamp() * 1000) for stamp in AUTUMN_WEEK]
     next_week = ms[-1] + 3_600_000
-    values: list[float | None] = [1.0] * 169
-    values[100] = None
-    files = {
+    return {
         "index_hour.json": json.dumps({"timestamps": [ms[0], next_week]}).encode(),
         f"4068_DE_hour_{ms[0]}.json": json.dumps(
             {"series": list(zip(ms, values, strict=True))}
         ).encode(),
         f"4068_DE_hour_{next_week}.json": b'{"series": []}',
     }
-    with serve(files, []) as client:
+
+
+def test_autumn_week_keeps_its_extra_hour_and_nulls_become_nan(tmp_path: Path) -> None:
+    values: list[float | None] = [1.0] * 169
+    values[100] = None
+    with serve(autumn_files(values), []) as client:
         solar = smard.fetch_series(
             smard.SOLAR,
             "DE",
             "hour",
-            first,
-            first + pd.Timedelta(days=8),
+            AUTUMN_WEEK[0],
+            AUTUMN_WEEK[0] + pd.Timedelta(days=8),
             client=client,
             cache_dir=tmp_path,
         )
 
-    assert solar.index.equals(stamps)
+    assert solar.index.equals(AUTUMN_WEEK)
     assert solar.isna().sum() == 1
     assert pd.isna(solar.iloc[100])
+
+
+def test_the_extra_autumn_hour_is_read_from_its_own_week(tmp_path: Path) -> None:
+    # A week assumed to last 7 x 24 hours would skip this file and return nothing.
+    extra_hour = AUTUMN_WEEK[-1]
+    requests: list[str] = []
+    with serve(autumn_files([1.0] * 169), requests) as client:
+        solar = smard.fetch_series(
+            smard.SOLAR,
+            "DE",
+            "hour",
+            extra_hour,
+            extra_hour + pd.Timedelta(hours=1),
+            client=client,
+            cache_dir=tmp_path,
+        )
+
+    assert requests[1:] == ["/app/chart_data/4068/DE/4068_DE_hour_1760911200000.json"]
+    assert solar.index.to_list() == [extra_hour]
 
 
 def test_settled_weeks_are_read_from_the_cache(
