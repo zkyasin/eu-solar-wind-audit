@@ -6,6 +6,7 @@ held-out years with their published energy, AC capacity, the energy each model g
 that metrics are given for.
 """
 
+from collections.abc import Hashable
 from typing import ClassVar
 
 import numpy as np
@@ -97,7 +98,7 @@ class Metrics(pa.DataFrameModel):
     held_out_year: Series[int]
     model: Series[str]
     metric: Series[str] = pa.Field(isin=METRICS)
-    group: Series[str] = pa.Field(isin=["all"])
+    group: Series[str] = pa.Field(isin=["all", *SEASONS, *SKY_CLASSES])
     # NaN where undefined, such as a correlation with a constant series.
     value: Series[float] = pa.Field(nullable=True)
     hours: Series[int] = pa.Field(gt=0)
@@ -114,13 +115,14 @@ def metrics(predictions: pd.DataFrame, technology: str) -> DataFrame[Metrics]:
     - correlation: Pearson correlation of the hourly capacity factors of the model and the
       published series;
     - rmse_cf: root mean square of the hourly capacity factor error;
-    - bias: energy of the model over the published energy, minus 1.
+    - bias: energy of the model over the published energy, minus 1, over the year and over each
+      season and sky class that has eligible hours.
     """
     Predictions.validate(predictions)
     eligible = predictions[predictions["eligible"]]
     if eligible.empty:
         raise ValueError("no eligible hours to evaluate")
-    rows = []
+    rows: list[tuple[Hashable, str, str, Hashable, float, int]] = []
     for year, fold in eligible.groupby("held_out_year"):
         hours = len(fold)
         published_cf = fold["published_mwh"] / fold["capacity_mw"]
@@ -134,6 +136,13 @@ def metrics(predictions: pd.DataFrame, technology: str) -> DataFrame[Metrics]:
                 (year, model, "rmse_cf", "all", np.sqrt((error_cf**2).mean()), hours),
                 (year, model, "bias", "all", ratio - 1, hours),
             ]
+            for grouping in ("season", "sky_class"):
+                groups = fold.groupby(grouping)
+                group_ratios = groups[column].sum() / groups["published_mwh"].sum()
+                for group, group_ratio, group_hours in zip(
+                    group_ratios.index, group_ratios, groups.size(), strict=True
+                ):
+                    rows.append((year, model, "bias", group, group_ratio - 1, group_hours))
     table = pd.DataFrame(
         rows, columns=["held_out_year", "model", "metric", "group", "value", "hours"]
     )

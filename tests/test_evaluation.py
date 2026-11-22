@@ -317,3 +317,24 @@ def test_metric_table_holds_one_value_per_metric() -> None:
 
     with pytest.raises(SchemaError, match="not unique"):
         Metrics.validate(pd.concat([table, table.iloc[[0]]], ignore_index=True))
+
+
+def test_bias_by_season_and_sky_class() -> None:
+    frame = pd.concat(
+        [
+            predictions("2019-01-15 11:00", [100.0, 100.0], 200.0, model=[120.0, 120.0]),
+            predictions("2019-07-15 11:00", [300.0, 300.0], 400.0, model=[270.0, 270.0]),
+        ]
+    )
+    frame["sky_class"] = ["clear", "overcast", "overcast", "overcast"]
+
+    table = metrics(frame, "solar")
+
+    assert value(table, "model", "bias", "DJF") == pytest.approx(0.2)
+    assert value(table, "model", "bias", "JJA") == pytest.approx(-0.1)
+    assert value(table, "model", "bias", "clear") == pytest.approx(0.2)
+    assert value(table, "model", "bias", "overcast") == pytest.approx(660 / 700 - 1)
+    assert value(table, "model", "bias") == pytest.approx(780 / 800 - 1)
+    # Groups without eligible hours, such as spring here, get no row.
+    hours = table[table["metric"] == "bias"].set_index("group")["hours"]
+    assert hours.to_dict() == {"all": 4, "DJF": 2, "JJA": 2, "clear": 1, "overcast": 3}
