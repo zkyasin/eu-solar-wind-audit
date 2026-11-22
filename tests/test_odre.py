@@ -18,6 +18,8 @@ FIXTURES = Path(__file__).parent / "fixtures" / "odre"
 NATIONAL_CONSOLIDATED = FIXTURES / "eco2mix-national-cons-def_2025-03-30.parquet"
 NATIONAL_REALTIME = FIXTURES / "eco2mix-national-tr_2026-10-24_2026-10-25.parquet"
 REGIONAL_CONSOLIDATED = FIXTURES / "eco2mix-regional-cons-def_2025-12-31.parquet"
+# Same query for 2012-12-31, retrieved 2026-11-22: the first stamp of the regional dataset.
+REGIONAL_FIRST_DAY = FIXTURES / "eco2mix-regional-cons-def_2012-12-31.parquet"
 
 
 def serving(content: bytes, requests: list[httpx.Request]) -> httpx.Client:
@@ -119,6 +121,20 @@ def test_regional_consolidated_reads_the_dash_placeholder_as_missing(tmp_path: P
     # The status follows the local date: 23:00 UTC is midnight on 1 January in Paris.
     assert set(loire.loc[: utc("2025-12-31 22:30"), "status"]) == {"definitive"}
     assert set(loire.loc[utc("2025-12-31 23:00") :, "status"]) == {"consolidated"}
+
+
+def test_regional_consolidated_reads_the_not_available_placeholder_as_missing(
+    tmp_path: Path,
+) -> None:
+    with serving(REGIONAL_FIRST_DAY.read_bytes(), []) as client:
+        frame = odre.fetch_regional_consolidated(
+            client, date(2012, 12, 31), date(2012, 12, 31), cache_dir=tmp_path
+        )
+
+    assert len(frame) == 12 * 3
+    assert np.isnan(values_at(frame, "2012-12-31 23:00", "wind_mw")).all()
+    loire = frame[frame["region_code"] == "52"]
+    assert values_at(loire, "2012-12-31 23:30", "wind_mw") == [182.0]
 
 
 def parquet_bytes(frame: pd.DataFrame, tmp_path: Path) -> bytes:

@@ -230,7 +230,9 @@ def _tidy(path: Path, fields: dict[str, str]) -> pd.DataFrame:
     frame = pd.read_parquet(path, columns=list(fields)).rename(columns=fields)
     frame["status"] = frame["status"].replace(STATUS)
     values = [column for column in frame.columns if column.endswith("_mw")]
-    # The regional wind field is text, with "-" for some missing values.
-    frame[values] = frame[values].replace("-", np.nan).apply(pd.to_numeric).astype("float64")
+    # The regional wind field is text, with "-" or "ND" for some missing values.
+    frame[values] = (
+        frame[values].replace(["-", "ND"], np.nan).apply(pd.to_numeric).astype("float64")
+    )
     index = pd.DatetimeIndex(frame.pop("time"), name="time").as_unit("ns")
     return frame.set_index(index).sort_index(kind="stable")
