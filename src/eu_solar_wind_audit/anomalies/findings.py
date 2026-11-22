@@ -92,3 +92,21 @@ def from_records(records: Iterable[Mapping[str, object]]) -> DataFrame[Findings]
         frame[column] = frame[column].astype("datetime64[ns, UTC]")
     frame["score"] = frame["score"].astype(float)
     return Findings.validate(frame)
+
+
+def runs(hours: pd.DatetimeIndex, merge_gap: pd.Timedelta) -> pd.DataFrame:
+    """Runs of consecutive flagged hours: the start, the exclusive end and the number of flagged
+    hours of each, in time order.
+
+    `hours` are the starts of the flagged hours in UTC, in any order and possibly repeated. Runs
+    separated by less than `merge_gap` are joined into one; a zero gap joins nothing.
+    """
+    if str(hours.tz) != "UTC" or (hours != hours.floor("h")).any():
+        raise ValueError("expected hour starts in UTC")
+    flagged = pd.Series(hours.unique().sort_values().as_unit("ns"))
+    unflagged_before = flagged.diff() - grid.HOUR
+    new_run = (unflagged_before > pd.Timedelta(0)) & (unflagged_before >= merge_gap)
+    by_run = flagged.groupby(new_run.cumsum())
+    return pd.DataFrame(
+        {"start": by_run.min(), "end": by_run.max() + grid.HOUR, "flagged_hours": by_run.size()}
+    ).reset_index(drop=True)
