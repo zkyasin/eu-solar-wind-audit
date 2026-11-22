@@ -125,6 +125,20 @@ def test_hours_without_rows_at_the_ends_of_the_period_are_gaps() -> None:
     ]
 
 
+def test_instantaneous_points_at_the_ends_of_the_period_are_needed() -> None:
+    # The first hour opens with the point at the start, the last closes with the point at the end.
+    found = check(rows().drop([utc(DAY_START), utc(DAY_END)]), label="instant")
+
+    assert spans(found) == [
+        ("gap", utc("2022-06-01 00:00"), utc("2022-06-01 01:00"), 1.0),
+        ("gap", utc("2022-06-01 23:00"), utc("2022-06-02 00:00"), 1.0),
+    ]
+    assert [(gap["first_stamp"], gap["absent_stamps"]) for gap in evidence(found)] == [
+        (utc(DAY_START).isoformat(), 1),
+        (utc(DAY_END).isoformat(), 1),
+    ]
+
+
 def test_a_series_without_rows_is_one_gap_over_the_period() -> None:
     no_rows = pd.Series([], index=pd.DatetimeIndex([], tz="UTC"), dtype=float)
 
