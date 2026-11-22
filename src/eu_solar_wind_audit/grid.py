@@ -48,8 +48,6 @@ def _cleaned(series: pd.Series, step: pd.Timedelta) -> pd.Series:
 
 def _hourly(energy: pd.Series, step: pd.Timedelta) -> pd.DataFrame:
     """Sum energies of periods labelled at their start into every hour of their span."""
-    hours = pd.date_range(energy.index.min().floor("h"), energy.index.max().floor("h"), freq="h")
     by_hour = energy.resample("h")
-    complete = by_hour.count().reindex(hours, fill_value=0) == HOUR // step
-    total = by_hour.sum().reindex(hours)
-    return pd.DataFrame({"energy_mwh": total.where(complete), "complete": complete})
+    complete = by_hour.count() == HOUR // step
+    return pd.DataFrame({"energy_mwh": by_hour.sum().where(complete), "complete": complete})

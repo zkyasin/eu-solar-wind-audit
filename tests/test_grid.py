@@ -1,3 +1,5 @@
+from collections.abc import Callable
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -7,6 +9,8 @@ from eu_solar_wind_audit.grid import (
     hourly_from_period_end_means,
     hourly_from_period_start_energy,
 )
+
+Conversion = Callable[[pd.Series], pd.DataFrame]
 
 
 def series(start: str, values: list[float], freq: str = "15min", tz: str = "UTC") -> pd.Series:
@@ -217,3 +221,16 @@ def test_input_must_be_in_utc(tz: str | None) -> None:
 def test_input_must_be_on_the_period_grid() -> None:
     with pytest.raises(ValueError, match="grid"):
         hourly_from_period_start_energy(series("2025-06-01 00:05", [1.0] * 4))
+
+
+@pytest.mark.parametrize(
+    "convert",
+    [hourly_from_period_end_means, hourly_from_instantaneous, hourly_from_period_start_energy],
+)
+def test_a_series_without_values_gives_no_hours(convert: Conversion) -> None:
+    empty = pd.Series([], index=pd.DatetimeIndex([], tz="UTC"), dtype=float)
+
+    hourly = convert(empty)
+
+    assert hourly.empty
+    assert hourly.columns.tolist() == ["energy_mwh", "complete"]
