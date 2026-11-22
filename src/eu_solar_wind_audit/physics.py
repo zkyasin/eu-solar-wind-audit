@@ -30,7 +30,6 @@ INPUTS = {
 }
 WEATHER = ("ssrd", "fdir", "t2m", "u10", "v10", "u100", "v100")
 SDES_MEDIA = {"solar": sdes.SOLAR_2026_Q2, "wind_onshore": sdes.WIND_2026_Q2}
-HOUR = pd.Timedelta(hours=1)
 DAY = pd.Timedelta(days=1)
 
 
@@ -67,14 +66,14 @@ def read_weather(
     """
     final_until = era5_final_until(pd.Timestamp.now(tz="UTC").tz_localize(None))
     parts = []
-    for year in range(start.year, (end - HOUR).year + 1):
+    for year in range(start.year, (end - grid.HOUR).year + 1):
         year_start, year_end = pd.Timestamp(year, 1, 1), pd.Timestamp(year + 1, 1, 1)
         first, stop = max(start, year_start), min(end, year_end)
         if year_end <= final_until:
             weather = _cached_year(cache_dir / country.lower() / f"{year}.zarr", box, year)
         else:
             weather = era5.read_era5(variables, box, first, stop)
-        parts.append(weather[list(variables)].sel(time=slice(first, stop - HOUR)))
+        parts.append(weather[list(variables)].sel(time=slice(first, stop - grid.HOUR)))
     # A single year stays lazy; concat would load it.
     return parts[0] if len(parts) == 1 else xr.concat(parts, dim="time")
 
@@ -234,10 +233,10 @@ def model_france(
     """Hourly modelled output of mainland France without Corsica for hours [start, end), both
     hour starts in UTC, computed one calendar year at a time; see `model`."""
     grid.check_period(start, end)
-    monthly = load_monthly_capacity(technology, end - HOUR)
+    monthly = load_monthly_capacity(technology, end - grid.HOUR)
     regions = natural_earth.load_admin1("FR")
     years = []
-    for year in range(start.year, (end - HOUR).year + 1):
+    for year in range(start.year, (end - grid.HOUR).year + 1):
         first = max(start, pd.Timestamp(year, 1, 1, tz="UTC"))
         stop = min(end, pd.Timestamp(year + 1, 1, 1, tz="UTC"))
         years.append(model(technology, first, stop, parameters, monthly, regions, cache_dir))
