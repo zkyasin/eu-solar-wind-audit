@@ -7,6 +7,7 @@ license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "gcsfs>=2026.10.1",
+    "geopandas>=1.2.0",
     "httpx>=0.28.1",
     "icechunk>=2.3.1",
     "numcodecs[pcodec]>=0.17.1",
@@ -14,7 +15,9 @@ dependencies = [
     "openpyxl>=3.1.5",
     "pandas>=3.1.1",
     "pandera>=0.36.0",
+    "pvlib>=0.16.1",
     "pyarrow>=26.0.1",
+    "regionmask>=0.13.0",
     "xarray>=2026.9.0",
     "zarr>=3.4.2",
 ]
@@ -34,6 +37,8 @@ dev = [
     "pre-commit>=4.7.0",
     "pytest>=9.2.0",
     "ruff>=0.17.6",
+    "types-geopandas>=1.2.0.20261122",
+    "types-shapely>=2.2.0.20261122",
 ]
 
 [tool.ruff]
@@ -46,6 +51,11 @@ select = ["E", "W", "F", "I", "N", "B", "UP", "SIM", "PT", "RUF"]
 [tool.mypy]
 strict = true
 files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+# pvlib has no type hints.
+module = ["pvlib.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
