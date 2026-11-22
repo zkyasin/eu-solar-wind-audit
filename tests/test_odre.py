@@ -201,6 +201,17 @@ def test_timestamps_without_time_zone_fail_validation(tmp_path: Path) -> None:
         )
 
 
+def test_unknown_region_fails_validation(tmp_path: Path) -> None:
+    published = pd.read_parquet(REGIONAL_CONSOLIDATED)
+    published.loc[published["code_insee_region"] == "53", "code_insee_region"] = "94"
+    content = parquet_bytes(published, tmp_path)
+
+    with serving(content, []) as client, pytest.raises(pandera.errors.SchemaError):
+        odre.fetch_regional_consolidated(
+            client, date(2025, 12, 31), date(2025, 12, 31), cache_dir=tmp_path / "cache"
+        )
+
+
 def test_negative_load_fails_validation(tmp_path: Path) -> None:
     stamps = pd.date_range("2025-03-30", periods=2, freq="30min", tz="UTC")
     rows = published_rows("Données définitives", stamps).assign(consommation=[50000, -1])

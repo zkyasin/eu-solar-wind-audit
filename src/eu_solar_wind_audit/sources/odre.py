@@ -41,7 +41,9 @@ STATUS = {
 # From the most to the least final.
 STATUS_ORDER = list(STATUS.values())
 
-# The 12 éCO2mix regions, as named in the regional dataset.
+# The 12 éCO2mix regions, as named in the regional dataset. Corsica is in neither the regional nor
+# the national data: hourly national solar equals the sum of these regions within 3 MWh (checked
+# in tests/test_odre_network.py).
 REGIONS = {
     "11": "Île-de-France",
     "24": "Centre-Val de Loire",
@@ -121,7 +123,7 @@ class NationalRealtime(pa.DataFrameModel):
 
 class RegionalConsolidated(pa.DataFrameModel):
     time: Index[UtcTime]
-    region_code: Series[str]
+    region_code: Series[str] = pa.Field(isin=list(REGIONS))
     region: Series[str]
     status: Series[str] = pa.Field(isin=["definitive", "consolidated"])
     load_mw: Series[float] = pa.Field(ge=0, nullable=True)
@@ -137,7 +139,7 @@ class RegionalConsolidated(pa.DataFrameModel):
 
 class Hourly(pa.DataFrameModel):
     """Energy over the hour starting at `time`, NaN when the hour is incomplete. The status is the
-    least final one among the values of the hour, null when the hour has none."""
+    least final one among the published rows of the hour, null when the hour has none."""
 
     time: Index[UtcTime] = pa.Field(unique=True)
     energy_mwh: Series[float] = pa.Field(nullable=True)
