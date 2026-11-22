@@ -12,16 +12,13 @@ import pytest
 
 from eu_solar_wind_audit.sources import mastr
 
-# Fixtures: the page https://www.marktstammdatenregister.de/MaStR/Datendownload, and a zip cut from
-# https://download.marktstammdatenregister.de/Gesamtdatenexport_20261122_26.2.zip, both retrieved
-# 2026-11-22. The zip keeps the original UTF-16 LE records byte for byte: 25 units of
-# EinheitenWind.xml plus SEE973525112162 and SEE901254459012 (former district keys), 6 + 6 units of
-# EinheitenSolar_30.xml split into EinheitenSolar_1.xml and EinheitenSolar_2.xml, and the
-# Katalogwerte.xml values of categories 4, 39, 87, 107 and 108. The page's form token is blanked.
+# Fixture: a zip cut from the pinned export (mastr.EXPORT_URL), retrieved 2026-11-22. It keeps the
+# original UTF-16 LE records byte for byte: 25 units of EinheitenWind.xml plus SEE973525112162 and
+# SEE901254459012 (former district keys), 6 + 5 units of EinheitenSolar_30.xml split into
+# EinheitenSolar_1.xml and EinheitenSolar_2.xml, and the Katalogwerte.xml values of categories 4,
+# 39, 87, 107 and 108.
 FIXTURES = Path(__file__).parent / "fixtures" / "mastr"
-EXPORT = FIXTURES / "Gesamtdatenexport_20261122_26.2.zip"
-PAGE = FIXTURES / "Datendownload_2026-11-22.html"
-EXPORT_URL = "https://download.marktstammdatenregister.de/Gesamtdatenexport_20261122_26.2.zip"
+EXPORT = FIXTURES / "Gesamtdatenexport_20261001_26.1.zip"
 ZIP_TYPE = "application/x-zip-compressed"
 
 Handler = Callable[[httpx.Request], httpx.Response]
@@ -42,6 +39,12 @@ def no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("time.sleep", lambda seconds: None)
 
 
+@pytest.fixture(autouse=True)
+def pinned_fixture(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The fixture is cut from the pinned export, so its checksum differs.
+    monkeypatch.setattr(mastr, "SHA256", hashlib.sha256(EXPORT.read_bytes()).hexdigest())
+
+
 def unit(units: pd.DataFrame, unit_id: str) -> dict[Hashable, Any]:
     return units.set_index("unit_id").loc[unit_id].to_dict()
 
@@ -56,23 +59,20 @@ def capacity(panel: pd.DataFrame, month_end: str, district: str | None, technolo
     return float(rows["capacity_mw_ac"].iloc[0])
 
 
+def export_with(tmp_path: Path, member: str, old: str, new: str) -> Path:
+    """Copy of the fixture with `old` replaced by `new` in one member."""
+    changed = tmp_path / EXPORT.name
+    with zipfile.ZipFile(EXPORT) as source, zipfile.ZipFile(changed, "w") as target:
+        for name in source.namelist():
+            content = source.read(name)
+            if name == member:
+                content = content.replace(old.encode("utf-16-le"), new.encode("utf-16-le"))
+            target.writestr(name, content)
+    return changed
+
+
 def serving(handler: Handler) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
-
-
-def test_find_export_url_takes_the_daily_export_not_the_quarterly_ones() -> None:
-    page = PAGE.read_bytes()
-    with serving(lambda request: httpx.Response(200, content=page)) as client:
-        assert mastr.find_export_url(client) == EXPORT_URL
-
-
-def test_find_export_url_fails_without_a_daily_export_link() -> None:
-    page = PAGE.read_text().replace(EXPORT_URL, "")
-    with (
-        serving(lambda request: httpx.Response(200, text=page)) as client,
-        pytest.raises(ValueError, match="expected one daily export link"),
-    ):
-        mastr.find_export_url(client)
 
 
 def range_server(content: bytes, requests: list[httpx.Request], honour_range: bool) -> Handler:
@@ -94,14 +94,14 @@ def test_download_resumes_a_partial_file_and_records_its_checksum(tmp_path: Path
     requests: list[httpx.Request] = []
 
     with serving(range_server(content, requests, honour_range=True)) as client:
-        path = mastr.download_export(client, EXPORT_URL, tmp_path)
+        path = mastr.download_export(client, tmp_path)
 
     assert [request.headers.get("range") for request in requests] == ["bytes=5000-"]
     assert path == tmp_path / EXPORT.name
     assert path.read_bytes() == content
     assert not (tmp_path / f"{EXPORT.name}.part").exists()
     metadata = json.loads((tmp_path / f"{EXPORT.name}.json").read_text())
-    assert metadata["url"] == EXPORT_URL
+    assert metadata["url"] == mastr.EXPORT_URL
     assert metadata["size"] == len(content)
     assert metadata["sha256"] == hashlib.sha256(content).hexdigest()
 
@@ -112,7 +112,7 @@ def test_download_starts_over_when_the_server_ignores_the_range(tmp_path: Path) 
     requests: list[httpx.Request] = []
 
     with serving(range_server(content, requests, honour_range=False)) as client:
-        path = mastr.download_export(client, EXPORT_URL, tmp_path)
+        path = mastr.download_export(client, tmp_path)
 
     assert path.read_bytes() == content
 
@@ -120,8 +120,8 @@ def test_download_starts_over_when_the_server_ignores_the_range(tmp_path: Path) 
 def test_download_is_cached(tmp_path: Path) -> None:
     requests: list[httpx.Request] = []
     with serving(range_server(EXPORT.read_bytes(), requests, honour_range=True)) as client:
-        first = mastr.download_export(client, EXPORT_URL, tmp_path)
-        second = mastr.download_export(client, EXPORT_URL, tmp_path)
+        first = mastr.download_export(client, tmp_path)
+        second = mastr.download_export(client, tmp_path)
 
     assert first == second
     assert len(requests) == 1
@@ -138,10 +138,35 @@ def test_download_retries_a_dropped_connection(tmp_path: Path) -> None:
         return httpx.Response(200, headers={"content-type": ZIP_TYPE}, content=content)
 
     with serving(handler) as client:
-        path = mastr.download_export(client, EXPORT_URL, tmp_path)
+        path = mastr.download_export(client, tmp_path)
 
     assert len(calls) == 2
     assert path.read_bytes() == content
+
+
+def test_download_with_another_checksum_is_deleted(tmp_path: Path) -> None:
+    content = EXPORT.read_bytes() + b"changed"
+    requests: list[httpx.Request] = []
+
+    with (
+        serving(range_server(content, requests, honour_range=True)) as client,
+        pytest.raises(ValueError, match="SHA-256"),
+    ):
+        mastr.download_export(client, tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_zip_without_its_record_is_checked_again(tmp_path: Path) -> None:
+    (tmp_path / EXPORT.name).write_bytes(EXPORT.read_bytes())
+    requests: list[httpx.Request] = []
+
+    with serving(range_server(EXPORT.read_bytes(), requests, honour_range=True)) as client:
+        path = mastr.download_export(client, tmp_path)
+
+    assert requests == []
+    metadata = json.loads((tmp_path / f"{EXPORT.name}.json").read_text())
+    assert metadata["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def test_download_never_caches_an_html_page(tmp_path: Path) -> None:
@@ -149,7 +174,7 @@ def test_download_never_caches_an_html_page(tmp_path: Path) -> None:
         return httpx.Response(200, headers={"content-type": "text/html"}, content=b"<html/>")
 
     with serving(handler) as client, pytest.raises(ValueError, match="not a zip file"):
-        mastr.download_export(client, EXPORT_URL, tmp_path)
+        mastr.download_export(client, tmp_path)
 
     assert not (tmp_path / EXPORT.name).exists()
 
@@ -172,7 +197,7 @@ def test_solar_members_are_the_numbered_unit_tables(name: str, is_solar: bool) -
 def test_read_units_counts_each_technology(units: pd.DataFrame) -> None:
     assert units["technology"].value_counts().to_dict() == {
         "wind_onshore": 15,
-        "solar": 12,
+        "solar": 11,
         "wind_offshore": 12,
     }
 
@@ -216,15 +241,27 @@ def test_decommissioning_and_temporary_shutdown_dates(units: pd.DataFrame) -> No
 def test_planned_units_have_no_commissioning_date(units: pd.DataFrame) -> None:
     planned = units[units["status"].eq("planned")]
 
-    assert set(planned["unit_id"]) == {"SEE908040981818", "SEE950179793688", "SEE972490644852"}
+    assert set(planned["unit_id"]) == {
+        "SEE908040981818",
+        "SEE947990311597",
+        "SEE950179793688",
+        "SEE972490644852",
+    }
     assert planned["commissioned"].isna().all()
 
 
-def test_a_five_digit_municipality_key_is_a_district(units: pd.DataFrame) -> None:
-    row = unit(units, "SEE953220423381")
+def test_a_five_digit_municipality_key_is_a_district(tmp_path: Path) -> None:
+    export = export_with(
+        tmp_path,
+        mastr.WIND_MEMBER,
+        "<Gemeindeschluessel>03353029</Gemeindeschluessel>",
+        "<Gemeindeschluessel>03353</Gemeindeschluessel>",
+    )
 
-    assert row["municipality_key"] == "05334"
-    assert row["district"] == "05334"
+    row = unit(mastr.read_units(export), "SEE904722017912")
+
+    assert row["municipality_key"] == "03353"
+    assert row["district"] == "03353"
 
 
 @pytest.mark.parametrize(
@@ -252,18 +289,10 @@ def test_offshore_units_have_a_sea_and_cluster_but_no_district(units: pd.DataFra
 
 
 def test_a_changed_catalogue_is_refused(tmp_path: Path) -> None:
-    changed = tmp_path / EXPORT.name
-    with zipfile.ZipFile(EXPORT) as source, zipfile.ZipFile(changed, "w") as target:
-        for name in source.namelist():
-            content = source.read(name)
-            if name == mastr.CATALOGUE_MEMBER:
-                content = content.replace(
-                    "In Betrieb".encode("utf-16-le"), "Aktiv".encode("utf-16-le")
-                )
-            target.writestr(name, content)
+    export = export_with(tmp_path, mastr.CATALOGUE_MEMBER, "In Betrieb", "Aktiv")
 
     with pytest.raises(ValueError, match="catalogue values changed"):
-        mastr.read_units(changed)
+        mastr.read_units(export)
 
 
 @pytest.mark.parametrize(
@@ -278,8 +307,9 @@ def test_units_count_from_the_end_of_their_commissioning_month(
 
 
 def test_a_unit_commissioned_on_a_month_end_counts_at_that_month_end(panel: pd.DataFrame) -> None:
-    assert capacity(panel, "2017-07-31", "05334", "wind_onshore") == 0.0
-    assert capacity(panel, "2017-08-31", "05334", "wind_onshore") == 3.2
+    # A 735 kW solar unit commissioned on 2020-09-30.
+    assert capacity(panel, "2020-08-31", "16051", "solar") == 0.0
+    assert capacity(panel, "2020-09-30", "16051", "solar") == 0.735
 
 
 @pytest.mark.parametrize(
@@ -318,11 +348,8 @@ def test_temporarily_shut_down_units_keep_counting(panel: pd.DataFrame) -> None:
     assert capacity(panel, "2024-06-30", "13072", "wind_onshore") == 3.37
 
 
-def test_planned_and_future_units_are_left_out(panel: pd.DataFrame) -> None:
-    assert "08326" not in set(panel["district"])
-    assert "05112" not in set(panel["district"])
-    # Commissioned on 2026-11-04, after the last month of the panel.
-    assert capacity(panel, "2026-10-31", "05762", "wind_onshore") == 0.0
+def test_planned_units_are_left_out(panel: pd.DataFrame) -> None:
+    assert not {"08326", "05112", "05762"} & set(panel["district"])
 
 
 def test_a_planned_unit_never_counts_even_with_a_commissioning_date(units: pd.DataFrame) -> None:
@@ -437,12 +464,14 @@ def test_offshore_wind_leaves_out_decommissioned_units(units: pd.DataFrame) -> N
     assert table["capacity_mw"].sum() == pytest.approx(49.61 - 6.3)
 
 
-def test_the_only_implausible_unit_of_the_fixture_is_dated_1900(units: pd.DataFrame) -> None:
-    report = mastr.implausible_units(units, pd.Timestamp("2026-11-22"))
+def test_the_implausible_units_of_the_fixture(units: pd.DataFrame) -> None:
+    report = mastr.implausible_units(units, pd.Timestamp("2026-10-01"))
 
-    # A 0.6 kW solar unit commissioned on 1900-04-22, as registered.
+    # A 0.6 kW solar unit commissioned on 1900-04-22 and a 3.2 MW turbine without a municipality
+    # key, as registered.
     assert report[["unit_id", "problem"]].to_numpy().tolist() == [
-        ["SEE970825764190", "commissioning date before 1950"]
+        ["SEE970825764190", "commissioning date before 1950"],
+        ["SEE953220423381", "on land without a municipality key"],
     ]
 
 
@@ -469,7 +498,7 @@ def test_implausible_units_are_reported(
     # A 749 kWp solar unit commissioned on 2020-09-30.
     changed.loc[changed["unit_id"].eq("SEE983469276431"), column] = value
 
-    report = mastr.implausible_units(changed, pd.Timestamp("2026-11-22"))
+    report = mastr.implausible_units(changed, pd.Timestamp("2026-10-01"))
 
     changed_unit = report[report["unit_id"].eq("SEE983469276431")]
     assert changed_unit["problem"].tolist() == [problem]
@@ -478,13 +507,10 @@ def test_implausible_units_are_reported(
 def test_extract_capacity_downloads_and_writes_the_tables_with_their_provenance(
     tmp_path: Path,
 ) -> None:
-    page = PAGE.read_bytes()
     content = EXPORT.read_bytes()
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url) == mastr.DOWNLOAD_PAGE:
-            return httpx.Response(200, content=page)
-        if str(request.url) == EXPORT_URL:
+        if str(request.url) == mastr.EXPORT_URL:
             return httpx.Response(200, headers={"content-type": ZIP_TYPE}, content=content)
         return httpx.Response(404)
 
@@ -495,14 +521,14 @@ def test_extract_capacity_downloads_and_writes_the_tables_with_their_provenance(
 
     panel = pd.read_parquet(path)
     assert panel["month_end"].min() == pd.Timestamp("2019-01-31")
-    # The export is dated 2026-11-22: November is not complete.
-    assert panel["month_end"].max() == pd.Timestamp("2026-10-31")
-    assert len(pd.read_parquet(tmp_path / "out" / "mastr_units.parquet")) == 39
+    # The panel ends at the last month end before the export date.
+    assert panel["month_end"].max() == pd.Timestamp("2026-09-30")
+    assert len(pd.read_parquet(tmp_path / "out" / "mastr_units.parquet")) == 38
     assert len(pd.read_parquet(tmp_path / "out" / "mastr_offshore_wind.parquet")) == 5
     metadata = json.loads(path.with_suffix(".json").read_text())
     assert metadata["file"] == EXPORT.name
     assert metadata["sha256"] == hashlib.sha256(content).hexdigest()
-    assert metadata["export_date"] == "2026-11-22"
+    assert metadata["export_date"] == "2026-10-01"
     assert {"retrieved_at", "extracted_at"} <= metadata.keys()
 
 
@@ -517,10 +543,10 @@ def test_write_capacity_reads_an_export_downloaded_by_hand(tmp_path: Path) -> No
     assert metadata["sha256"] == hashlib.sha256(export.read_bytes()).hexdigest()
     assert metadata["url"] is None
     assert metadata["retrieved_at"] is None
-    assert metadata["export_date"] == "2026-11-22"
+    assert metadata["export_date"] == "2026-10-01"
 
 
 def test_export_date_comes_from_the_file_name() -> None:
-    assert mastr.export_date_of(EXPORT) == pd.Timestamp("2026-11-22")
-    with pytest.raises(ValueError, match="not a daily export"):
+    assert mastr.export_date_of(EXPORT) == pd.Timestamp("2026-10-01")
+    with pytest.raises(ValueError, match="not an export file name"):
         mastr.export_date_of(Path("Gesamtdatenexport.zip"))

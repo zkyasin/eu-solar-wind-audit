@@ -1,10 +1,15 @@
 """Installed solar and wind capacity of Germany by district (Kreis), from the full public export of
 the Marktstammdatenregister (MaStR) of the Bundesnetzagentur (licence dl-de/by-2-0).
 
+The daily export gets a new file name each day, which the export documentation (revision 26.1.2,
+section 2.3) says is meant to prevent automated retrieval. Quarterly exports of a fixed date
+(Stichtag) are kept under a stable name for analyses (section 3.3), so one of them is pinned here
+with its checksum.
+
 Powers are in kW in the export and in MW in the outputs. For solar units the gross power
 (Bruttoleistung) is the module power in kWp, so DC (MaStR registration help for solar units), and
 the net rated power (Nettonennleistung) is the lesser of the gross power and the inverter active
-power, so AC: this holds for every solar unit with an inverter power in the export of 2026-11-22.
+power, so AC: this holds for every solar unit with an inverter power in the pinned export.
 """
 
 import hashlib
@@ -22,13 +27,13 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Series
 
-DOWNLOAD_PAGE = "https://www.marktstammdatenregister.de/MaStR/Datendownload"
+EXPORT_URL = (
+    "https://download.marktstammdatenregister.de/Stichtag/Gesamtdatenexport_20261001_26.1.zip"
+)
+# Computed on the download of 2026-11-22.
+SHA256 = "3084c3849082b3fda1e21e0067e8b678542dc6f35980bf1edb63996d2578ebbf"
 CACHE_DIR = Path("data/raw/mastr")
 OUTPUT_DIR = Path("data/processed/mastr")
-# The daily export gets a new name each day; the quarterly exports are under /Stichtag/.
-EXPORT_LINK = re.compile(
-    r'href="(https://download\.marktstammdatenregister\.de/Gesamtdatenexport_\d{8}_[\d.]+\.zip)"'
-)
 ZIP_TYPES = ("application/zip", "application/x-zip-compressed")
 TIMEOUT = httpx.Timeout(30, read=300)
 RETRY_DELAYS_SECONDS = (10.0, 60.0)
@@ -50,8 +55,8 @@ STATUS_CODES = {
     38: ("Endgültig stillgelegt", "decommissioned"),
 }
 WIND_LOCATION_CODES = {
-    888: ("Windenergie an Land", "wind_onshore"),
-    889: ("Windenergie auf See", "wind_offshore"),
+    888: ("Windkraft an Land", "wind_onshore"),
+    889: ("Windkraft auf See", "wind_offshore"),
 }
 SEA_CODES = {639: ("Ostsee", "baltic"), 640: ("Nordsee", "north")}
 
@@ -78,7 +83,7 @@ WIND_FIELDS = {
 }
 DATES = ["commissioned", "decommissioned", "shutdown_start", "shutdown_end"]
 # Plausibility bounds, gross power for solar and net power for wind. The largest units in the
-# export of 2026-11-22 are a 200 MWp solar park and 15 MW offshore turbines.
+# pinned export are a 200 MWp solar park and 15 MW offshore turbines.
 MAX_KW = {"solar": 200_000.0, "wind_onshore": 20_000.0, "wind_offshore": 20_000.0}
 # Districts merged since: Göttingen and Osterode am Harz into the new Göttingen district
 # (2016-11-01), Eisenach into the Wartburgkreis (2021-07-01). Some units still carry former keys.
@@ -148,45 +153,42 @@ class OffshoreWind(pa.DataFrameModel):
         strict = True
 
 
-def find_export_url(client: httpx.Client) -> str:
-    """URL of the current daily export, read from the download page."""
-    response = client.get(DOWNLOAD_PAGE)
-    response.raise_for_status()
-    links = {match.group(1) for match in EXPORT_LINK.finditer(response.text)}
-    if len(links) != 1:
-        raise ValueError(f"{DOWNLOAD_PAGE}: expected one daily export link, found {sorted(links)}")
-    return links.pop()
+def download_export(client: httpx.Client, cache_dir: Path = CACHE_DIR) -> Path:
+    """Path of the pinned export zip, downloaded and checked unless already cached.
 
-
-def download_export(client: httpx.Client, url: str, cache_dir: Path = CACHE_DIR) -> Path:
-    """Path of the export zip, downloaded unless already cached.
-
-    An interrupted download is resumed from its .part file. Once complete, a JSON file next to the
-    zip records the URL, retrieval time, file name, size and SHA-256.
+    An interrupted download is resumed from its .part file. Once the checksum matches, a JSON file
+    next to the zip records the URL, retrieval time, file name, size and SHA-256; a zip without
+    that record is checked again.
     """
-    dest = cache_dir / url.rsplit("/", 1)[1]
-    if dest.exists():
+    dest = cache_dir / EXPORT_URL.rsplit("/", 1)[1]
+    record = _metadata_path(dest)
+    if record.exists():
         return dest
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    partial = dest.with_name(dest.name + ".part")
-    for delay in (*RETRY_DELAYS_SECONDS, None):
-        try:
-            _resume(client, url, partial)
-            break
-        except httpx.TransportError:
-            if delay is None:
-                raise
-            time.sleep(delay)
+    if not dest.exists():
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        partial = dest.with_name(dest.name + ".part")
+        for delay in (*RETRY_DELAYS_SECONDS, None):
+            try:
+                _resume(client, EXPORT_URL, partial)
+                break
+            except httpx.TransportError:
+                if delay is None:
+                    raise
+                time.sleep(delay)
+        # Renamed before hashing: a complete .part file left behind cannot be resumed, since the
+        # server rejects a range past the end of the file.
+        partial.replace(dest)
 
-    # Renamed before hashing: a complete .part file left behind cannot be resumed, since the server
-    # rejects a range past the end of the file.
-    partial.replace(dest)
+    description = _describe(dest)
+    if description["sha256"] != SHA256:
+        dest.unlink()
+        raise ValueError(f"{EXPORT_URL}: SHA-256 {description['sha256']}, expected {SHA256}")
     metadata = {
-        "url": url,
+        "url": EXPORT_URL,
         "retrieved_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
-        **_describe(dest),
+        **description,
     }
-    _metadata_path(dest).write_text(json.dumps(metadata, indent=2) + "\n")
+    record.write_text(json.dumps(metadata, indent=2) + "\n")
     return dest
 
 
@@ -303,14 +305,14 @@ def extract_capacity(
     output_dir: Path = OUTPUT_DIR,
     client: httpx.Client | None = None,
 ) -> Path:
-    """Download the current export unless cached, then write its tables with `write_capacity`.
+    """Download the pinned export unless cached, then write its tables with `write_capacity`.
     Returns the panel path."""
     if client is None:
         with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as own_client:
             return extract_capacity(
                 start=start, cache_dir=cache_dir, output_dir=output_dir, client=own_client
             )
-    export = download_export(client, find_export_url(client), cache_dir)
+    export = download_export(client, cache_dir)
     return write_capacity(export, output_dir, start=start)
 
 
@@ -353,7 +355,7 @@ def write_capacity(
 def export_date_of(path: Path) -> pd.Timestamp:
     match = re.fullmatch(r"Gesamtdatenexport_(\d{8})_[\d.]+\.zip", path.name)
     if match is None:
-        raise ValueError(f"{path.name}: not a daily export file name")
+        raise ValueError(f"{path.name}: not an export file name")
     return pd.Timestamp(match.group(1))
 
 
@@ -445,7 +447,7 @@ def _common(raw: pd.DataFrame) -> pd.DataFrame:
             },
             "municipality_key": key,
             # The key is Land (2 digits), Regierungsbezirk (1), Kreis (2) and Gemeinde (3); some
-            # units carry only the first five.
+            # units carry only the first five (daily export of 2026-11-22).
             "district": key.where(key.str.fullmatch(r"\d{5}|\d{8}", na=False))
             .str[:5]
             .replace(FORMER_DISTRICTS),
