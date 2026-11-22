@@ -23,6 +23,7 @@ SHEETS = {
 }
 # The capacities match AC figures (Eurostat 2024), so they are used as AC without conversion.
 UNIT_ROW = "Unité : puissance en MW"
+CORSICA = ("20", "2A", "2B")
 
 
 class Panel(pa.DataFrameModel):
@@ -123,3 +124,9 @@ def read_totals(path: Path) -> pd.DataFrame:
     totals = long[long["label"].str.startswith("Total", na=False)]
     columns = ["label", "technology", "quarter_end", "installations", "capacity_mw", "provisional"]
     return totals[columns].rename(columns={"label": "total"}).reset_index(drop=True)
+
+
+def metropolitan_without_corsica(panel: pd.DataFrame) -> pd.DataFrame:
+    """Rows of mainland France, the perimeter of the national éCO2mix series."""
+    code = panel["department_code"]
+    return panel[(code.str.len() == 2) & ~code.isin(CORSICA)]

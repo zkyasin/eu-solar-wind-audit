@@ -156,3 +156,14 @@ def test_totals_are_read_per_technology() -> None:
         & (wind["quarter_end"] == pd.Timestamp("2026-06-30"))
     ]
     assert offshore["capacity_mw"].item() == pytest.approx(2316.2)
+
+
+def test_metropolitan_perimeter_drops_corsica_and_overseas() -> None:
+    panel = sdes.read_capacity(SOLAR)
+
+    mainland = sdes.metropolitan_without_corsica(panel)
+
+    assert set(mainland["department_code"]) == BRETAGNE | NORMANDIE
+    june = mainland[mainland["quarter_end"] == pd.Timestamp("2026-06-30")]
+    # Sum of the Bretagne and Normandie region rows of the workbook.
+    assert june["capacity_mw"].sum() == pytest.approx(1171.964331 + 717.98565)
