@@ -11,11 +11,15 @@ import hashlib
 import json
 import re
 import time
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from xml.etree import ElementTree
 
 import httpx
 import pandas as pd
+import pandera.pandas as pa
+from pandera.typing import DataFrame, Series
 
 DOWNLOAD_PAGE = "https://www.marktstammdatenregister.de/MaStR/Datendownload"
 CACHE_DIR = Path("data/raw/mastr")
@@ -26,6 +30,74 @@ EXPORT_LINK = re.compile(
 ZIP_TYPES = ("application/zip", "application/x-zip-compressed")
 TIMEOUT = httpx.Timeout(30, read=300)
 RETRY_DELAYS_SECONDS = (10.0, 60.0)
+
+# The solar table is split into numbered members; the EEG plant tables (AnlagenEegSolar_*.xml) are
+# a different object.
+SOLAR_MEMBER = re.compile(r"EinheitenSolar(_\d+)?\.xml")
+WIND_MEMBER = "EinheitenWind.xml"
+CATALOGUE_MEMBER = "Katalogwerte.xml"
+
+TECHNOLOGIES = ("solar", "wind_onshore", "wind_offshore")
+STATUSES = ("planned", "operating", "temporarily_shut_down", "decommissioned")
+
+# Catalogue values of the export, checked against Katalogwerte.xml at each read.
+STATUS_CODES = {
+    31: ("In Planung", "planned"),
+    35: ("In Betrieb", "operating"),
+    37: ("Vorübergehend stillgelegt", "temporarily_shut_down"),
+    38: ("Endgültig stillgelegt", "decommissioned"),
+}
+WIND_LOCATION_CODES = {
+    888: ("Windenergie an Land", "wind_onshore"),
+    889: ("Windenergie auf See", "wind_offshore"),
+}
+SEA_CODES = {639: ("Ostsee", "baltic"), 640: ("Nordsee", "north")}
+
+COMMON_FIELDS = {
+    "EinheitMastrNummer": "unit_id",
+    "EinheitBetriebsstatus": "status",
+    "Bruttoleistung": "gross_kw",
+    "Nettonennleistung": "net_kw",
+    "Inbetriebnahmedatum": "commissioned",
+    "DatumEndgueltigeStilllegung": "decommissioned",
+    "DatumBeginnVoruebergehendeStilllegung": "shutdown_start",
+    "DatumWiederaufnahmeBetrieb": "shutdown_end",
+    "Gemeindeschluessel": "municipality_key",
+    "Laengengrad": "longitude",
+    "Breitengrad": "latitude",
+}
+WIND_FIELDS = {
+    **COMMON_FIELDS,
+    "WindAnLandOderAufSee": "location",
+    "Seelage": "sea",
+    "GebietNachDemFlaechenentwicklungsplanNordsee": "cluster_north",
+    "GebietNachDemFlaechenentwicklungsplanOstsee": "cluster_baltic",
+    "NameWindpark": "wind_farm",
+}
+DATES = ["commissioned", "decommissioned", "shutdown_start", "shutdown_end"]
+
+
+class Units(pa.DataFrameModel):
+    unit_id: Series[str] = pa.Field(unique=True, str_matches=r"^SEE\d{12}$")
+    technology: Series[str] = pa.Field(isin=TECHNOLOGIES)
+    status: Series[str] = pa.Field(isin=STATUSES)
+    # Not checked for sign or range: implausible_units reports such values.
+    gross_kw: Series[float] = pa.Field(nullable=True)
+    net_kw: Series[float] = pa.Field(nullable=True)
+    commissioned: Series[pa.DateTime] = pa.Field(nullable=True)
+    decommissioned: Series[pa.DateTime] = pa.Field(nullable=True)
+    shutdown_start: Series[pa.DateTime] = pa.Field(nullable=True)
+    shutdown_end: Series[pa.DateTime] = pa.Field(nullable=True)
+    municipality_key: Series[str] = pa.Field(nullable=True)
+    district: Series[str] = pa.Field(nullable=True, str_matches=r"^\d{5}$")
+    longitude: Series[float] = pa.Field(nullable=True)
+    latitude: Series[float] = pa.Field(nullable=True)
+    sea: Series[str] = pa.Field(nullable=True, isin=["north", "baltic"])
+    cluster: Series[str] = pa.Field(nullable=True)
+    wind_farm: Series[str] = pa.Field(nullable=True)
+
+    class Config:
+        strict = True
 
 
 def find_export_url(client: httpx.Client) -> str:
@@ -73,6 +145,27 @@ def download_export(client: httpx.Client, url: str, cache_dir: Path = CACHE_DIR)
     return dest
 
 
+def read_units(path: Path) -> DataFrame[Units]:
+    """Solar and wind units of the export, one row per unit."""
+    with zipfile.ZipFile(path) as archive:
+        names = archive.namelist()
+        solar = sorted(name for name in names if SOLAR_MEMBER.fullmatch(name))
+        if not solar or WIND_MEMBER not in names or CATALOGUE_MEMBER not in names:
+            raise ValueError(f"{path}: missing solar, wind or catalogue members")
+        catalogue = _read_catalogue(archive)
+        frames = [
+            _solar_units(_read_member(archive, name, "EinheitSolar", COMMON_FIELDS))
+            for name in solar
+        ]
+        frames.append(
+            _wind_units(_read_member(archive, WIND_MEMBER, "EinheitWind", WIND_FIELDS), catalogue)
+        )
+    units = pd.concat(frames, ignore_index=True).astype(
+        {"sea": "str", "cluster": "str", "wind_farm": "str"}
+    )
+    return Units.validate(units[list(Units.to_schema().columns)])
+
+
 def export_date_of(path: Path) -> pd.Timestamp:
     match = re.fullmatch(r"Gesamtdatenexport_(\d{8})_[\d.]+\.zip", path.name)
     if match is None:
@@ -98,3 +191,82 @@ def _resume(client: httpx.Client, url: str, partial: Path) -> None:
 
 def _metadata_path(path: Path) -> Path:
     return path.with_name(path.name + ".json")
+
+
+def _read_member(
+    archive: zipfile.ZipFile, name: str, record: str, fields: dict[str, str]
+) -> pd.DataFrame:
+    """Text of the fields of each `record` element, streamed from the member.
+
+    Members are UTF-16 with a byte order mark, which the XML parser reads on its own.
+    """
+    columns: dict[str, list[str | None]] = {column: [] for column in fields.values()}
+    with archive.open(name) as member:
+        for _, element in ElementTree.iterparse(member):
+            if element.tag == record:
+                values = {child.tag: child.text for child in element}
+                for tag, column in fields.items():
+                    columns[column].append(values.get(tag))
+                element.clear()
+    return pd.DataFrame(columns, dtype="str")
+
+
+def _read_catalogue(archive: zipfile.ZipFile) -> dict[int, str]:
+    values = _read_member(archive, CATALOGUE_MEMBER, "Katalogwert", {"Id": "id", "Wert": "value"})
+    catalogue = dict(zip(values["id"].astype(int), values["value"], strict=True))
+    expected = {
+        code: name
+        for codes in (STATUS_CODES, WIND_LOCATION_CODES, SEA_CODES)
+        for code, (name, _) in codes.items()
+    }
+    changed = {
+        code: catalogue.get(code) for code, name in expected.items() if catalogue.get(code) != name
+    }
+    if changed:
+        raise ValueError(f"catalogue values changed: {changed}")
+    return catalogue
+
+
+def _solar_units(raw: pd.DataFrame) -> pd.DataFrame:
+    return _common(raw).assign(technology="solar", sea=None, cluster=None, wind_farm=None)
+
+
+def _wind_units(raw: pd.DataFrame, catalogue: dict[int, str]) -> pd.DataFrame:
+    cluster = raw["cluster_north"].fillna(raw["cluster_baltic"])
+    return _common(raw).assign(
+        technology=_decode(raw["location"], WIND_LOCATION_CODES),
+        sea=_decode(raw["sea"], SEA_CODES),
+        cluster=cluster.map(lambda code: catalogue[int(code)], na_action="ignore"),
+        wind_farm=raw["wind_farm"],
+    )
+
+
+def _common(raw: pd.DataFrame) -> pd.DataFrame:
+    key = raw["municipality_key"]
+    frame = pd.DataFrame(
+        {
+            "unit_id": raw["unit_id"],
+            "status": _decode(raw["status"], STATUS_CODES),
+            "gross_kw": raw["gross_kw"].astype("float64"),
+            "net_kw": raw["net_kw"].astype("float64"),
+            **{
+                column: pd.to_datetime(raw[column], format="%Y-%m-%d").astype("datetime64[ns]")
+                for column in DATES
+            },
+            "municipality_key": key,
+            # The key is Land (2 digits), Regierungsbezirk (1), Kreis (2) and Gemeinde (3); some
+            # units carry only the first five.
+            "district": key.where(key.str.fullmatch(r"\d{5}|\d{8}", na=False)).str[:5],
+            "longitude": raw["longitude"].astype("float64"),
+            "latitude": raw["latitude"].astype("float64"),
+        }
+    )
+    return frame
+
+
+def _decode(codes: "pd.Series[str]", table: dict[int, tuple[str, str]]) -> "pd.Series[str]":
+    names = {str(code): name for code, (_, name) in table.items()}
+    unknown = set(codes.dropna()) - names.keys()
+    if unknown:
+        raise ValueError(f"unknown codes: {sorted(unknown)}")
+    return codes.map(names)
