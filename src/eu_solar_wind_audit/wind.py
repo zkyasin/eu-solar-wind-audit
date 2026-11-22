@@ -66,7 +66,9 @@ class WindParameters:
         # The kernel is integrated on the 0.01 m/s grid, so it must be several steps wide.
         too_narrow = self.smoothing_base_m_s < 10 * SPEED_STEP or self.smoothing_slope < 0
         if not smoothing_off and too_narrow:
-            raise ValueError("smoothing must be off or have a base of at least 0.1 m/s")
+            raise ValueError(
+                "smoothing must be off or have a base of at least 0.1 m/s and a non-negative slope"
+            )
 
 
 def _read_data(name: str) -> pd.DataFrame:

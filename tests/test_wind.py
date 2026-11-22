@@ -199,9 +199,10 @@ def test_shares_must_be_non_negative_and_sum_to_1(shares: tuple[float, ...]) -> 
         wind.WindParameters(fleet=fleet)
 
 
-def test_smoothing_too_narrow_for_the_grid_is_rejected() -> None:
+@pytest.mark.parametrize(("base", "slope"), [(0.01, 0.2), (0.0, 0.2), (0.6, -0.1)])
+def test_smoothing_too_narrow_for_the_grid_is_rejected(base: float, slope: float) -> None:
     with pytest.raises(ValueError, match="smoothing"):
-        single(V82, smoothing_base_m_s=0.01)
+        single(V82, smoothing_base_m_s=base, smoothing_slope=slope)
 
 
 def test_speed_correction_applies_at_hub_height() -> None:
