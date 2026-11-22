@@ -40,6 +40,10 @@ def serve(responses: list[httpx.Response], requests: list[httpx.Request]) -> htt
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
+def square(lon: float, lat: float, side: float) -> Polygon:
+    return Polygon([(lon, lat), (lon + side, lat), (lon + side, lat + side), (lon, lat + side)])
+
+
 def feature(shape: Polygon, status: str, update_year: str | None) -> dict[str, Any]:
     properties = {
         "country": "Germany",
@@ -62,11 +66,9 @@ def test_operating_farms_are_parsed_with_codes_units_and_years(payload: dict[str
     assert farms.set_index("name")["capacity_mw"].to_dict() == {
         "Norther": 369.6,
         "Riffgat": 113.4,
-        "Thorntonbank Part 1": 30.45,
-        "Thorntonbank Part 2": 184.5,
         "C-Power": 325.2,
     }
-    assert farms["country"].to_list() == ["BE", "DE", "BE", "BE", "BE"]
+    assert farms["country"].to_list() == ["BE", "DE", "BE"]
     assert set(farms["status"]) == {"production"}
     years = farms.set_index("name")["year"]
     assert years["Norther"] == 2018
@@ -74,12 +76,35 @@ def test_operating_farms_are_parsed_with_codes_units_and_years(payload: dict[str
     assert pd.isna(years["C-Power"])
 
 
+def test_phase_records_replaced_by_a_whole_farm_record_are_dropped(
+    payload: dict[str, Any],
+) -> None:
+    farms = emodnet.parse_farms(payload, ["BE"], ALL_STATUSES)
+
+    # Thorntonbank Part 1 (30.45 MW) and Part 2 (184.5 MW), updated 2025, lie inside C-Power,
+    # updated 2026.
+    assert "Thorntonbank Part 1" not in farms["name"].to_list()
+    assert "Thorntonbank Part 2" not in farms["name"].to_list()
+    assert farms.loc[farms["status"] == "production", "capacity_mw"].sum() == pytest.approx(694.8)
+
+
+def test_a_later_stage_supersedes_an_older_approval(payload: dict[str, Any]) -> None:
+    farms = emodnet.parse_farms(payload, ["DE"], ALL_STATUSES)
+
+    # Borkum Riffgrund West (approved, no update year) lies inside Borkum Riffgrund 3.
+    assert farms.set_index("name")["status"].to_dict() == {
+        "Riffgat": "production",
+        "N-3.7": "planned",
+        "Borkum Riffgrund 3": "construction",
+    }
+
+
 def test_status_filter(payload: dict[str, Any]) -> None:
     planned = emodnet.parse_farms(payload, ["BE", "DE"], ("planned",))
     building = emodnet.parse_farms(payload, ["BE", "DE"], ("construction", "approved"))
 
     assert planned["name"].to_list() == ["Princess Elisabeth Zone Lot 1", "N-3.7"]
-    assert building["name"].to_list() == ["Borkum Riffgrund West", "Borkum Riffgrund 3"]
+    assert building["name"].to_list() == ["Borkum Riffgrund 3"]
 
 
 def test_unknown_status_is_rejected(payload: dict[str, Any]) -> None:
@@ -92,9 +117,9 @@ def test_country_filter(payload: dict[str, Any]) -> None:
     germany = emodnet.parse_farms(payload, ["DE"], ALL_STATUSES)
 
     assert set(belgium["country"]) == {"BE"}
-    assert len(belgium) == 5
+    assert len(belgium) == 3
     assert set(germany["country"]) == {"DE"}
-    assert len(germany) == 4
+    assert len(germany) == 3
 
 
 def test_locations_are_area_centroids_in_an_equal_area_projection(
@@ -122,6 +147,34 @@ def test_centroid_is_not_taken_in_degrees() -> None:
     expected = projected.to_crs("EPSG:4326")
     assert farms["latitude"].to_list() == pytest.approx(expected.y.to_list())
     assert ((farms["latitude"] - triangle.centroid.y).abs() > 0.05).all()
+
+
+def test_a_newer_planned_zone_does_not_remove_operating_farms() -> None:
+    zone = feature(square(3.0, 51.6, 0.4), "Planned", "2026")
+    farm = feature(square(3.1, 51.7, 0.05), "Production", "2025")
+
+    farms = emodnet.parse_farms(collection([zone, farm]), ["DE"], ALL_STATUSES)
+
+    assert sorted(farms["status"]) == ["planned", "production"]
+
+
+def test_records_with_the_same_update_year_are_both_kept() -> None:
+    # A large farm polygon can contain a smaller, separate farm.
+    large = feature(square(4.0, 52.5, 0.3), "Production", "2026")
+    small = feature(square(4.1, 52.6, 0.05), "Production", "2026")
+
+    farms = emodnet.parse_farms(collection([large, small]), ["DE"], ("production",))
+
+    assert len(farms) == 2
+
+
+def test_a_partly_covered_record_is_kept() -> None:
+    newer = feature(square(6.0, 54.0, 0.1), "Production", "2026")
+    older = feature(square(6.05, 54.0, 0.1), "Production", "2024")
+
+    farms = emodnet.parse_farms(collection([newer, older]), ["DE"], ("production",))
+
+    assert len(farms) == 2
 
 
 def test_download_is_cached_under_the_retrieval_date(tmp_path: Path) -> None:
@@ -183,12 +236,7 @@ def test_server_errors_are_retried(tmp_path: Path) -> None:
         farms = emodnet.load_offshore_farms(["BE"], client=client, cache_dir=tmp_path)
 
     assert len(requests) == 2
-    assert farms["name"].to_list() == [
-        "Norther",
-        "Thorntonbank Part 1",
-        "Thorntonbank Part 2",
-        "C-Power",
-    ]
+    assert farms["name"].to_list() == ["Norther", "C-Power"]
 
 
 def test_client_errors_are_not_retried(tmp_path: Path) -> None:

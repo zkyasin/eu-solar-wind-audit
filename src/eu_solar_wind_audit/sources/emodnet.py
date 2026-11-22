@@ -6,6 +6,12 @@ Farms are read from the polygon layer, located at the centroid of their area. Th
 not used: for these five countries its operating entries are mostly duplicates of polygons with
 coarse or wrong coordinates, or farms in the IJsselmeer that national statistics count as onshore.
 No field marks onshore farms, and the polygon layer holds none for these countries.
+
+A farm built in phases is either one record per phase, each with its own capacity and start year
+(Trianel Windpark Borkum Phase 1 and 2), or one record for the whole farm, whose start year is
+that of the first phase or missing. When a whole-farm record replaces the phase records, the older
+ones can stay in the layer (C-Power next to Thorntonbank Part 1 and 2); `drop_superseded` removes
+them.
 """
 
 import json
@@ -18,6 +24,7 @@ import geopandas as gpd
 import httpx
 import pandas as pd
 import pandera.pandas as pa
+import shapely
 from pandera.typing import DataFrame, Series
 
 URL = "https://ows.emodnet-humanactivities.eu/wfs"
@@ -43,6 +50,9 @@ STATUSES = {
     "Test site": "test_site",
     "Dismantled": "dismantled",
 }
+# A newer record supersedes an older one only at the same or a later stage.
+STAGES = {"planned": 0, "approved": 1, "construction": 2, "production": 3}
+SUPERSEDED_COVERAGE = 0.9
 
 
 class OffshoreFarms(pa.DataFrameModel):
@@ -67,9 +77,9 @@ def load_offshore_farms(
     cache_dir: Path = CACHE_DIR,
     refresh: bool = False,
 ) -> DataFrame[OffshoreFarms]:
-    """Farms of `countries` (ISO codes) with one of the given statuses. Capacity is in MW, `year`
-    is the start year as published, and latitude and longitude (WGS84 degrees) locate the
-    centroid of the farm area."""
+    """Farms of `countries` (ISO codes) with one of the given statuses, superseded records
+    removed. Capacity is in MW, `year` is the start year as published, and latitude and longitude
+    (WGS84 degrees) locate the centroid of the farm area."""
     path = download_layer(countries, client=client, cache_dir=cache_dir, refresh=refresh)
     return parse_farms(json.loads(path.read_bytes()), countries, status)
 
@@ -130,6 +140,7 @@ def parse_farms(
     farms = farms.assign(status=farms["status"].map(STATUSES))
     if farms["status"].isna().any():
         raise ValueError("a farm has an unknown status")
+    farms = drop_superseded(farms)
     farms = farms[farms["status"].isin(status)]
 
     centroids = farms.geometry.to_crs(EQUAL_AREA).centroid.to_crs("EPSG:4326")
@@ -145,6 +156,21 @@ def parse_farms(
         }
     )
     return OffshoreFarms.validate(table.reset_index(drop=True))
+
+
+def drop_superseded(farms: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Drop each record that lies mostly inside a record with a later update year and the same
+    or a later stage: the layer keeps older records of a farm next to the current one."""
+    shapes = farms.geometry.to_crs(EQUAL_AREA).to_numpy()
+    older, newer = shapely.STRtree(shapes).query(shapes, predicate="intersects")
+    overlap = shapely.area(shapely.intersection(shapes[older], shapes[newer]))
+    covered = overlap >= SUPERSEDED_COVERAGE * shapely.area(shapes[older])
+    # A missing update year counts as the oldest.
+    updated = pd.to_numeric(farms["updateyear"]).fillna(0).to_numpy()
+    stage = farms["status"].map(STAGES).to_numpy(dtype="float64")
+    superseded = covered & (updated[newer] > updated[older]) & (stage[newer] >= stage[older])
+    kept: gpd.GeoDataFrame = farms.drop(index=farms.index[older[superseded]])
+    return kept
 
 
 def _get(client: httpx.Client, params: dict[str, str]) -> bytes:
