@@ -191,6 +191,18 @@ def test_national_onshore_and_offshore_switch_to_the_realtime_split(tmp_path: Pa
     assert (split - wind["energy_mwh"]).abs().max() <= 13 * 0.5
 
 
+def test_national_onshore_after_the_last_consolidated_month_is_realtime(tmp_path: Path) -> None:
+    path = tmp_path / "export.parquet"
+    pd.read_parquet(SWITCH_REGIONAL).iloc[:0].to_parquet(path, index=False)
+    exports = {odre.REGIONAL_CONSOLIDATED: path, odre.NATIONAL_REALTIME: SWITCH_REALTIME}
+
+    onshore = national("wind_onshore", "2026-09-01", "2026-09-02", exports, tmp_path / "cache")
+
+    assert onshore.index.equals(hours("2026-09-01", "2026-09-02"))
+    assert onshore["complete"].all()
+    assert set(onshore["status"]) == {"realtime"}
+
+
 def test_national_sum_takes_the_least_final_status_of_the_regions(tmp_path: Path) -> None:
     published = pd.read_parquet(SPLIT_START_REGIONAL)
     brittany = published["code_insee_region"] == "53"
