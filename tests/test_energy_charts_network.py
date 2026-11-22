@@ -29,7 +29,7 @@ def test_solar_capacity_grows_month_on_month(german_capacity: pd.DataFrame) -> N
 def test_offshore_wind_in_2025_is_between_5_and_15_gw(german_capacity: pd.DataFrame) -> None:
     offshore = german_capacity[
         (german_capacity["technology"] == "wind_offshore")
-        & (german_capacity["month"].dt.year == 2025)
+        & (german_capacity["month_end"].dt.year == 2025)
     ]
 
     assert len(offshore) == 12
@@ -37,6 +37,6 @@ def test_offshore_wind_in_2025_is_between_5_and_15_gw(german_capacity: pd.DataFr
 
 
 def test_dc_solar_capacity_exceeds_ac(german_capacity: pd.DataFrame) -> None:
-    solar = german_capacity.pivot(index="month", columns="technology", values="capacity_mw")
+    solar = german_capacity.pivot(index="month_end", columns="technology", values="capacity_mw")
 
     assert (solar["solar_dc"] > solar["solar_ac"]).all()

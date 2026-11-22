@@ -43,8 +43,9 @@ def payload(
     }
 
 
-def capacity(panel: pd.DataFrame, month: str, technology: str) -> float:
-    row = panel[(panel["month"] == pd.Timestamp(month)) & (panel["technology"] == technology)]
+def capacity(panel: pd.DataFrame, month_end: str, technology: str) -> float:
+    selected = (panel["month_end"] == pd.Timestamp(month_end)) & (panel["technology"] == technology)
+    row = panel[selected]
     return float(row["capacity_mw"].item())
 
 
@@ -53,16 +54,16 @@ def test_real_response_gives_end_of_month_capacity_in_mw(german_payload: dict[st
 
     assert set(panel["technology"]) == {"solar_ac", "solar_dc", "wind_onshore", "wind_offshore"}
     # Published as 107.856, 118.147, 68.178 and 9.733 GW for December 2025.
-    assert capacity(panel, "2025-12-01", "solar_ac") == pytest.approx(107_856)
-    assert capacity(panel, "2025-12-01", "solar_dc") == pytest.approx(118_147)
-    assert capacity(panel, "2025-12-01", "wind_onshore") == pytest.approx(68_178)
-    assert capacity(panel, "2025-12-01", "wind_offshore") == pytest.approx(9_733)
+    assert capacity(panel, "2025-12-31", "solar_ac") == pytest.approx(107_856)
+    assert capacity(panel, "2025-12-31", "solar_dc") == pytest.approx(118_147)
+    assert capacity(panel, "2025-12-31", "wind_onshore") == pytest.approx(68_178)
+    assert capacity(panel, "2025-12-31", "wind_offshore") == pytest.approx(9_733)
 
 
 def test_real_response_leaves_out_storage_and_biomass(german_payload: dict[str, Any]) -> None:
     panel = energy_charts.parse_installed_power(german_payload)
 
-    assert list(panel.columns) == ["month", "technology", "capacity_mw"]
+    assert list(panel.columns) == ["month_end", "technology", "capacity_mw"]
     assert not panel["technology"].isin(["biomass", "battery_storage_power"]).any()
 
 
@@ -73,26 +74,26 @@ def test_summer_months_are_not_shifted_to_the_previous_month(
     panel = energy_charts.parse_installed_power(german_payload)
 
     for technology, series in panel.groupby("technology"):
-        months = pd.DatetimeIndex(series["month"])
-        expected = pd.date_range(months.min(), months.max(), freq="MS")
+        months = pd.DatetimeIndex(series["month_end"])
+        expected = pd.date_range(months.min(), months.max(), freq="ME")
         assert months.equals(expected), technology
-    assert capacity(panel, "2025-04-01", "solar_ac") == pytest.approx(97_299)
-    assert capacity(panel, "2025-10-01", "solar_ac") == pytest.approx(104_770)
+    assert capacity(panel, "2025-04-30", "solar_ac") == pytest.approx(97_299)
+    assert capacity(panel, "2025-10-31", "solar_ac") == pytest.approx(104_770)
 
 
 def test_offshore_wind_starts_when_it_is_first_reported(german_payload: dict[str, Any]) -> None:
     panel = energy_charts.parse_installed_power(german_payload)
 
     offshore = panel[panel["technology"] == "wind_offshore"]
-    assert offshore["month"].min() == pd.Timestamp("2009-08-01")
+    assert offshore["month_end"].min() == pd.Timestamp("2009-08-31")
     assert panel["capacity_mw"].notna().all()
-    assert panel[panel["technology"] == "solar_ac"]["month"].min() == pd.Timestamp("2002-01-01")
+    assert panel[panel["technology"] == "solar_ac"]["month_end"].min() == pd.Timestamp("2002-01-31")
 
 
 def test_month_in_progress_is_dropped(german_payload: dict[str, Any]) -> None:
     panel = energy_charts.parse_installed_power(german_payload)
 
-    assert panel["month"].max() == pd.Timestamp("2026-10-01")
+    assert panel["month_end"].max() == pd.Timestamp("2026-10-31")
 
 
 def test_month_ending_at_generation_time_is_kept() -> None:
@@ -105,7 +106,7 @@ def test_month_ending_at_generation_time_is_kept() -> None:
         payload(data, units={"solar_ac": None}, generated_at="2026-11-01T00:00:00+01:00")
     )
 
-    assert panel["month"].tolist() == [pd.Timestamp("2026-10-01")]
+    assert panel["month_end"].tolist() == [pd.Timestamp("2026-10-31")]
 
 
 def test_units_are_read_per_series_with_the_envelope_as_default() -> None:
@@ -115,8 +116,8 @@ def test_units_are_read_per_series_with_the_envelope_as_default() -> None:
         payload(data, units={"solar_ac": None, "solar_dc": "MW"})
     )
 
-    assert capacity(panel, "2025-01-01", "solar_ac") == pytest.approx(2_500)
-    assert capacity(panel, "2025-01-01", "solar_dc") == pytest.approx(3)
+    assert capacity(panel, "2025-01-31", "solar_ac") == pytest.approx(2_500)
+    assert capacity(panel, "2025-01-31", "solar_dc") == pytest.approx(3)
 
 
 def test_unknown_unit_is_rejected() -> None:
@@ -136,7 +137,7 @@ def test_null_and_absent_values_are_left_out_without_touching_the_others() -> No
         payload(data, units={"solar_ac": None, "solar_dc": None})
     )
 
-    assert sorted(zip(panel["month"].dt.month, panel["technology"], strict=True)) == [
+    assert sorted(zip(panel["month_end"].dt.month, panel["technology"], strict=True)) == [
         (1, "solar_ac"),
         (2, "solar_dc"),
     ]
@@ -202,7 +203,7 @@ def test_fetch_requests_monthly_values_and_caches_the_raw_response(
     assert str(requests[0].url).startswith(energy_charts.URL)
     assert dict(requests[0].url.params) == {"country": "de", "time_step": "monthly"}
     assert (tmp_path / "installed_power_de_monthly.json").read_bytes() == FIXTURE.read_bytes()
-    assert capacity(panel, "2025-12-01", "solar_ac") == pytest.approx(107_856)
+    assert capacity(panel, "2025-12-31", "solar_ac") == pytest.approx(107_856)
     assert sleeps == []
 
 
