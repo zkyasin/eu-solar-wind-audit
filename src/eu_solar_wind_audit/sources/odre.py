@@ -43,8 +43,8 @@ STATUS = {
 STATUS_ORDER = list(STATUS.values())
 
 # The 12 éCO2mix regions, as named in the regional dataset. Corsica is in neither the regional nor
-# the national data: hourly national solar equals the sum of these regions within 3 MWh (checked
-# in tests/test_odre_network.py).
+# the national data: hourly national solar and wind equal the sum of these regions to the rounding
+# of published values (checked in tests/test_odre_network.py).
 REGIONS = {
     "11": "Île-de-France",
     "24": "Centre-Val de Loire",

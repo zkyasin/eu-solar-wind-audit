@@ -50,3 +50,38 @@ def test_one_month_of_hourly_series_adds_up(tmp_path: Path) -> None:
     # August 2026 (ODRÉ exports read on 2026-11-22): rounding of the published MW values.
     regions = pd.concat(regional.values()).groupby(level="time")["energy_mwh"].sum()
     assert (solar["energy_mwh"] - regions).abs().max() <= 3
+
+
+def test_onshore_reference_before_offshore_output_is_the_sum_of_regional_wind(
+    tmp_path: Path,
+) -> None:
+    # May 2022 in Paris, the last month before offshore output.
+    start = pd.Timestamp("2022-05-01", tz="Europe/Paris").tz_convert("UTC")
+    end = odre.FIRST_OFFSHORE_POWER
+    with odre.make_client() as client:
+        reference = odre.onshore_hourly(client, start, end, cache_dir=tmp_path)
+        regional = odre.regional_hourly(client, "wind", start, end, cache_dir=tmp_path)
+
+    regions = pd.concat(regional.values()).groupby(level="time")["energy_mwh"].sum(min_count=12)
+    gap = reference["energy_mwh"] - regions
+    assert gap.notna().all()
+    # Values are published in whole MW: the national total and 12 regions differ by rounding
+    # alone by at most 13 x 0.5 MW.
+    assert gap.abs().max() <= 13 * 0.5
+
+
+def test_onshore_reference_from_the_split_is_national_wind_without_offshore(
+    tmp_path: Path,
+) -> None:
+    # January 2024 in Paris, the first month of the split.
+    start = odre.WIND_SPLIT_START
+    end = pd.Timestamp("2024-02-01", tz="Europe/Paris").tz_convert("UTC")
+    with odre.make_client() as client:
+        reference = odre.onshore_hourly(client, start, end, cache_dir=tmp_path)
+        wind = odre.national_hourly(client, "wind", start, end, cache_dir=tmp_path)
+        offshore = odre.national_hourly(client, "wind_offshore", start, end, cache_dir=tmp_path)
+
+    gap = wind["energy_mwh"] - reference["energy_mwh"] - offshore["energy_mwh"]
+    assert gap.notna().all()
+    # The national total and the 12 regions of each sum: at most 25 x 0.5 MW of rounding.
+    assert gap.abs().max() <= 25 * 0.5
