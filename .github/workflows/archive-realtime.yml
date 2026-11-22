@@ -1,0 +1,33 @@
+name: Archive real-time data
+
+# RTE replaces the éCO2mix real-time values when it publishes consolidated data, so these daily
+# snapshots keep the figures as first published.
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: archive-realtime
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - run: uv run --locked --no-dev eu-solar-wind-audit snapshot-realtime snapshots
+      - name: Upload to the release of the month
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          month=$(date -u +%Y-%m)
+          tag="realtime-$month"
+          if ! gh release view "$tag" > /dev/null 2>&1; then
+            gh release create "$tag" --latest=false \
+              --title "éCO2mix real-time snapshots, $month" \
+              --notes "Daily snapshots of the national éCO2mix real-time export (eco2mix-national-tr) from ODRÉ. Each parquet file is the full export at the UTC time in its name; the JSON file beside it gives the retrieval time and SHA-256 checksum. Source: RTE, éCO2mix data via ODRÉ, Licence Ouverte 2.0."
+          fi
+          gh release upload "$tag" snapshots/*
