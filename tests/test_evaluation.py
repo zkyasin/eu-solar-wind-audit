@@ -273,6 +273,16 @@ def test_capacity_factors_use_the_capacity_of_each_hour() -> None:
     assert value(table, "model", "rmse_cf") == pytest.approx(np.sqrt(0.05 / 3))
 
 
+def test_correlation_is_between_capacity_factors() -> None:
+    # Modelled capacity factors are the published ones, 0.2, 0.4 and 0.6, plus 0.1. The energies
+    # are not linearly related, since the capacity changes from hour to hour.
+    frame = predictions(
+        "2019-06-01 10:00", [20.0, 80.0, 60.0], [100.0, 200.0, 100.0], model=[30.0, 100.0, 70.0]
+    )
+
+    assert value(metrics(frame, "solar"), "model", "correlation") == pytest.approx(1.0)
+
+
 def test_only_eligible_hours_are_evaluated() -> None:
     frame = predictions("2019-06-01 06:00", [*PUBLISHED, 70.0], model=[*PUBLISHED, 700.0])
     frame.loc[frame.index[-1], "eligible"] = False
