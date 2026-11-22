@@ -151,17 +151,18 @@ def test_climatology_is_the_mean_capacity_factor_of_the_other_years() -> None:
             "2021-01-05 10:00",
             "2021-01-05 11:00",
         ],
-        published_mwh=[20.0, 40.0, 180.0, 30.0, 1.0, 1.0],
-        capacity_mw=[100.0, 100.0, 300.0, 300.0, 50.0, 50.0],
+        published_mwh=[20.0, 40.0, 270.0, 30.0, 1.0, 1.0],
+        capacity_mw=[100.0, 100.0, 300.0, 300.0, 50.0, 80.0],
         eligible=[True] * 6,
     )
 
-    expected = climatology(hours, 2021)
+    held_out = climatology(hours, 2021)
 
-    # January at 10:00: factors 0.2, 0.4 and 0.6 (a ratio of sums would give 240 / 500 = 0.48).
-    assert expected.tolist() == pytest.approx([0.4 * 50, 0.1 * 50])
-    assert expected.index.equals(hours.index[4:])
-    assert expected.name == "climatology_mwh"
+    # January at 10:00: factors 0.2, 0.4 and 0.9, whose mean is 0.5 (their median is 0.4, and a
+    # ratio of sums would give 330 / 500 = 0.66). Each hour takes its own capacity.
+    assert held_out.tolist() == pytest.approx([0.5 * 50, 0.1 * 80])
+    assert held_out.index.equals(hours.index[4:])
+    assert held_out.name == "climatology_mwh"
 
 
 def test_climatology_learns_from_eligible_hours_of_other_years_only() -> None:
