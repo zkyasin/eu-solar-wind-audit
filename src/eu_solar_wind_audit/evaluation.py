@@ -1,0 +1,64 @@
+"""Axis-1 model quality: how closely each model follows the published hourly output of a year it
+was not fitted on (evaluation plan, "Axis 1: model quality").
+
+Models are compared on a `Predictions` frame, which leave-one-year-out folds produce: hours of
+held-out years with their published energy, AC capacity, the energy each model gives and the groups
+that metrics are given for.
+"""
+
+import pandas as pd
+import pandera.pandas as pa
+from pandera.typing import Index, Series
+
+from eu_solar_wind_audit import grid
+
+# DJF holds January, February and December of the same year.
+SEASONS = {"DJF": (12, 1, 2), "MAM": (3, 4, 5), "JJA": (6, 7, 8), "SON": (9, 10, 11)}
+SEASON_OF_MONTH = {month: season for season, months in SEASONS.items() for month in months}
+SKY_CLASSES = ["clear", "mixed", "overcast"]
+# Every energy column other than the published one holds the prediction of a model.
+MODEL_COLUMNS = r"^(?!published_mwh$).+_mwh$"
+
+
+class Predictions(pa.DataFrameModel):
+    """Hours of held-out years and the energy in MWh that each model gives for them.
+
+    A model column is the model name followed by `_mwh`; there is at least one. `held_out_year` is
+    the UTC year of the hour, the fold that predicted it. `capacity_mw` is the AC capacity at the
+    start of the hour, `season` that of the UTC month and `sky_class` that of the hour's day. Only
+    eligible hours are evaluated: they have their published energy, every model energy and a sky
+    class.
+    """
+
+    time: Index[grid.UtcTime] = pa.Field(unique=True, check_name=True)
+    held_out_year: Series[int]
+    published_mwh: Series[float] = pa.Field(nullable=True)
+    capacity_mw: Series[float] = pa.Field(gt=0)
+    model_mwh: Series[float] = pa.Field(alias=MODEL_COLUMNS, regex=True, nullable=True)
+    eligible: Series[bool]
+    season: Series[str] = pa.Field(isin=list(SEASONS))
+    sky_class: Series[str] = pa.Field(isin=SKY_CLASSES, nullable=True)
+
+    @pa.check("time")
+    @classmethod
+    def on_the_hour(cls, time: "pd.Series[pd.Timestamp]") -> "pd.Series[bool]":
+        return time == time.dt.floor("h")
+
+    @pa.dataframe_check
+    @classmethod
+    def held_out_year_is_the_utc_year(cls, frame: pd.DataFrame) -> "pd.Series[bool]":
+        return frame["held_out_year"] == pd.DatetimeIndex(frame.index).year
+
+    @pa.dataframe_check
+    @classmethod
+    def season_of_the_utc_month(cls, frame: pd.DataFrame) -> "pd.Series[bool]":
+        return frame["season"] == pd.DatetimeIndex(frame.index).month.map(SEASON_OF_MONTH)
+
+    @pa.dataframe_check
+    @classmethod
+    def eligible_hours_have_every_value(cls, frame: pd.DataFrame) -> "pd.Series[bool]":
+        values = frame.filter(regex="_mwh$").assign(sky_class=frame["sky_class"])
+        return ~frame["eligible"] | values.notna().all(axis="columns")
+
+    class Config:
+        strict = True
