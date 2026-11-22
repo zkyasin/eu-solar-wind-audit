@@ -112,6 +112,7 @@ def fetch_hourly_feed_in(
 
     Generation is published as quarter-hour energy from 2015-01-01 on.
     """
+    grid.check_period(start, end)
     if technology == "wind_offshore" and region not in OFFSHORE_REGIONS:
         raise ValueError(f"no offshore wind is published for {region}")
     energy = fetch_series(

@@ -433,3 +433,23 @@ def test_offshore_wind_is_refused_where_it_is_not_published(
         )
 
     assert requests == []
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "error"),
+    [
+        (WEEK_START, WEEK_START, "empty period"),
+        (WEEK_START.tz_localize(None), WEEK_START + pd.Timedelta(hours=1), "hour in UTC"),
+        (WEEK_START.tz_convert("Europe/Berlin"), WEEK_START + pd.Timedelta(hours=1), "hour in UTC"),
+        (WEEK_START + pd.Timedelta(minutes=15), WEEK_START + pd.Timedelta(hours=1), "hour in UTC"),
+    ],
+    ids=["empty", "naive", "not-in-utc", "off-hour"],
+)
+def test_a_wrong_period_is_refused_before_any_download(
+    start: pd.Timestamp, end: pd.Timestamp, error: str, tmp_path: Path
+) -> None:
+    requests: list[str] = []
+    with serve({}, requests) as client, pytest.raises(ValueError, match=error):
+        smard.fetch_hourly_feed_in("DE", "solar", start, end, client=client, cache_dir=tmp_path)
+
+    assert requests == []
