@@ -19,6 +19,9 @@ dependencies = [
     "zarr>=3.4.2",
 ]
 
+[project.scripts]
+eu-solar-wind-audit = "eu_solar_wind_audit.cli:main"
+
 [build-system]
 requires = ["uv_build>=0.11.19,<0.12"]
 build-backend = "uv_build"
