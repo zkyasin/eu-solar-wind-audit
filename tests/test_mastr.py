@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -401,6 +402,37 @@ def test_offshore_wind_leaves_out_decommissioned_units(units: pd.DataFrame) -> N
 
     assert "OWP Veja Mate" not in set(table["wind_farms"])
     assert table["capacity_mw"].sum() == pytest.approx(49.61 - 6.3)
+
+
+def test_the_fixture_has_no_implausible_unit(units: pd.DataFrame) -> None:
+    assert mastr.implausible_units(units, pd.Timestamp("2026-11-22")).empty
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "problem"),
+    [
+        ("net_kw", -5.0, "power not positive"),
+        ("gross_kw", np.nan, "power not positive"),
+        ("net_kw", 4000.0, "net power above gross power"),
+        ("gross_kw", 250_000.0, "power above the documented maximum"),
+        ("commissioned", pd.Timestamp("2027-01-01"), "commissioning date in the future"),
+        ("decommissioned", pd.Timestamp("2027-01-01"), "decommissioning date in the future"),
+        ("decommissioned", pd.Timestamp("2015-01-01"), "decommissioned before commissioning"),
+        ("municipality_key", "0533", "municipality key malformed"),
+        ("district", "17001", "district outside the German state codes"),
+        ("municipality_key", None, "on land without a municipality key"),
+    ],
+)
+def test_implausible_units_are_reported(
+    units: pd.DataFrame, column: str, value: Any, problem: str
+) -> None:
+    changed = units.copy()
+    # A 749 kWp solar unit commissioned on 2020-09-30.
+    changed.loc[changed["unit_id"].eq("SEE983469276431"), column] = value
+
+    report = mastr.implausible_units(changed, pd.Timestamp("2026-11-22"))
+
+    assert report[["unit_id", "problem"]].to_numpy().tolist() == [["SEE983469276431", problem]]
 
 
 def test_export_date_comes_from_the_file_name() -> None:

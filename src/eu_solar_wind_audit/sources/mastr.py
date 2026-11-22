@@ -76,6 +76,8 @@ WIND_FIELDS = {
     "NameWindpark": "wind_farm",
 }
 DATES = ["commissioned", "decommissioned", "shutdown_start", "shutdown_end"]
+# Upper bounds of the field definitions: gross power for solar, net power for wind.
+MAX_KW = {"solar": 200_000.0, "wind_onshore": 20_000.0, "wind_offshore": 20_000.0}
 # ERA5 grid spacing in degrees.
 CELL_DEGREES = 0.25
 
@@ -258,6 +260,32 @@ def offshore_wind(units: pd.DataFrame, as_of: pd.Timestamp) -> DataFrame[Offshor
     ).reset_index()
     table["capacity_mw"] = table["capacity_mw"] / 1000
     return OffshoreWind.validate(table)
+
+
+def implausible_units(units: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
+    """Units with an impossible value, one row per unit and problem."""
+    maximum = units["technology"].map(MAX_KW)
+    capped = units["gross_kw"].where(units["technology"].eq("solar"), units["net_kw"])
+    district_in_germany = units["district"].str.match(r"^(0[1-9]|1[0-6])\d{3}$", na=False)
+    checks = {
+        "power not positive": ~(units["net_kw"] > 0) | ~(units["gross_kw"] > 0),
+        "net power above gross power": units["net_kw"] > units["gross_kw"],
+        "power above the documented maximum": capped > maximum,
+        "commissioning date in the future": units["commissioned"] > as_of,
+        "decommissioning date in the future": units["decommissioned"] > as_of,
+        "decommissioned before commissioning": units["decommissioned"] < units["commissioned"],
+        "decommissioned without a date": units["status"].eq("decommissioned")
+        & units["decommissioned"].isna(),
+        "not planned and without a commissioning date": units["status"].ne("planned")
+        & units["commissioned"].isna(),
+        "municipality key malformed": units["municipality_key"].notna()
+        & ~units["municipality_key"].str.fullmatch(r"\d{5}|\d{8}", na=False),
+        "district outside the German state codes": units["district"].notna() & ~district_in_germany,
+        "on land without a municipality key": units["technology"].ne("wind_offshore")
+        & units["municipality_key"].isna(),
+    }
+    flagged = [units[mask].assign(problem=problem) for problem, mask in checks.items()]
+    return pd.concat(flagged, ignore_index=True)
 
 
 def export_date_of(path: Path) -> pd.Timestamp:
