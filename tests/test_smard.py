@@ -183,6 +183,26 @@ def test_the_open_week_is_not_cached(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
+def test_a_settled_week_with_nulls_is_downloaded_again(tmp_path: Path) -> None:
+    values: list[float | None] = [1.0] * 169
+    values[100] = None
+    requests: list[str] = []
+    for _ in range(2):
+        with serve(autumn_files(values), requests) as client:
+            smard.fetch_series(
+                smard.SOLAR,
+                "DE",
+                "hour",
+                AUTUMN_WEEK[0],
+                AUTUMN_WEEK[1],
+                client=client,
+                cache_dir=tmp_path,
+            )
+
+    assert requests.count("/app/chart_data/4068/DE/4068_DE_hour_1760911200000.json") == 2
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_server_errors_and_connection_errors_are_retried(
     real_files: dict[str, bytes], tmp_path: Path
 ) -> None:

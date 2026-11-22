@@ -79,25 +79,30 @@ def fetch_series(
             continue
         name = f"{filter_id}_{region}_{resolution}_{week_start}.json"
         settled = week_end is not None and week_end + SETTLED_AFTER // _MILLISECOND <= now_ms
-        content = _weekly_file(client, f"{folder}/{name}", cache_dir / name, settled)
-        rows += json.loads(content)["series"]
+        rows += _weekly_rows(client, f"{folder}/{name}", cache_dir / name, settled)
 
     index = pd.to_datetime([ms for ms, _ in rows], unit="ms", utc=True)
     series = pd.Series([value for _, value in rows], index=index, dtype=float).sort_index()
     return series[(series.index >= start) & (series.index < end)]
 
 
-def _weekly_file(client: httpx.Client, url: str, path: Path, settled: bool) -> bytes:
+def _weekly_rows(
+    client: httpx.Client, url: str, path: Path, settled: bool
+) -> list[tuple[int, float | None]]:
+    rows: list[tuple[int, float | None]]
     if path.exists():
-        return path.read_bytes()
+        rows = json.loads(path.read_bytes())["series"]
+        return rows
     content = _get(client, url)
-    if settled:
+    rows = json.loads(content)["series"]
+    # Gaps can be filled long after publication, so a week with nulls is downloaded again.
+    if settled and all(value is not None for _, value in rows):
         path.parent.mkdir(parents=True, exist_ok=True)
         # Write under a temporary name so that an interrupted write never looks complete.
         partial = path.with_name(path.name + ".part")
         partial.write_bytes(content)
         partial.replace(path)
-    return content
+    return rows
 
 
 def _get(client: httpx.Client, url: str) -> bytes:
