@@ -1,11 +1,12 @@
 """Completeness of the raw rows of a dataset against the layout its source documents (evaluation
-plan, axis 2): gaps, repeated stamps and values off the grid.
+plan, axis 2): gaps, repeated stamps, values off the grid and changes of resolution.
 
 The detector reads the rows as fetched, before the hourly conversion of `grid`, which drops
 repeated stamps, so that their hours only look incomplete, and refuses values off the grid. Its
 findings are facts and use no threshold. Scores: `gap`, hours that lack a value; `duplicate`,
-stamps that come more than once; `off_grid`, values off the grid; `clock_change_convention`,
-clock changes whose rows follow the convention of the dataset.
+stamps that come more than once; `off_grid`, values off the grid; `resolution_change`, the spacing
+in minutes that the values of a UTC day mostly have; `clock_change_convention`, clock changes
+whose rows follow the convention of the dataset.
 
 Values off the grid are reported, then left out by `on_grid`: a detection run converts the rows
 that `on_grid` keeps, so that it goes on.
@@ -25,6 +26,7 @@ from eu_solar_wind_audit.anomalies import findings
 from eu_solar_wind_audit.anomalies.findings import Findings
 
 NO_MERGING = pd.Timedelta(0)
+MINUTE = pd.Timedelta(minutes=1)
 DAY = pd.Timedelta(days=1)
 
 # The periods a value covers, as the offsets in steps from its stamp to the starts of the first
@@ -162,6 +164,7 @@ def completeness(
             records.append(
                 _record(series, provenance, run, "off_grid", values_off, minutes_past_hour=minutes)
             )
+        records += _resolution_changes(series, provenance, rows, layout)
 
     if conventional:
         records.append(
@@ -197,6 +200,39 @@ def _record(
             **evidence,
         },
     }
+
+
+def _resolution_changes(
+    series: str, provenance: str, rows: pd.Series, layout: Layout
+) -> list[dict[str, object]]:
+    """One finding per run of UTC days whose values are mostly spaced otherwise than the step."""
+    stamps = pd.DatetimeIndex(rows.index[rows.notna().to_numpy()]).unique().sort_values()
+    # A spacing belongs to the day of the first hour that the later value covers.
+    first, _ = layout.hours(stamps[1:])
+    spacing = pd.Series(stamps[1:] - stamps[:-1], index=first.floor("D"))
+    modal = spacing.groupby(level=0).agg(lambda day: day.mode().min())
+    changed = modal[modal != layout.step]
+    hours = pd.date_range(layout.start, layout.end, freq="h", inclusive="left", unit="ns")
+    records: list[dict[str, object]] = []
+    for observed, days in changed.groupby(changed):
+        spans = findings.runs(hours[hours.floor("D").isin(days.index)], NO_MERGING)
+        for first_hour, end in zip(spans["start"], spans["end"], strict=True):
+            in_span = (days.index >= pd.Timestamp(first_hour).floor("D")) & (days.index < end)
+            records.append(
+                {
+                    "series": series,
+                    "provenance": provenance,
+                    "start": first_hour,
+                    "end": end,
+                    "kind": "resolution_change",
+                    "score": observed / MINUTE,
+                    "evidence": {
+                        "step_minutes": int(layout.step / MINUTE),
+                        "days": int(in_span.sum()),
+                    },
+                }
+            )
+    return records
 
 
 def _clock_change_hours(
