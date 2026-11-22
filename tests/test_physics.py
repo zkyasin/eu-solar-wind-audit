@@ -395,3 +395,16 @@ def test_model_france_runs_one_calendar_year_at_a_time(
     expected = pd.date_range(start, end, freq="h", inclusive="left", tz="UTC", name="time")
     assert result.index.equals(expected)
     assert result["energy_mwh"].to_numpy() == pytest.approx(50.0)
+
+
+def test_empty_period_is_refused_before_any_download(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def no_download(technology: physics.Technology, until: pd.Timestamp) -> pd.DataFrame:
+        raise AssertionError("capacity was downloaded")
+
+    monkeypatch.setattr(physics, "load_monthly_capacity", no_download)
+    day = pd.Timestamp("2025-01-01")
+
+    with pytest.raises(ValueError, match="empty period"):
+        physics.model_france("solar", day, day, COUNTRY, cache_dir=tmp_path)

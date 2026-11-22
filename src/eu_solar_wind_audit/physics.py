@@ -212,6 +212,8 @@ def model_france(
 ) -> pd.DataFrame:
     """Hourly modelled output of mainland France without Corsica for hours [start, end), naive
     UTC, computed one calendar year at a time; see `model`."""
+    if end <= start:
+        raise ValueError(f"empty period from {start} to {end}")
     monthly = load_monthly_capacity(technology, end - HOUR)
     regions = natural_earth.load_admin1("FR")
     years = []
