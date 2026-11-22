@@ -6,7 +6,8 @@ month's last day. Monthly values are published for Germany only.
 
 Production is mean power in MW over quarter-hours labelled at their start. `public_power` is the
 net production fed into the public grid; `total_power` adds industrial self-supply and, for solar,
-self-consumption. Both are published for Germany only.
+self-consumption. Both are published for Germany only. Their hourly wind energy was equal in
+every hour of 2019-2025 (checked on 2026-11-22).
 """
 
 import json
