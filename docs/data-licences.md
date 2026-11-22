@@ -22,7 +22,7 @@ What the project may publish:
 | SMARD prices | Bundesnetzagentur | Day-ahead wholesale prices | Under review (HEDWIG proceedings) | `Bundesnetzagentur \| SMARD.de` | Derived only (price classes) | Verified 2026-11-22, [Datennutzung](https://www.smard.de/en/datennutzung) |
 | ENTSO-E Transparency Platform | ENTSO-E (primary owners: TSOs, NEMOs) | 16.1.b/c actual generation, 14.1.a installed capacity, 14.1.d wind and solar forecasts, 6.1.a actual load, 12.1.d day-ahead prices | [Terms of Use](https://transparencyplatform.zendesk.com/hc/en-us/articles/40921911218961-Legal-Terms-and-Conditions) (2023); these items are not on the CC BY 4.0 list | Source of publication: ENTSO-E Transparency Platform | Derived only, not relicensed under CC BY | Verified 2026-11-22, Terms of Use clause 3.1 and List of data available for free re-use (18 October 2023) |
 | ERA5 (CDS) | Copernicus Climate Change Service (C3S), ECMWF | ERA5 hourly single levels, ERA5T | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Copernicus line (see Attribution) and citation, DOI 10.24381/cds.adbb2d47 | Raw values | Verified 2026-11-22, [CDS catalogue](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=overview) |
-| Icechunk ERA5 | Earthmover (AWS Open Data) | ERA5 single levels, Icechunk store | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Registry citation plus the Copernicus line | Raw values | Verified 2026-11-22, [registry entry](https://registry.opendata.aws/earthmover-era5/) |
+| Icechunk ERA5 | Earthmover (AWS Open Data) | ERA5 single levels, Icechunk store | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Earthmover and the registry link, plus the Copernicus line and ERA5 citation | Raw values | Verified 2026-11-22, [registry entry](https://registry.opendata.aws/earthmover-era5/) |
 | ARCO-ERA5 | Google Research | ERA5 Zarr stores on Google Cloud | ERA5 terms; the README links the older Licence to use Copernicus Products | Copernicus line | Raw values | Verified 2026-11-22, [README](https://github.com/google-research/arco-era5#can-i-use-the-data-for-researchcommercial-purposes) |
 | Eurostat | European Commission (Eurostat) | Annual gross electricity production | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `Source: <dataset DOI or link>, <access date>`; state modifications | Raw values | Verified 2026-11-22, [copyright notice](https://ec.europa.eu/eurostat/help/copyright-notice) |
 | SDES | Ministry for the Ecological Transition (SDES) | Quarterly solar and wind capacity tables | Open licence under décret n° 2017-638 | `Service des données et études statistiques (SDES), <publication>` and date of last update; data not altered | Raw values | Verified 2026-11-22, [mentions légales](https://www.statistiques.developpement-durable.gouv.fr/mentions-legales) |
@@ -34,7 +34,7 @@ What the project may publish:
 | Energy-Charts | Fraunhofer ISE | Generation series | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) unless a response states otherwise | `Energy-Charts.info` | Raw values | Verified 2026-11-22, [API documentation](https://api.energy-charts.info/) |
 | Energy-Charts prices | Fraunhofer ISE | Day-ahead prices | CC BY 4.0 from SMARD for 16 zones; private and internal use only for the others, raw or derived | `Bundesnetzagentur \| SMARD.de` for the CC BY zones | CC BY zones: as SMARD prices; others: Nothing | Verified 2026-11-22, [API documentation](https://api.energy-charts.info/), `/price` |
 | Renewables.ninja | Renewables.ninja (Pfenninger, Staffell) | National PV and wind capacity factors | [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) | Cite the two 2016 papers or link to www.renewables.ninja | Metrics only | Verified 2026-11-22, [about page](https://www.renewables.ninja/about) |
-| PECD 4.2 | C3S with ENTSO-E | Solar and wind capacity factors, reanalysis | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Copernicus line and citation, DOI 10.24381/cds.f323c5ec | Metrics only | Verified 2026-11-22, [CDS catalogue](https://cds.climate.copernicus.eu/datasets/sis-energy-pecd?tab=overview) |
+| PECD 4.2 | C3S with ENTSO-E | Solar and wind capacity factors, reanalysis | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `Copyright © <year> ECMWF/C3S/ENTSO-E`, disclaimer and catalogue citation, DOI 10.24381/cds.f323c5ec | Metrics only | Verified 2026-11-22, [CDS catalogue](https://cds.climate.copernicus.eu/datasets/sis-energy-pecd?tab=overview) |
 | C3S energy indicators | C3S | Climate and energy indicators for Europe derived from reanalysis | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Copernicus line and citation, DOI 10.24381/cds.4bd77450 | Metrics only | Verified 2026-11-22, [CDS catalogue](https://cds.climate.copernicus.eu/datasets/sis-energy-derived-reanalysis?tab=overview) |
 | SARAH-3 | EUMETSAT CM SAF | Surface irradiance | CC BY 4.0 by EUMETSAT ([CM SAF rights page](https://wui.cmsaf.eu/safira/action/viewImpressum)) | `Copyright <year> EUMETSAT` and CM SAF acknowledgement | Metrics only | Verified 2026-11-22; two official texts differ (note 17) |
 | GWA bias factors | Karkossa et al. (Zenodo) | ERA5 bias-correction factors (GWA v2, SARAH-3) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Dataset citation, DOI 10.5281/zenodo.23686879 | Raw values | Verified 2026-11-22, [Zenodo record](https://zenodo.org/records/23686878) |
@@ -89,7 +89,9 @@ What the project may publish:
     not combine with the CC BY outputs of this project. Only comparison metrics are published.
 16. **PECD and C3S energy indicators.** The licence would allow raw values; they are used as
     baselines, so only metrics are published. The PECD catalogue entry contains v4.1 (deprecated)
-    and v4.2; only v4.2 is used.
+    and v4.2; only v4.2 is used. Its citation and attribution tab differs from the other C3S
+    entries: a copyright line for ECMWF, C3S and ENTSO-E and an ECMWF, C3S and ENTSO-E
+    disclaimer instead of the Copernicus line.
 17. **SARAH-3.** Two official texts differ: the CM SAF rights page states CC BY 4.0 by EUMETSAT,
     while the [CM SAF products licence on the Copernicus catalogues](https://ewds.climate.copernicus.eu/licences/eumetsat-cm-saf)
     grants free use with the line `copyright (<year>) EUMETSAT` and a CM SAF acknowledgement. Both
@@ -119,9 +121,12 @@ Source: Eurostat, <dataset DOI or link>, <access date>; data modified.
 Service des données et études statistiques (SDES), <publication>, last updated <date>.
 Enedis open data, <dataset>, Licence Ouverte 2.0, last updated <date>.
 Contains modified Copernicus Climate Change Service information <year>. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.
-Copernicus Climate Change Service, Climate Data Store (2023): ERA5 hourly data on single levels from 1940 to present. DOI: 10.24381/cds.adbb2d47 (accessed <date>).
-Icechunk ERA5 was accessed on <date> from https://registry.opendata.aws/earthmover-era5.
+Copernicus Climate Change Service (2023): ERA5 hourly data on single levels from 1940 to present. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.adbb2d47 (Accessed on <date>).
+ERA5 accessed through Icechunk ERA5 (Earthmover), https://registry.opendata.aws/earthmover-era5, CC BY 4.0, accessed <date>.
 Copyright <year> EUMETSAT. This work used data from EUMETSAT's Satellite Application Facility on Climate Monitoring (CM SAF), SARAH-3.
 ERA5 bias-correction factors: Karkossa, Grochowicz, Koivisto, Hahmann and Victoria (2026), Zenodo, doi:10.5281/zenodo.23686879, CC BY 4.0.
-Baselines: Renewables.ninja (Pfenninger and Staffell 2016; Staffell and Pfenninger 2016), CC BY-NC 4.0; PECD v4.2 and C3S energy indicators, Copernicus Climate Change Service, DOI: 10.24381/cds.f323c5ec and 10.24381/cds.4bd77450.
+Baselines: Renewables.ninja (Pfenninger and Staffell 2016; Staffell and Pfenninger 2016), CC BY-NC 4.0.
+Copernicus Climate Change Service (2024): Climate and energy related variables from the Pan-European Climate Database derived from reanalysis and climate projections. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.f323c5ec (Accessed on <date>). PECD v4.2, modified.
+Copyright © <year> ECMWF/C3S/ENTSO-E. ECMWF & C3S & ENTSO-E does not accept any liability whatsoever for any error or omission in the data, their availability, or for any loss or damage arising from their use.
+Copernicus Climate Change Service (2020): Climate and energy indicators for Europe from 1979 to present derived from reanalysis. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.4bd77450 (Accessed on <date>).
 ```
