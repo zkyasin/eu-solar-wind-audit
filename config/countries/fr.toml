@@ -1,0 +1,59 @@
+# Mainland France without Corsica, the perimeter of the national éCO2mix series.
+country = "FR"
+time_zone = "Europe/Paris"
+perimeter = "metropolitan_without_corsica"
+
+# The mainland departments span 5.13 W to 8.20 E and 42.33 N to 51.09 N (Natural Earth v5.1.2);
+# the box adds at least one 0.25 degree ERA5 cell on each side.
+[era5_box]
+west = -5.5
+south = 42.0
+east = 8.5
+north = 51.5
+
+# Capacities are AC. IEA PVPS, National Survey Report of PV Power Applications in France 2025,
+# table 3: AC is converted to DC with a ratio of 1.2.
+[solar]
+dc_ac_ratio = 1.2
+
+# Shares are the AC capacity in operation at the end of 2025 by size class (same report, table
+# 5): up to 36 kW, 36 to 500 kW, above 500 kW. Tilts are the PVGIS 5.3 optimal tilt in France,
+# 37 to 39 degrees at nine cities (re.jrc.ec.europa.eu/api/v5_3/PVcalc, read 2026-11-22), times
+# the ratio of actual to optimal tilt by plant size in Saint-Drenan et al. (2018, Adv. Sci. Res.
+# 15, 51-62, section 3.2): 0.9 to 1.3 below 10 kWp, 0.4 to 0.6 from 50 to 500 kWp, 0.7 for large
+# plants, ratios fitted on German plants. All face south, the mean azimuth the paper assumes.
+[[solar.systems]]
+tilt = 42.0
+azimuth = 180.0
+share = 0.1888
+
+[[solar.systems]]
+tilt = 19.0
+azimuth = 180.0
+share = 0.3686
+
+[[solar.systems]]
+tilt = 27.0
+azimuth = 180.0
+share = 0.4426
+
+# Hub heights are the means of RTE (2024, "Évolution du facteur de charge éolien", figure 3, read
+# from the bars) over the installation years of each window, weighted by the mainland capacity
+# added each year (SDES). Turbines are the curves of wind.turbines() closest in specific power.
+# A 2011 turbine has an 80 to 82 m rotor and 1.5 to 3 MW (France Renouvelables, Observatoire de
+# l'éolien 2024, page 76): V82, 312 W m-2. The ten models most installed in 2023 (same report,
+# page 78) average 238 to 294 W m-2 weighted by capacity, over their power ranges: IEA 3.4 MW,
+# 254 W m-2. No source gives the 2013-2020 models; the same curve is a default.
+[[wind_onshore.generations]]
+turbine = "VestasV82_1.65MW_82"
+hub_height_m = 79.0
+last_commissioning_year = 2012
+
+[[wind_onshore.generations]]
+turbine = "IEA_Reference_3.4MW_130"
+hub_height_m = 90.0
+last_commissioning_year = 2020
+
+[[wind_onshore.generations]]
+turbine = "IEA_Reference_3.4MW_130"
+hub_height_m = 99.0
