@@ -110,11 +110,11 @@ What the project may publish:
     the licence for each export (the Impressum states it only for the .xls and .csv files and the
     web service), and neither page gives a wording for the provider name, so the line names the
     Bundesnetzagentur and the register. The dataset URI is the download page, since the export
-    file gets a new name each day. The site terms (Impressum) add that retrieval must not impair the use of
-    the site by other visitors, and the export documentation states that the daily file name is
-    meant to prevent automated retrieval: the export is downloaded at most once per vintage and
-    cached. District capacities are aggregates computed from the unit data, so they are marked as
-    changed data.
+    file gets a new name each day. The site terms (Impressum) add that retrieval must not impair
+    the use of the site by other visitors, and the export documentation states that the daily file
+    name is meant to prevent automated retrieval: the export is downloaded at most once per vintage
+    and cached. District capacities are aggregates computed from the unit data, so they are marked
+    as changed data.
 20. **NREL turbine-models.** The BSD 3-Clause licence (Copyright (c) 2020, Alliance for Sustainable
     Energy, LLC) covers the whole repository, data folders included. The speed and power columns
     of five tables were copied unchanged from commit `e9e4ccc` (2026-04-03); the licence text ships
