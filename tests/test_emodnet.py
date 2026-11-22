@@ -1,5 +1,4 @@
 import json
-from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -13,12 +12,10 @@ from shapely.geometry import Polygon, mapping
 from eu_solar_wind_audit.sources import emodnet
 
 # Fixture: windfarmspoly features 122, 154, 161, 177, 188, 189, 192, 540 and 580, cut from the
-# response of emodnet.download_layer(["BE", "DE", "DK", "FR", "NL"]) retrieved 2026-11-22; features
-# kept verbatim, the three feature counts set to 9.
+# GetFeature response of https://ows.emodnet-humanactivities.eu/wfs for the five countries (query
+# of emodnet.download_layer), retrieved 2026-11-22; features kept verbatim, the counts set to 9.
 FIXTURE = Path(__file__).parent / "fixtures" / "emodnet" / "windfarmspoly_BE-DE_2026-11-22.geojson"
 ALL_STATUSES = tuple(emodnet.STATUSES.values())
-
-Handler = Callable[[httpx.Request], httpx.Response]
 
 
 @pytest.fixture
