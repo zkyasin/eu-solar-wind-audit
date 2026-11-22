@@ -243,10 +243,16 @@ def test_specific_power_is_rated_power_over_swept_area() -> None:
 @pytest.mark.parametrize("turbine", list(wind.turbines().index))
 def test_curve_speeds_increase_and_output_peaks_at_rated_power(turbine: str) -> None:
     curve = curves().query("turbine == @turbine")
-    rated_kw = wind.turbines().loc[turbine, "rated_power_kw"]
+    rated_kw = float(wind.turbines()["rated_power_kw"][turbine])
 
     assert (np.diff(curve["wind_speed_m_s"]) > 0).all()
     assert curve["power_kw"].max() == pytest.approx(rated_kw, rel=1e-3)
+    # A table cut before its cut-out speed would stop the fleet early: power_curve gives 0 beyond
+    # the last speed.
+    at_rated = curve["power_kw"] >= 0.99 * rated_kw
+    held = curve["wind_speed_m_s"].between(curve.loc[at_rated, "wind_speed_m_s"].min(), 20.0)
+    assert curve["wind_speed_m_s"].max() >= 20.0
+    assert at_rated[held].all()
 
 
 @pytest.mark.parametrize(
