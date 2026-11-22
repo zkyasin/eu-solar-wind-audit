@@ -29,6 +29,7 @@ def check(
     *,
     step: str = "15min",
     label: grid.Label = "start",
+    local_days: str | None = None,
 ) -> pd.DataFrame:
     if isinstance(published, pd.Series):
         published = {"test.DE.solar": published}
@@ -40,6 +41,7 @@ def check(
         label=label,
         dataset=DATASET,
         provenance=PROVENANCE,
+        local_days=local_days,
     )
 
 
@@ -172,3 +174,76 @@ def test_the_step_must_divide_an_hour() -> None:
 def test_the_period_must_be_hour_starts_in_utc() -> None:
     with pytest.raises(ValueError, match="hour in UTC"):
         check(rows(), "2022-06-01 00:30")
+
+
+# Half-hour means stamped at the end of their period over spring to autumn 2022, as éCO2mix
+# publishes them: the stamps of the hour after the spring clock change come twice, and those of
+# the hour before the autumn change are missing.
+SPRING_REPEATED = [utc("2022-03-27 01:00"), utc("2022-03-27 01:30")]
+AUTUMN_MISSING = [utc("2022-10-30 00:00"), utc("2022-10-30 00:30")]
+SEASON_START, SEASON_END = "2022-03-26 00:00", "2022-11-01 00:00"
+
+
+def local_day_rows() -> pd.Series:
+    published = rows("2022-03-26 00:30", SEASON_END, step="30min")
+    with_repeats: pd.Series = pd.concat([published, published.loc[SPRING_REPEATED] + 1.0])
+    return with_repeats.drop(AUTUMN_MISSING)
+
+
+def check_season(
+    published: pd.Series | dict[str, pd.Series], local_days: str | None = None
+) -> pd.DataFrame:
+    return check(
+        published, SEASON_START, SEASON_END, step="30min", label="end", local_days=local_days
+    )
+
+
+def test_clock_change_rows_of_all_the_series_give_one_finding_for_the_dataset() -> None:
+    published = {"test.FR.solar": local_day_rows(), "test.FR.wind": local_day_rows()}
+
+    found = check_season(published, local_days="Europe/Paris")
+
+    # The repeated half-hours end at 01:00 and 01:30, the missing ones at 00:00 and 00:30.
+    assert spans(found) == [
+        ("clock_change_convention", utc("2022-03-27 00:00"), utc("2022-10-30 01:00"), 2.0)
+    ]
+    assert found["series"].tolist() == [DATASET]
+    assert evidence(found) == [
+        {
+            "time_zone": "Europe/Paris",
+            "repeated_stamps": ["2022-03-27T01:00:00+00:00/2022-03-27T02:00:00+00:00"],
+            "missing_stamps": ["2022-10-30T00:00:00+00:00/2022-10-30T01:00:00+00:00"],
+            "series_count": 2,
+        }
+    ]
+
+
+def test_without_local_days_clock_change_rows_are_gaps_and_duplicates() -> None:
+    found = check_season(local_day_rows())
+
+    assert spans(found) == [
+        ("gap", utc("2022-10-29 23:00"), utc("2022-10-30 01:00"), 2.0),
+        ("duplicate", utc("2022-03-27 00:00"), utc("2022-03-27 02:00"), 2.0),
+    ]
+
+
+def test_clock_change_rows_beyond_the_convention_are_still_reported() -> None:
+    published = local_day_rows()
+    third_row = published[[utc("2022-03-27 01:00")]].iloc[:1]
+    empty_row = pd.Series([np.nan], index=[utc("2022-10-30 00:30")])
+
+    found = check_season(pd.concat([published, third_row, empty_row]), local_days="Europe/Paris")
+
+    assert spans(found) == [
+        ("gap", utc("2022-10-30 00:00"), utc("2022-10-30 01:00"), 1.0),
+        ("duplicate", utc("2022-03-27 00:00"), utc("2022-03-27 01:00"), 1.0),
+        # Only the half-hour ending 01:30 and the one ending 00:00 follow the convention.
+        ("clock_change_convention", utc("2022-03-27 01:00"), utc("2022-10-30 00:00"), 2.0),
+    ]
+    assert evidence(found)[1]["rows"] == 3
+
+
+def test_rows_stamped_in_utc_across_clock_changes_give_no_finding() -> None:
+    published = rows("2022-03-26 00:30", SEASON_END, step="30min")
+
+    assert check_season(published, local_days="Europe/Paris").empty
