@@ -12,9 +12,6 @@ from eu_solar_wind_audit.sources import odre
 pytestmark = pytest.mark.skipif(os.environ.get("RUN_NETWORK_TESTS") != "1", reason="network")
 
 FRANCE = Path(__file__).parents[1] / "config" / "countries" / "fr.toml"
-# Published national wind includes offshore farms (about 1.5 GW in 2025), so the onshore model
-# is compared with a total that is a few percent larger.
-COLUMNS = {"solar": "solar_mw", "wind_onshore": "wind_mw"}
 
 
 @pytest.fixture(scope="module")
@@ -32,8 +29,13 @@ def test_three_days_are_close_to_the_published_national_output(
 
     modelled = physics.model_france(technology, start, end, load_country(FRANCE), era5_cache)
     with odre.make_client() as client:
-        published = odre.fetch_national_consolidated(client, first, last)
-    hourly = grid.hourly_from_period_end_means(published[COLUMNS[technology]])["energy_mwh"]
+        if technology == "solar":
+            published = odre.fetch_national_consolidated(client, first, last)["solar_mw"]
+        else:
+            # National wind includes offshore farms; the 12 mainland regions split it.
+            regional = odre.fetch_regional_consolidated(client, first, last)
+            published = regional.groupby(level="time")["wind_onshore_mw"].sum(min_count=12)
+    hourly = grid.hourly_from_period_end_means(published)["energy_mwh"]
     both = pd.DataFrame({"model": modelled["energy_mwh"], "published": hourly}).loc[modelled.index]
 
     assert both.notna().all().all()
