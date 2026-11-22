@@ -1,5 +1,6 @@
 import hashlib
 import json
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -50,19 +51,44 @@ def test_utc_days_rejects_an_end_before_the_start() -> None:
         odre.utc_days(date(2025, 3, 30), date(2025, 3, 29))
 
 
-def test_national_consolidated_requests_the_days_and_fields(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("fetch", "fixture", "dataset", "fields"),
+    [
+        (
+            odre.fetch_national_consolidated,
+            NATIONAL_CONSOLIDATED,
+            "eco2mix-national-cons-def",
+            "date_heure,nature,consommation,solaire,eolien",
+        ),
+        (
+            odre.fetch_national_realtime,
+            NATIONAL_REALTIME,
+            "eco2mix-national-tr",
+            "date_heure,nature,consommation,solaire,eolien,eolien_terrestre,eolien_offshore",
+        ),
+        (
+            odre.fetch_regional_consolidated,
+            REGIONAL_CONSOLIDATED,
+            "eco2mix-regional-cons-def",
+            "date_heure,code_insee_region,libelle_region,nature,consommation,solaire,eolien,"
+            "eolien_terrestre,eolien_offshore",
+        ),
+    ],
+)
+def test_fetch_requests_the_dataset_days_and_fields(
+    fetch: Callable[..., pd.DataFrame], fixture: Path, dataset: str, fields: str, tmp_path: Path
+) -> None:
     requests: list[httpx.Request] = []
-    with serving(NATIONAL_CONSOLIDATED.read_bytes(), requests) as client:
-        odre.fetch_national_consolidated(
-            client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=tmp_path
-        )
+    with serving(fixture.read_bytes(), requests) as client:
+        fetch(client, date(2025, 3, 30), date(2025, 3, 31), cache_dir=tmp_path)
 
     (request,) = requests
-    assert request.url.path == (
-        "/api/explore/v2.1/catalog/datasets/eco2mix-national-cons-def/exports/parquet"
+    assert request.url.path == f"/api/explore/v2.1/catalog/datasets/{dataset}/exports/parquet"
+    assert request.url.params["select"] == fields
+    assert request.url.params["where"] == (
+        "date_heure >= date'2025-03-30T00:00:00+00:00'"
+        " AND date_heure <= date'2025-04-01T00:00:00+00:00'"
     )
-    assert request.url.params["select"] == "date_heure,nature,consommation,solaire,eolien"
-    assert request.url.params["where"] == odre.utc_days(date(2025, 3, 30), date(2025, 3, 30))
 
 
 def test_national_consolidated_keeps_published_values_on_a_spring_clock_change(
@@ -81,7 +107,7 @@ def test_national_consolidated_keeps_published_values_on_a_spring_clock_change(
     assert len(frame) == 101
     duplicated = frame.index[frame.index.duplicated()]
     assert list(duplicated) == [utc(f"2025-03-30 01:{m}") for m in ("00", "15", "30", "45")]
-    # Published order is kept: the local 02:30 row comes before the local 03:30 row.
+    # The source gives no local label for these rows; they keep the export order.
     assert values_at(frame, "2025-03-30 01:30", "wind_mw") == [7192.0, 7435.0]
     production = ("load_mw", "solar_mw", "wind_mw")
     assert values_at(frame, "2025-03-30 00:00", *production) == [49203.0, 0.0, 7036.0]
