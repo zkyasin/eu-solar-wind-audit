@@ -47,7 +47,7 @@ the countries without a reference: Belgium, Spain, Portugal, Italy, Austria and 
 |---|---|---|
 | Negative (N) | Mean of the quarter-hour day-ahead prices < 0 €/MWh | Treated hours; total comparable with RTE |
 | Near zero | Mean in [−0.01, 0) €/MWh (counted in N) or in [0, 5) €/MWh (not counted in N) | Reported separately |
-| Reference (P) | Mean ≥ 5 €/MWh, no negative quarter-hour, more than one hour from an N hour | Calibration |
+| Reference (P) | Mean ≥ 5 €/MWh, no negative quarter-hour, more than one hour from an N hour or a missing hour | Calibration |
 | Missing | No price | Excluded |
 
 ## Two model objects
