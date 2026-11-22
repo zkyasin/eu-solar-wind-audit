@@ -6,9 +6,12 @@ held-out years with their published energy, AC capacity, the energy each model g
 that metrics are given for.
 """
 
+from typing import ClassVar
+
+import numpy as np
 import pandas as pd
 import pandera.pandas as pa
-from pandera.typing import Index, Series
+from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import grid
 
@@ -18,6 +21,7 @@ SEASON_OF_MONTH = {month: season for season, months in SEASONS.items() for month
 SKY_CLASSES = ["clear", "mixed", "overcast"]
 # Every energy column other than the published one holds the prediction of a model.
 MODEL_COLUMNS = r"^(?!published_mwh$).+_mwh$"
+METRICS = ["correlation", "rmse_cf", "bias"]
 
 
 class Predictions(pa.DataFrameModel):
@@ -83,3 +87,55 @@ def climatology(hours: pd.DataFrame, held_out_year: int) -> pd.Series:
     cells = pd.MultiIndex.from_arrays([time.month[held_out], time.hour[held_out]])
     energy = mean_factor.reindex(cells).to_numpy() * hours["capacity_mw"].to_numpy()[held_out]
     return pd.Series(energy, index=time[held_out], name="climatology_mwh")
+
+
+class Metrics(pa.DataFrameModel):
+    """Value of a metric for one model over the eligible hours of a held-out year, all of them
+    (group "all") or those of one group; `hours` counts them."""
+
+    technology: Series[str]
+    held_out_year: Series[int]
+    model: Series[str]
+    metric: Series[str] = pa.Field(isin=METRICS)
+    group: Series[str] = pa.Field(isin=["all"])
+    # NaN where undefined, such as a correlation with a constant series.
+    value: Series[float] = pa.Field(nullable=True)
+    hours: Series[int] = pa.Field(gt=0)
+
+    class Config:
+        strict = True
+        unique: ClassVar[list[str]] = ["technology", "held_out_year", "model", "metric", "group"]
+
+
+def metrics(predictions: pd.DataFrame, technology: str) -> DataFrame[Metrics]:
+    """Metrics of each model over the eligible hours of each held-out year of `predictions`, a
+    `Predictions` frame. A capacity factor is an energy over the AC capacity of its hour.
+
+    - correlation: Pearson correlation of the hourly capacity factors of the model and the
+      published series;
+    - rmse_cf: root mean square of the hourly capacity factor error;
+    - bias: energy of the model over the published energy, minus 1.
+    """
+    Predictions.validate(predictions)
+    eligible = predictions[predictions["eligible"]]
+    if eligible.empty:
+        raise ValueError("no eligible hours to evaluate")
+    rows = []
+    for year, fold in eligible.groupby("held_out_year"):
+        hours = len(fold)
+        published_cf = fold["published_mwh"] / fold["capacity_mw"]
+        for column in fold.filter(regex=MODEL_COLUMNS).columns:
+            model = column.removesuffix("_mwh")
+            modelled_cf = fold[column] / fold["capacity_mw"]
+            error_cf = modelled_cf - published_cf
+            ratio = fold[column].sum() / fold["published_mwh"].sum()
+            rows += [
+                (year, model, "correlation", "all", modelled_cf.corr(published_cf), hours),
+                (year, model, "rmse_cf", "all", np.sqrt((error_cf**2).mean()), hours),
+                (year, model, "bias", "all", ratio - 1, hours),
+            ]
+    table = pd.DataFrame(
+        rows, columns=["held_out_year", "model", "metric", "group", "value", "hours"]
+    )
+    table.insert(0, "technology", technology)
+    return Metrics.validate(table)
