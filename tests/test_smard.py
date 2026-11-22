@@ -296,3 +296,160 @@ def test_persistent_server_errors_raise(tmp_path: Path) -> None:
         )
 
     assert len(requests) == len(smard.RETRY_DELAYS_SECONDS) + 1
+
+
+# Fixtures: https://www.smard.de/app/chart_data/4068/DE/index_quarterhour.json and
+# .../4068/DE/4068_DE_quarterhour_<ms>.json for the weeks of the 2025 clock changes (German solar
+# feed-in), retrieved 2026-11-22.
+SPRING_WEEK_MS = 1742770800000
+AUTUMN_WEEK_MS = 1760911200000
+
+
+def solar_files(region: str = "DE", filter_id: int = smard.SOLAR) -> dict[str, bytes]:
+    files = {"index_quarterhour.json": (FIXTURES / "4068_DE_index_quarterhour.json").read_bytes()}
+    for week_ms in (SPRING_WEEK_MS, AUTUMN_WEEK_MS):
+        content = (FIXTURES / f"4068_DE_quarterhour_{week_ms}.json").read_bytes()
+        files[f"{filter_id}_{region}_quarterhour_{week_ms}.json"] = content
+    return files
+
+
+def published_quarter_hours(week_ms: int) -> pd.Series:
+    rows = json.loads((FIXTURES / f"4068_DE_quarterhour_{week_ms}.json").read_bytes())["series"]
+    index = pd.to_datetime([ms for ms, _ in rows], unit="ms", utc=True)
+    return pd.Series([value for _, value in rows], index=index, dtype=float)
+
+
+@pytest.mark.parametrize(
+    ("week_ms", "local_day", "hours"),
+    [(SPRING_WEEK_MS, "2025-03-30", 23), (AUTUMN_WEEK_MS, "2025-10-26", 25)],
+)
+def test_clock_change_days_have_all_their_utc_hours(
+    week_ms: int, local_day: str, hours: int, tmp_path: Path
+) -> None:
+    day = pd.Timestamp(local_day, tz="Europe/Berlin")
+    start, end = day.tz_convert("UTC"), (day + pd.DateOffset(days=1)).tz_convert("UTC")
+    with serve(solar_files(), []) as client:
+        solar = smard.fetch_hourly_feed_in(
+            "DE", "solar", start, end, client=client, cache_dir=tmp_path
+        )
+
+    assert len(solar) == hours
+    assert solar["complete"].all()
+    published = published_quarter_hours(week_ms)
+    in_day = published[(published.index >= start) & (published.index < end)]
+    assert len(in_day) == 4 * hours
+    assert solar["energy_mwh"].sum() == pytest.approx(in_day.sum())
+
+
+def test_an_hour_sums_the_four_quarter_hours_that_start_in_it(tmp_path: Path) -> None:
+    hour = pd.Timestamp("2025-03-30 11:00", tz="UTC")
+    with serve(solar_files(), []) as client:
+        solar = smard.fetch_hourly_feed_in(
+            "DE", "solar", hour, hour + pd.Timedelta(hours=1), client=client, cache_dir=tmp_path
+        )
+
+    quarters = published_quarter_hours(SPRING_WEEK_MS)
+    expected = quarters[hour : hour + pd.Timedelta(minutes=45)]
+    assert len(expected) == 4
+    assert solar["energy_mwh"].item() == pytest.approx(expected.sum())
+
+
+def test_feed_in_is_read_from_the_region_and_technology_files(tmp_path: Path) -> None:
+    requests: list[str] = []
+    files = solar_files("TenneT", smard.WIND_ONSHORE)
+    start = pd.Timestamp("2025-03-25", tz="UTC")
+    with serve(files, requests) as client:
+        wind = smard.fetch_hourly_feed_in(
+            "TenneT",
+            "wind_onshore",
+            start,
+            start + pd.Timedelta(hours=2),
+            client=client,
+            cache_dir=tmp_path,
+        )
+
+    assert requests == [
+        "/app/chart_data/4067/TenneT/index_quarterhour.json",
+        f"/app/chart_data/4067/TenneT/4067_TenneT_quarterhour_{SPRING_WEEK_MS}.json",
+    ]
+    assert wind["complete"].tolist() == [True, True]
+
+
+def test_a_missing_quarter_hour_leaves_its_hour_incomplete(tmp_path: Path) -> None:
+    files = solar_files()
+    rows = json.loads(files[f"4068_DE_quarterhour_{SPRING_WEEK_MS}.json"])
+    rows["series"][1][1] = None
+    files[f"4068_DE_quarterhour_{SPRING_WEEK_MS}.json"] = json.dumps(rows).encode()
+    start = pd.Timestamp(SPRING_WEEK_MS, unit="ms", tz="UTC")
+
+    with serve(files, []) as client:
+        solar = smard.fetch_hourly_feed_in(
+            "DE", "solar", start, start + pd.Timedelta(hours=2), client=client, cache_dir=tmp_path
+        )
+
+    assert solar["complete"].tolist() == [False, True]
+    assert solar["energy_mwh"].isna().tolist() == [True, False]
+
+
+def test_hours_before_the_first_published_week_are_incomplete(tmp_path: Path) -> None:
+    start = pd.Timestamp("2014-12-01", tz="UTC")
+    with serve(solar_files(), []) as client:
+        solar = smard.fetch_hourly_feed_in(
+            "DE", "solar", start, start + pd.Timedelta(hours=2), client=client, cache_dir=tmp_path
+        )
+
+    assert solar["complete"].tolist() == [False, False]
+
+
+@pytest.mark.parametrize("region", ["DE", "50Hertz", "TenneT"])
+def test_offshore_wind_is_read_where_it_is_published(region: smard.Region, tmp_path: Path) -> None:
+    start = pd.Timestamp("2025-03-25", tz="UTC")
+    with serve(solar_files(region, smard.WIND_OFFSHORE), []) as client:
+        offshore = smard.fetch_hourly_feed_in(
+            region,
+            "wind_offshore",
+            start,
+            start + pd.Timedelta(hours=1),
+            client=client,
+            cache_dir=tmp_path,
+        )
+
+    assert offshore["complete"].tolist() == [True]
+
+
+@pytest.mark.parametrize("region", ["Amprion", "TransnetBW"])
+def test_offshore_wind_is_refused_where_it_is_not_published(
+    region: smard.Region, tmp_path: Path
+) -> None:
+    requests: list[str] = []
+    with serve({}, requests) as client, pytest.raises(ValueError, match=region):
+        smard.fetch_hourly_feed_in(
+            region,
+            "wind_offshore",
+            WEEK_START,
+            WEEK_START + pd.Timedelta(hours=1),
+            client=client,
+            cache_dir=tmp_path,
+        )
+
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "error"),
+    [
+        (WEEK_START, WEEK_START, "empty period"),
+        (WEEK_START.tz_localize(None), WEEK_START + pd.Timedelta(hours=1), "hour in UTC"),
+        (WEEK_START.tz_convert("Europe/Berlin"), WEEK_START + pd.Timedelta(hours=1), "hour in UTC"),
+        (WEEK_START + pd.Timedelta(minutes=15), WEEK_START + pd.Timedelta(hours=1), "hour in UTC"),
+    ],
+    ids=["empty", "naive", "not-in-utc", "off-hour"],
+)
+def test_a_wrong_period_is_refused_before_any_download(
+    start: pd.Timestamp, end: pd.Timestamp, error: str, tmp_path: Path
+) -> None:
+    requests: list[str] = []
+    with serve({}, requests) as client, pytest.raises(ValueError, match=error):
+        smard.fetch_hourly_feed_in("DE", "solar", start, end, client=client, cache_dir=tmp_path)
+
+    assert requests == []

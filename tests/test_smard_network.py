@@ -52,3 +52,27 @@ def test_offshore_wind_is_published_for_50hertz(tmp_path: Path) -> None:
     assert len(offshore) == 24
     assert offshore.notna().all()
     assert (offshore >= 0).all()
+
+
+# Installed capacity at the end of 2025 from Energy-Charts (tests/fixtures/energy_charts), in MW:
+# no hour of a 2025 week can exceed it.
+CAPACITY_2025_MW = {"solar": 107_856, "wind_onshore": 68_178, "wind_offshore": 9_733}
+
+
+@pytest.mark.parametrize(
+    ("region", "technology"),
+    [("DE", "solar"), ("TenneT", "wind_onshore"), ("50Hertz", "wind_offshore")],
+)
+def test_a_june_week_of_feed_in_is_complete_and_below_capacity(
+    region: smard.Region, technology: smard.Technology, tmp_path: Path
+) -> None:
+    start = pd.Timestamp("2025-06-16", tz="UTC")
+
+    feed_in = smard.fetch_hourly_feed_in(
+        region, technology, start, start + pd.Timedelta(days=7), cache_dir=tmp_path
+    )
+
+    assert len(feed_in) == 168
+    assert feed_in["complete"].all()
+    assert feed_in["energy_mwh"].between(0, CAPACITY_2025_MW[technology]).all()
+    assert feed_in["energy_mwh"].max() > 0

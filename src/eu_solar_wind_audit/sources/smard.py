@@ -13,6 +13,9 @@ from typing import Literal
 
 import httpx
 import pandas as pd
+from pandera.typing import DataFrame
+
+from eu_solar_wind_audit import grid
 
 BASE_URL = "https://www.smard.de/app/chart_data"
 CACHE_DIR = Path("data/raw/smard")
@@ -27,6 +30,15 @@ SOLAR = 4068
 WIND_ONSHORE = 4067
 WIND_OFFSHORE = 1225
 LOAD = 410
+
+Technology = Literal["solar", "wind_onshore", "wind_offshore"]
+FEED_IN: dict[Technology, int] = {
+    "solar": SOLAR,
+    "wind_onshore": WIND_ONSHORE,
+    "wind_offshore": WIND_OFFSHORE,
+}
+Region = Literal["DE", "50Hertz", "Amprion", "TenneT", "TransnetBW"]
+OFFSHORE_REGIONS: tuple[Region, ...] = ("DE", "50Hertz", "TenneT")
 
 # Day-ahead price filter and region by bidding zone. Foreign zones are served under region DE.
 PRICES = {
@@ -85,6 +97,29 @@ def fetch_series(
     index = pd.to_datetime([ms for ms, _ in rows], unit="ms", utc=True)
     series = pd.Series([value for _, value in rows], index=index, dtype=float).sort_index()
     return series[(series.index >= start) & (series.index < end)]
+
+
+def fetch_hourly_feed_in(
+    region: Region,
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    client: httpx.Client | None = None,
+    cache_dir: Path = CACHE_DIR,
+) -> DataFrame[grid.Hourly]:
+    """Feed-in to the public grid on the UTC hours of [start, end).
+
+    Generation is published as quarter-hour energy from 2015-01-01 on.
+    """
+    grid.check_period(start, end)
+    if technology == "wind_offshore" and region not in OFFSHORE_REGIONS:
+        raise ValueError(f"no offshore wind is published for {region}")
+    energy = fetch_series(
+        FEED_IN[technology], region, "quarterhour", start, end, client=client, cache_dir=cache_dir
+    )
+    hourly = grid.hourly_from_period_start_energy(energy)
+    return grid.Hourly.validate(grid.on_hours(hourly, start, end))
 
 
 def _weekly_rows(
