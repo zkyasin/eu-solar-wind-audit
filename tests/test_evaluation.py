@@ -111,7 +111,13 @@ def test_hours_that_are_not_eligible_may_lack_values() -> None:
             "on_the_hour",
             id="off-hour",
         ),
+        pytest.param(
+            pd.concat([valid_predictions().iloc[[0]], valid_predictions()]),
+            "duplicate",
+            id="duplicate-hour",
+        ),
         pytest.param(valid_predictions().tz_localize(None), r"datetime64\[ns\]", id="naive"),
+        pytest.param(valid_predictions().rename_axis(index=None), "name 'time'", id="unnamed"),
     ],
 )
 def test_predictions_reject(frame: pd.DataFrame, error: str) -> None:
