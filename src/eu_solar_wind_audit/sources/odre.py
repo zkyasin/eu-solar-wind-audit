@@ -8,6 +8,7 @@ source repeats UTC stamps; on autumn days it has no rows for the repeated local 
 
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -101,6 +102,13 @@ class RegionalConsolidated(pa.DataFrameModel):
         strict = True
 
 
+@dataclass(frozen=True)
+class Snapshot:
+    path: Path
+    retrieved_at: datetime
+    sha256: str
+
+
 def make_client() -> httpx.Client:
     # Transport retries cover failed connections only; HTTP error statuses are raised.
     return httpx.Client(
@@ -185,6 +193,25 @@ def fetch_regional_consolidated(
         cache_dir=cache_dir,
     )
     return RegionalConsolidated.validate(_tidy(path, REGIONAL_CONSOLIDATED_FIELDS))
+
+
+def snapshot_realtime(client: httpx.Client, directory: Path) -> Snapshot:
+    """Save the full current real-time export, with a JSON file holding its retrieval time and
+    SHA-256 checksum."""
+    retrieved_at = datetime.now(UTC).replace(microsecond=0)
+    path = directory / f"{NATIONAL_REALTIME}_{retrieved_at:%Y%m%dT%H%M%SZ}.parquet"
+    url = export_url(NATIONAL_REALTIME, "parquet")
+    _stream_to(client, url, {}, path)
+    with path.open("rb") as file:
+        sha256 = hashlib.file_digest(file, "sha256").hexdigest()
+    metadata = {
+        "dataset": NATIONAL_REALTIME,
+        "url": url,
+        "retrieved_at": retrieved_at.isoformat(),
+        "sha256": sha256,
+    }
+    path.with_suffix(".json").write_text(json.dumps(metadata, indent=2) + "\n")
+    return Snapshot(path, retrieved_at, sha256)
 
 
 def _stream_to(client: httpx.Client, url: str, params: dict[str, str], dest: Path) -> None:

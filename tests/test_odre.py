@@ -1,4 +1,6 @@
-from datetime import date
+import hashlib
+import json
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import httpx
@@ -234,3 +236,26 @@ def test_failed_download_leaves_no_file(tmp_path: Path) -> None:
         odre.download_export(client, "eco2mix-national-tr", cache_dir=tmp_path)
 
     assert list((tmp_path / "eco2mix-national-tr").iterdir()) == []
+
+
+def test_snapshot_realtime_saves_the_full_export_and_its_checksum(tmp_path: Path) -> None:
+    content = NATIONAL_REALTIME.read_bytes()
+    requests: list[httpx.Request] = []
+    before = datetime.now(UTC).replace(microsecond=0)
+    with serving(content, requests) as client:
+        snapshot = odre.snapshot_realtime(client, tmp_path / "vintages")
+    after = datetime.now(UTC)
+
+    (request,) = requests
+    assert request.url.path.endswith("/eco2mix-national-tr/exports/parquet")
+    assert not request.url.params
+    assert snapshot.path.read_bytes() == content
+    assert snapshot.sha256 == hashlib.sha256(content).hexdigest()
+    assert before <= snapshot.retrieved_at <= after
+    assert snapshot.path.name == (
+        f"eco2mix-national-tr_{snapshot.retrieved_at:%Y%m%dT%H%M%SZ}.parquet"
+    )
+    metadata = json.loads(snapshot.path.with_suffix(".json").read_text())
+    assert metadata["sha256"] == snapshot.sha256
+    assert datetime.fromisoformat(metadata["retrieved_at"]) == snapshot.retrieved_at
+    assert metadata["dataset"] == "eco2mix-national-tr"
