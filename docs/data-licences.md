@@ -38,7 +38,7 @@ What the project may publish:
 | C3S energy indicators | C3S | Global climate and energy indicators derived from reanalysis (successor of the Europe dataset, which stopped updating on 2026-07-01) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Copernicus line and citation, DOI 10.24381/3bb607bd | Metrics only | Verified 2026-11-21, [CDS catalogue](https://cds.climate.copernicus.eu/datasets/sis-energy-global-reanalysis?tab=overview) |
 | SARAH-3 | EUMETSAT CM SAF | Surface irradiance | CC BY 4.0 by EUMETSAT ([CM SAF rights page](https://wui.cmsaf.eu/safira/action/viewImpressum)) | `Copyright <year> EUMETSAT` and CM SAF acknowledgement | Metrics only | Verified 2026-11-22; two official texts differ (note 17) |
 | GWA bias factors | Karkossa et al. (Zenodo) | ERA5 bias-correction factors (GWA v2, SARAH-3) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Dataset citation, DOI 10.5281/zenodo.23686879 | Raw values | Verified 2026-11-22, [Zenodo record](https://zenodo.org/records/23686878) |
-| MaStR | Bundesnetzagentur | Unit register (via open-mastr) | [dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0) | Provider name, licence notice, dataset URI; mark changed data | Raw values | Verified 2026-11-22, [Datendownload](https://www.marktstammdatenregister.de/MaStR/Datendownload) |
+| MaStR | Bundesnetzagentur | Unit register, quarterly public export of 2026-10-01 (solar and wind unit tables) | [dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0) | `Bundesnetzagentur, Marktstammdatenregister`, licence notice with link, dataset URI; mark changed data | Raw values | Verified 2026-11-22, [Datendownload](https://www.marktstammdatenregister.de/MaStR/Datendownload) and [Impressum](https://www.marktstammdatenregister.de/MaStR/Startseite/Impressum) |
 | NREL turbine-models | NREL, Alliance for Sustainable Energy (repository now under NatLabRockies) | Power curves of five turbines, copied into `src/eu_solar_wind_audit/data/` | [BSD 3-Clause](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) | Copyright notice and licence text kept with the copied tables | Raw values | Verified 2026-11-22, [LICENSE.txt](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) |
 | Natural Earth | Natural Earth | Admin-1 states and provinces, 1:10m, release v5.1.2 | Public domain ([terms of use](https://www.naturalearthdata.com/about/terms-of-use/)) | None required; optional `Made with Natural Earth.` | Raw values | Verified 2026-11-22, [terms of use](https://www.naturalearthdata.com/about/terms-of-use/) |
 | BKG VG5000 | Bundesamt für Kartographie und Geodäsie (BKG) | Verwaltungsgebiete 1:5 000 000, state 2026-01-01: districts and Länder | [dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0) | `© BKG (<year>) dl-de/by-2-0 (Daten verändert), Datenquellen: https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf` | Raw values | Verified 2026-11-22, [product page](https://gdz.bkg.bund.de/index.php/default/verwaltungsgebiete-1-5-000-000-stand-01-01-vg5000-01-01.html), [source note guidance](https://gdz.bkg.bund.de/index.php/default/hinweise-zu-nutzungsbedingungen-und-quellenvermerken/) and `nutzungsbedingungen_vg5000.pdf` in the download |
@@ -106,7 +106,16 @@ What the project may publish:
     23686879 (published 2026-10-27). The factors are applied to ERA5, and only corrected model
     outputs are published.
 19. **MaStR.** dl-de/by-2-0 requires the provider name as the provider gives it, the licence notice
-    with its link, the dataset URI, and a note when the data were changed.
+    with its link, the dataset URI, and a note when the data were changed. The download page states
+    the licence for each export (the Impressum states it only for the .xls and .csv files and the
+    web service), and neither page gives a wording for the provider name, so the line names the
+    Bundesnetzagentur and the register. The export documentation (revision 26.1.2) states that the
+    daily export gets a new file name each day to prevent automated retrieval (section 2.3) and
+    keeps quarterly exports for analyses (section 3.3), so the project uses the quarterly export of
+    2026-10-01: its URL is the dataset URI, and it is downloaded once, checked against its SHA-256
+    and cached. The site terms (Impressum) add that retrieval must not impair the use of the site
+    by other visitors. District capacities are aggregates computed from the unit data, so they are
+    marked as changed data.
 20. **NREL turbine-models.** The BSD 3-Clause licence (Copyright (c) 2020, Alliance for Sustainable
     Energy, LLC) covers the whole repository, data folders included. The speed and power columns
     of five tables were copied unchanged from commit `e9e4ccc` (2026-04-03); the licence text ships
