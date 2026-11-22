@@ -39,6 +39,7 @@ What the project may publish:
 | SARAH-3 | EUMETSAT CM SAF | Surface irradiance | CC BY 4.0 by EUMETSAT ([CM SAF rights page](https://wui.cmsaf.eu/safira/action/viewImpressum)) | `Copyright <year> EUMETSAT` and CM SAF acknowledgement | Metrics only | Verified 2026-11-22; two official texts differ (note 17) |
 | GWA bias factors | Karkossa et al. (Zenodo) | ERA5 bias-correction factors (GWA v2, SARAH-3) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Dataset citation, DOI 10.5281/zenodo.23686879 | Raw values | Verified 2026-11-22, [Zenodo record](https://zenodo.org/records/23686878) |
 | MaStR | Bundesnetzagentur | Unit register (via open-mastr) | [dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0) | Provider name, licence notice, dataset URI; mark changed data | Raw values | Verified 2026-11-22, [Datendownload](https://www.marktstammdatenregister.de/MaStR/Datendownload) |
+| NREL turbine-models | NREL, Alliance for Sustainable Energy (repository now under NatLabRockies) | Power curves of five turbines, copied into `src/eu_solar_wind_audit/data/` | [BSD 3-Clause](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) | Copyright notice and licence text kept with the copied tables | Raw values | Verified 2026-11-22, [LICENSE.txt](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) |
 
 ## Notes
 
@@ -103,6 +104,13 @@ What the project may publish:
     outputs are published.
 19. **MaStR.** dl-de/by-2-0 requires the provider name as the provider gives it, the licence notice
     with its link, the dataset URI, and a note when the data were changed.
+20. **NREL turbine-models.** The BSD 3-Clause licence (Copyright (c) 2020, Alliance for Sustainable
+    Energy, LLC) covers the whole repository, data folders included. The speed and power columns
+    of five tables were copied unchanged from commit `e9e4ccc` (2026-04-03); the licence text ships
+    next to them as `turbine-models-LICENSE.txt`. Two other sources were rejected: the power curves
+    of the Virtual Wind Farm model are excluded from its BSD licence and "remain the property of the
+    respective copyright holders", and the OpenEnergy turbine library is under ODbL 1.0
+    (share-alike) with manufacturer sources that carry no licence.
 
 ## Attribution
 
@@ -126,6 +134,7 @@ Contains modified Copernicus Climate Change Service information <year>. Neither 
 Copernicus Climate Change Service (2023): ERA5 hourly data on single levels from 1940 to present. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.adbb2d47 (Accessed on <date>).
 ERA5 accessed through Icechunk ERA5 (Earthmover), https://registry.opendata.aws/earthmover-era5, CC BY 4.0, accessed <date>.
 Copyright <year> EUMETSAT. This work used data from EUMETSAT's Satellite Application Facility on Climate Monitoring (CM SAF), SARAH-3.
+Turbine power curves: NREL turbine-models, Copyright (c) 2020 Alliance for Sustainable Energy, LLC, BSD 3-Clause.
 ERA5 bias-correction factors: Karkossa, Grochowicz, Koivisto, Hahmann and Victoria (2026), Zenodo, doi:10.5281/zenodo.23686879, CC BY 4.0.
 Baselines: Renewables.ninja (Pfenninger and Staffell 2016; Staffell and Pfenninger 2016), CC BY-NC 4.0.
 Copernicus Climate Change Service (2024): Climate and energy related variables from the Pan-European Climate Database derived from reanalysis and climate projections. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.f323c5ec (Accessed on <date>). PECD v4.2, modified.
