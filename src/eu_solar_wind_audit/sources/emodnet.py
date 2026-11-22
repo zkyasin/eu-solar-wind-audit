@@ -8,10 +8,10 @@ coarse or wrong coordinates, or farms in the IJsselmeer that national statistics
 No field marks onshore farms, and the polygon layer holds none for these countries.
 
 A farm built in phases is either one record per phase, each with its own capacity and start year
-(Trianel Windpark Borkum Phase 1 and 2), or one record for the whole farm, whose start year is
-that of the first phase or missing. When a whole-farm record replaces the phase records, the older
+(Trianel Windpark Borkum Phase 1 and 2), or one record for the whole farm with no start year
+(C-Power, Hollandse Kust (Zuid)). When a whole-farm record replaces the phase records, the older
 ones can stay in the layer (C-Power next to Thorntonbank Part 1 and 2); `drop_superseded` removes
-them.
+them. The start year is missing for some single-phase farms too, and is sometimes wrong.
 """
 
 import json
