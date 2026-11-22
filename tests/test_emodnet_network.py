@@ -24,3 +24,11 @@ def test_operating_farms_lie_in_the_national_sea_area(country: str, tmp_path: Pa
     assert (farms["capacity_mw"] > 0).all()
     assert farms["longitude"].between(west, east).all()
     assert farms["latitude"].between(south, north).all()
+
+
+def test_every_status_of_the_five_countries_passes_the_schema(tmp_path: Path) -> None:
+    farms = emodnet.load_offshore_farms(
+        list(emodnet.COUNTRIES), tuple(emodnet.STATUSES.values()), cache_dir=tmp_path
+    )
+
+    assert set(farms["country"]) == set(emodnet.COUNTRIES)
