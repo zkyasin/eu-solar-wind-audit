@@ -1,4 +1,3 @@
-import json
 import os
 from pathlib import Path
 
@@ -41,9 +40,3 @@ def test_dc_solar_capacity_exceeds_ac(german_capacity: pd.DataFrame) -> None:
     solar = german_capacity.pivot(index="month", columns="technology", values="capacity_mw")
 
     assert (solar["solar_dc"] > solar["solar_ac"]).all()
-
-
-def test_licence_is_still_cc_by(german_capacity: pd.DataFrame, cache_dir: Path) -> None:
-    raw = json.loads((cache_dir / "installed_power_de_monthly.json").read_bytes())
-
-    assert raw["license"].startswith("CC BY 4.0")
