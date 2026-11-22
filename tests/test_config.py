@@ -1,0 +1,122 @@
+from pathlib import Path
+
+import pytest
+
+from eu_solar_wind_audit.config import Country, WindGeneration, load_country
+from eu_solar_wind_audit.pv import PVParameters, System
+from eu_solar_wind_audit.sources.era5 import Box
+
+FRANCE = Path(__file__).parents[1] / "config" / "countries" / "fr.toml"
+
+MINIMAL = """
+country = "XX"
+time_zone = "UTC"
+perimeter = "metropolitan_without_corsica"
+
+[era5_box]
+west = 1.0
+south = 2.0
+east = 3.0
+north = 4.0
+
+[solar]
+dc_ac_ratio = 1.3
+
+[[solar.systems]]
+tilt = 30.0
+azimuth = 180.0
+share = 0.75
+
+[[solar.systems]]
+tilt = 10.0
+azimuth = 90.0
+share = 0.25
+tracker = true
+
+[[wind_onshore.generations]]
+turbine = "VestasV82_1.65MW_82"
+hub_height_m = 80.0
+last_commissioning_year = 2012
+
+[[wind_onshore.generations]]
+turbine = "IEA_Reference_3.4MW_130"
+hub_height_m = 100.0
+"""
+
+
+GENERATION = """[[wind_onshore.generations]]
+turbine = "VestasV82_1.65MW_82"
+hub_height_m = 85.0
+last_commissioning_year = {year}
+"""
+
+
+def write(tmp_path: Path, text: str) -> Path:
+    path = tmp_path / "xx.toml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_file_is_parsed_into_the_model_dataclasses(tmp_path: Path) -> None:
+    country = load_country(write(tmp_path, MINIMAL))
+
+    assert country == Country(
+        country="XX",
+        time_zone="UTC",
+        perimeter="metropolitan_without_corsica",
+        era5_box=Box(west=1.0, south=2.0, east=3.0, north=4.0),
+        solar=PVParameters(
+            fleet=(System(30.0, 180.0, 0.75), System(10.0, 90.0, 0.25, tracker=True)),
+            dc_ac_ratio=1.3,
+        ),
+        wind_onshore=(
+            WindGeneration("VestasV82_1.65MW_82", 80.0, 2012),
+            WindGeneration("IEA_Reference_3.4MW_130", 100.0),
+        ),
+    )
+
+
+def test_pv_fields_absent_from_the_file_keep_their_defaults(tmp_path: Path) -> None:
+    country = load_country(write(tmp_path, MINIMAL))
+
+    defaults = PVParameters(fleet=country.solar.fleet)
+    assert country.solar.gamma_pdc == defaults.gamma_pdc
+    assert country.solar.dc_losses == defaults.dc_losses
+
+
+def test_unknown_key_is_rejected(tmp_path: Path) -> None:
+    text = MINIMAL.replace("dc_ac_ratio = 1.3", "dc_ac = 1.3")
+
+    with pytest.raises(TypeError, match="dc_ac"):
+        load_country(write(tmp_path, text))
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ('perimeter = "metropolitan_without_corsica"', 'perimeter = "all"', "perimeter"),
+        ("hub_height_m = 100.0", "hub_height_m = 100.0\nlast_commissioning_year = 2020", "last"),
+        ("last_commissioning_year = 2012", "", "last"),
+        ('turbine = "IEA_Reference_3.4MW_130"', 'turbine = "IEA_Reference_15MW_240"', "onshore"),
+        ("share = 0.25", "share = 0.3", "sum to 1"),
+    ],
+)
+def test_invalid_settings_are_rejected(tmp_path: Path, old: str, new: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        load_country(write(tmp_path, MINIMAL.replace(old, new)))
+
+
+def test_generations_must_follow_each_other(tmp_path: Path) -> None:
+    earlier = "last_commissioning_year = 2012\n\n" + GENERATION.format(year=2010)
+
+    with pytest.raises(ValueError, match="increasing"):
+        load_country(write(tmp_path, MINIMAL.replace("last_commissioning_year = 2012\n", earlier)))
+
+
+def test_france_file_is_valid() -> None:
+    france = load_country(FRANCE)
+
+    assert france.country == "FR"
+    assert france.perimeter == "metropolitan_without_corsica"
+    years = [generation.last_commissioning_year for generation in france.wind_onshore]
+    assert years == [2012, 2020, None]
