@@ -42,6 +42,7 @@ What the project may publish:
 | NREL turbine-models | NREL, Alliance for Sustainable Energy (repository now under NatLabRockies) | Power curves of five turbines, copied into `src/eu_solar_wind_audit/data/` | [BSD 3-Clause](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) | Copyright notice and licence text kept with the copied tables | Raw values | Verified 2026-11-22, [LICENSE.txt](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) |
 | Natural Earth | Natural Earth | Admin-1 states and provinces, 1:10m, release v5.1.2 | Public domain ([terms of use](https://www.naturalearthdata.com/about/terms-of-use/)) | None required; optional `Made with Natural Earth.` | Raw values | Verified 2026-11-22, [terms of use](https://www.naturalearthdata.com/about/terms-of-use/) |
 | BKG VG5000 | Bundesamt für Kartographie und Geodäsie (BKG) | Verwaltungsgebiete 1:5 000 000, state 2026-01-01: districts and Länder | [dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0) | `© BKG (<year>) dl-de/by-2-0 (Daten verändert), Datenquellen: https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf` | Raw values | Verified 2026-11-22, [product page](https://gdz.bkg.bund.de/index.php/default/verwaltungsgebiete-1-5-000-000-stand-01-01-vg5000-01-01.html), [source note guidance](https://gdz.bkg.bund.de/index.php/default/hinweise-zu-nutzungsbedingungen-und-quellenvermerken/) and `nutzungsbedingungen_vg5000.pdf` in the download |
+| EMODnet Human Activities | CETMAR for EMODnet | Wind farms, polygon layer (`EMODnet_HA_Energy_WindFarms_20260710`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `This data was downloaded from the EMODnet Portal (https://emodnet.ec.europa.eu/en/). The data originator is CETMAR.` | Raw values | Verified 2026-11-22, [metadata record](https://ows.emodnet-humanactivities.eu/geonetwork/srv/api/records/8201070b-4b0b-4d54-8910-abcea5dce57f) and [terms of use](https://emodnet.ec.europa.eu/en/terms-use-emodnet-online-services-data-and-data-products) |
 
 ## Notes
 
@@ -125,6 +126,12 @@ What the project may publish:
     the licence name. The boundaries are changed: reprojected to WGS 84, with the coastal sea and
     the Bodensee left out. On a web page, "BKG" links to https://www.bkg.bund.de and
     "dl-de/by-2-0" to the licence.
+23. **EMODnet wind farms.** The metadata record grants CC BY 4.0 and gives the attribution line,
+    naming CETMAR as the data originator. The EMODnet terms of use ask users to cite the originator
+    named in the metadata and to check its use restrictions; the record lists the national
+    authorities, OSPAR, HELCOM, WindEurope, Global Energy Monitor and The Wind Power as sources
+    of the aggregated layer and states no other restriction. The vintage (revision date
+    2026-07-10) is part of the dataset identifier.
 
 ## Attribution
 
@@ -152,6 +159,7 @@ Turbine power curves: NREL turbine-models, Copyright (c) 2020 Alliance for Susta
 ERA5 bias-correction factors: Karkossa, Grochowicz, Koivisto, Hahmann and Victoria (2026), Zenodo, doi:10.5281/zenodo.23686879, CC BY 4.0.
 Made with Natural Earth.
 Germany, administrative boundaries: © BKG (<year>) dl-de/by-2-0 (Daten verändert), Datenquellen: https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf. Changes: reprojected to WGS 84; coastal sea and Bodensee removed.
+Offshore wind farms: this data was downloaded from the EMODnet Portal (https://emodnet.ec.europa.eu/en/). The data originator is CETMAR. <dataset identifier>, CC BY 4.0.
 Baselines: Renewables.ninja (Pfenninger and Staffell 2016; Staffell and Pfenninger 2016), CC BY-NC 4.0.
 Copernicus Climate Change Service (2024): Climate and energy related variables from the Pan-European Climate Database derived from reanalysis and climate projections. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.f323c5ec (Accessed on <date>). PECD v4.2, modified.
 Copyright © <year> ECMWF/C3S/ENTSO-E. ECMWF & C3S & ENTSO-E does not accept any liability whatsoever for any error or omission in the data, their availability, or for any loss or damage arising from their use.
