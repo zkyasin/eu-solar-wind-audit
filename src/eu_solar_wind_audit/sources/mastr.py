@@ -119,9 +119,9 @@ class MonthlyCapacity(pa.DataFrameModel):
     # Null for offshore wind and for units without a municipality key.
     district: Series[str] = pa.Field(nullable=True, str_matches=r"^\d{5}$")
     technology: Series[str] = pa.Field(isin=TECHNOLOGIES)
-    capacity_mw_ac: Series[float]
+    capacity_mw_ac: Series[float] = pa.Field(ge=0)
     # Solar only.
-    capacity_mw_dc: Series[float] = pa.Field(nullable=True)
+    capacity_mw_dc: Series[float] = pa.Field(nullable=True, ge=0)
 
     @pa.check("month_end")
     @classmethod
