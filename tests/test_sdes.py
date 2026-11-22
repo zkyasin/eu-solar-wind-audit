@@ -9,9 +9,9 @@ from eu_solar_wind_audit.sources import sdes
 SOLAR_URL = "https://www.statistiques.developpement-durable.gouv.fr/media/9714/download?inline"
 WIND_URL = "https://www.statistiques.developpement-durable.gouv.fr/media/9715/download?inline"
 FIXTURES = Path(__file__).parent / "fixtures" / "sdes"
-# SOLAR_URL on 2026-11-22, sheet "solaire PV", rows 1-4, 51-55, 63, 93-98 and 112-125 kept.
+# SOLAR_URL on 2026-11-22, sheet "solaire PV", rows 1-4, 51-55, 63, 93-98, 112-125 cut by openpyxl.
 SOLAR = FIXTURES / "solaire-pv-2026-t2.xlsx"
-# WIND_URL on 2026-11-22, sheets "éolien_terrestre" and "éolien_offshore", same rows as SOLAR.
+# WIND_URL on 2026-11-22, sheets "éolien_terrestre" and "éolien_offshore", cut like SOLAR.
 WIND = FIXTURES / "eolien-2026-t2.xlsx"
 
 BRETAGNE = {"22", "29", "35", "56"}
