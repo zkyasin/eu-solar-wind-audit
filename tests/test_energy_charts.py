@@ -446,6 +446,27 @@ def test_a_period_ending_at_a_local_month_start_asks_for_no_later_month(tmp_path
     assert [request.url.params["start"] for request in requests] == ["2025-06-01", "2025-06-01"]
 
 
+@pytest.mark.parametrize(
+    ("start", "error"),
+    [
+        (pd.Timestamp("2025-06-21 11:00", tz="UTC"), "empty period"),
+        (pd.Timestamp("2025-06-21 10:00"), "hour in UTC"),
+        (pd.Timestamp("2025-06-21 10:00", tz="Europe/Berlin"), "hour in UTC"),
+        (pd.Timestamp("2025-06-21 10:15", tz="UTC"), "hour in UTC"),
+    ],
+    ids=["empty", "naive", "not-in-utc", "off-hour"],
+)
+def test_a_wrong_period_is_refused_before_any_download(
+    start: pd.Timestamp, error: str, tmp_path: Path
+) -> None:
+    requests: list[httpx.Request] = []
+    end = pd.Timestamp("2025-06-21 11:00", tz="UTC")
+    with power_server({}, requests) as client, pytest.raises(ValueError, match=error):
+        energy_charts.fetch_hourly_power(start, end, client=client, cache_dir=tmp_path)
+
+    assert requests == []
+
+
 def test_settled_months_are_cached_and_the_last_two_are_downloaded_again(tmp_path: Path) -> None:
     this_month = pd.Timestamp.now(tz="Europe/Berlin").tz_localize(None).to_period("M")
     months = [this_month - 2, this_month - 1, this_month]

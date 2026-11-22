@@ -127,6 +127,7 @@ def fetch_hourly_power(
     Keys are `<public|total>.<technology>` and `self_consumption.solar` (total minus public).
     Whole local months are requested.
     """
+    grid.check_period(start, end)
     if client is None:
         with httpx.Client(timeout=TIMEOUT_SECONDS) as own_client:
             return fetch_hourly_power(start, end, client=own_client, cache_dir=cache_dir)
