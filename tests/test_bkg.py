@@ -1,4 +1,5 @@
 import hashlib
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 
@@ -89,6 +90,22 @@ def test_laender_leave_out_the_coastal_sea() -> None:
     assert (laender["region"] == "02").sum() == 1
     # Generalisation at 1:5,000,000 loses about 2% of the city-state.
     assert area_km2(laender, "02") == pytest.approx(HAMBURG_KM2, rel=0.03)
+
+
+@pytest.mark.parametrize(
+    ("index", "code"), [(0, "2000"), (1, "11000")], ids=["leading zero lost", "duplicate"]
+)
+def test_malformed_or_duplicate_codes_raise(tmp_path: Path, index: int, code: str) -> None:
+    districts = gpd.read_file(f"zip://{FIXTURE}!{bkg.MEMBER}", layer="vg5000_krs")
+    districts.loc[index, "AGS"] = code
+    gpkg = tmp_path / "DE_VG5000.gpkg"
+    districts.to_file(gpkg, layer="vg5000_krs")
+    path = tmp_path / "vg5000.zip"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.write(gpkg, bkg.MEMBER)
+
+    with pytest.raises(ValueError, match="5-digit"):
+        bkg.load_districts(path)
 
 
 def test_download_is_checked_then_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
