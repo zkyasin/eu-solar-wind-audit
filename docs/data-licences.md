@@ -41,6 +41,7 @@ What the project may publish:
 | MaStR | Bundesnetzagentur | Unit register (via open-mastr) | [dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0) | Provider name, licence notice, dataset URI; mark changed data | Raw values | Verified 2026-11-22, [Datendownload](https://www.marktstammdatenregister.de/MaStR/Datendownload) |
 | NREL turbine-models | NREL, Alliance for Sustainable Energy (repository now under NatLabRockies) | Power curves of five turbines, copied into `src/eu_solar_wind_audit/data/` | [BSD 3-Clause](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) | Copyright notice and licence text kept with the copied tables | Raw values | Verified 2026-11-22, [LICENSE.txt](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) |
 | Natural Earth | Natural Earth | Admin-1 states and provinces, 1:10m, release v5.1.2 | Public domain ([terms of use](https://www.naturalearthdata.com/about/terms-of-use/)) | None required; optional `Made with Natural Earth.` | Raw values | Verified 2026-11-22, [terms of use](https://www.naturalearthdata.com/about/terms-of-use/) |
+| BKG VG5000 | Bundesamt für Kartographie und Geodäsie (BKG) | Verwaltungsgebiete 1:5 000 000, state 2026-01-01: districts and Länder | [dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0) | `© BKG (<year>) dl-de/by-2-0 (Daten verändert), Datenquellen: https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf` | Raw values | Verified 2026-11-22, [product page](https://gdz.bkg.bund.de/index.php/default/verwaltungsgebiete-1-5-000-000-stand-01-01-vg5000-01-01.html), [source note guidance](https://gdz.bkg.bund.de/index.php/default/hinweise-zu-nutzungsbedingungen-und-quellenvermerken/) and `nutzungsbedingungen_vg5000.pdf` in the download |
 
 ## Notes
 
@@ -118,6 +119,12 @@ What the project may publish:
     Europe, XNR roads of North America, IMA time zones) and Wikidata names under CC0, and still
     places all Natural Earth data in the public domain. The admin-1 polygons serve only to spread
     capacity over the weather grid.
+22. **BKG VG5000.** The terms in the download (dated 2025-06-30) and the product page require
+    the source line on every public display, with `<year>` the year of the last download, and a
+    change notice. The BKG guidance on source notes gives the notice as `(Daten verändert)` after
+    the licence name. The boundaries are changed: reprojected to WGS 84, with the coastal sea and
+    the Bodensee left out. On a web page, "BKG" links to https://www.bkg.bund.de and
+    "dl-de/by-2-0" to the licence.
 
 ## Attribution
 
@@ -144,6 +151,7 @@ Copyright <year> EUMETSAT. This work used data from EUMETSAT's Satellite Applica
 Turbine power curves: NREL turbine-models, Copyright (c) 2020 Alliance for Sustainable Energy, LLC, BSD 3-Clause.
 ERA5 bias-correction factors: Karkossa, Grochowicz, Koivisto, Hahmann and Victoria (2026), Zenodo, doi:10.5281/zenodo.23686879, CC BY 4.0.
 Made with Natural Earth.
+Germany, administrative boundaries: © BKG (<year>) dl-de/by-2-0 (Daten verändert), Datenquellen: https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_vg_nuts.pdf. Changes: reprojected to WGS 84; coastal sea and Bodensee removed.
 Baselines: Renewables.ninja (Pfenninger and Staffell 2016; Staffell and Pfenninger 2016), CC BY-NC 4.0.
 Copernicus Climate Change Service (2024): Climate and energy related variables from the Pan-European Climate Database derived from reanalysis and climate projections. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.f323c5ec (Accessed on <date>). PECD v4.2, modified.
 Copyright © <year> ECMWF/C3S/ENTSO-E. ECMWF & C3S & ENTSO-E does not accept any liability whatsoever for any error or omission in the data, their availability, or for any loss or damage arising from their use.
