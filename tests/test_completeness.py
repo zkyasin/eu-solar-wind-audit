@@ -1,11 +1,15 @@
 import json
+from datetime import date
+from pathlib import Path
 
+import httpx
 import numpy as np
 import pandas as pd
 import pytest
 
 from eu_solar_wind_audit import grid
 from eu_solar_wind_audit.anomalies.completeness import completeness, on_grid
+from eu_solar_wind_audit.sources import energy_charts, odre, smard
 
 DATASET = "test.dataset"
 PROVENANCE = "Producer, test dataset"
@@ -321,3 +325,202 @@ def test_days_of_hourly_values_are_one_change_of_resolution_and_gaps() -> None:
     ]
     assert evidence(found)[0]["absent_stamps"] == 2 * 72
     assert evidence(found)[1] == {"step_minutes": 15, "days": 2}
+
+
+# Exports from https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/<dataset>/exports/parquet
+# with the select of each fetch function and where=odre.utc_days(first day, last day), retrieved
+# 2026-11-22.
+ODRE = Path(__file__).parent / "fixtures" / "odre"
+NATIONAL_SPRING = ODRE / "eco2mix-national-cons-def_2025-03-30.parquet"
+REALTIME_AUTUMN = ODRE / "eco2mix-national-tr_2026-10-24_2026-10-25.parquet"
+REGIONAL_AUTUMN = ODRE / "eco2mix-regional-cons-def_2022-10-29_2022-10-30.parquet"
+REGIONAL_YEAR_END = ODRE / "eco2mix-regional-cons-def_2025-12-31.parquet"
+# SMARD German solar feed-in in the weeks of the 2025 clock changes, and Energy-Charts German
+# production on 2025 days, retrieved 2026-11-22 (see tests/test_smard.py and
+# tests/test_energy_charts.py).
+SMARD = Path(__file__).parent / "fixtures" / "smard"
+ENERGY_CHARTS = Path(__file__).parent / "fixtures" / "energy_charts"
+
+
+def serving(path: Path) -> httpx.Client:
+    content = path.read_bytes()
+    return httpx.Client(
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, content=content))
+    )
+
+
+def eco2mix(dataset: str) -> dict[str, str]:
+    return {"dataset": f"odre.{dataset}", "provenance": f"RTE, éCO2mix, ODRÉ dataset {dataset}"}
+
+
+def regional_series(frame: pd.DataFrame, *names: str) -> dict[str, pd.Series]:
+    return {
+        f"odre.FR-{code}.{name}": frame.loc[frame["region_code"] == code, f"{name}_mw"]
+        for code in odre.REGIONS
+        for name in names
+    }
+
+
+def test_national_spring_rows_follow_the_clock_change_convention(tmp_path: Path) -> None:
+    with serving(NATIONAL_SPRING) as client:
+        published = odre.fetch_national_consolidated(
+            client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=tmp_path
+        )
+
+    found = completeness(
+        {f"odre.FR.{name}": published[f"{name}_mw"] for name in ("load", "solar", "wind")},
+        utc("2025-03-30"),
+        utc("2025-03-31"),
+        step=odre.CONSOLIDATED_STEP,
+        label=odre.CONSOLIDATED_LABEL,
+        local_days=odre.TIME_ZONE,
+        **eco2mix(odre.NATIONAL_CONSOLIDATED),
+    )
+
+    # The half-hours ending 01:00 and 01:30 come twice; the empty quarter-hour rows between the
+    # half-hours are not findings.
+    assert spans(found) == [
+        ("clock_change_convention", utc("2025-03-30 00:00"), utc("2025-03-30 02:00"), 1.0)
+    ]
+    assert found["series"].tolist() == ["odre.eco2mix-national-cons-def"]
+    assert evidence(found)[0]["repeated_stamps"] == [
+        "2025-03-30T01:00:00+00:00/2025-03-30T02:00:00+00:00"
+    ]
+    assert evidence(found)[0]["series_count"] == 3
+
+
+def test_realtime_autumn_points_follow_the_clock_change_convention(tmp_path: Path) -> None:
+    with serving(REALTIME_AUTUMN) as client:
+        published = odre.fetch_national_realtime(
+            client, date(2026, 10, 24), date(2026, 10, 25), cache_dir=tmp_path
+        )
+    names = ("load", "solar", "wind", "wind_onshore", "wind_offshore")
+
+    found = completeness(
+        {f"odre.FR.{name}": published[f"{name}_mw"] for name in names},
+        utc("2026-10-24"),
+        utc("2026-10-26"),
+        step=odre.REALTIME_STEP,
+        label=odre.REALTIME_LABEL,
+        local_days=odre.TIME_ZONE,
+        **eco2mix(odre.NATIONAL_REALTIME),
+    )
+
+    # No point from 00:00 to 00:45 UTC on 25 October; the point at 00:00 would close the hour
+    # from 23:00.
+    assert spans(found) == [
+        ("clock_change_convention", utc("2026-10-24 23:00"), utc("2026-10-25 01:00"), 1.0)
+    ]
+    assert evidence(found)[0]["missing_stamps"] == [
+        "2026-10-25T00:00:00+00:00/2026-10-25T01:00:00+00:00"
+    ]
+    assert evidence(found)[0]["series_count"] == len(names)
+
+
+def test_regional_autumn_rows_follow_the_clock_change_convention(tmp_path: Path) -> None:
+    with serving(REGIONAL_AUTUMN) as client:
+        published = odre.fetch_regional_consolidated(
+            client, date(2022, 10, 29), date(2022, 10, 30), cache_dir=tmp_path
+        )
+        hourly = odre.regional_hourly(
+            client, "solar", utc("2022-10-29"), utc("2022-10-31"), cache_dir=tmp_path
+        )
+
+    found = completeness(
+        regional_series(published, "solar", "wind"),
+        utc("2022-10-29"),
+        utc("2022-10-31"),
+        step=odre.CONSOLIDATED_STEP,
+        label=odre.CONSOLIDATED_LABEL,
+        local_days=odre.TIME_ZONE,
+        **eco2mix(odre.REGIONAL_CONSOLIDATED),
+    )
+
+    # One finding for the 24 series, over the hours that the hourly conversion leaves incomplete.
+    assert spans(found) == [
+        ("clock_change_convention", utc("2022-10-29 23:00"), utc("2022-10-30 01:00"), 1.0)
+    ]
+    assert evidence(found)[0]["series_count"] == 24
+    incomplete = pd.date_range(utc("2022-10-29 23:00"), periods=2, freq="h", name="time")
+    for frame in hourly.values():
+        assert frame.index[~frame["complete"]].equals(incomplete)
+
+
+def test_the_empty_row_that_opens_2026_is_a_gap_in_every_regional_series(tmp_path: Path) -> None:
+    with serving(REGIONAL_YEAR_END) as client:
+        published = odre.fetch_regional_consolidated(
+            client, date(2025, 12, 31), date(2025, 12, 31), cache_dir=tmp_path
+        )
+    series = regional_series(published, "solar", "wind")
+
+    found = completeness(
+        series,
+        utc("2025-12-31"),
+        utc("2026-01-01"),
+        step=odre.CONSOLIDATED_STEP,
+        label=odre.CONSOLIDATED_LABEL,
+        local_days=odre.TIME_ZONE,
+        **eco2mix(odre.REGIONAL_CONSOLIDATED),
+    )
+
+    # The row stamped 23:00 UTC, midnight in Paris and the first consolidated row, has no values.
+    assert found["series"].tolist() == list(series)
+    gap = ("gap", utc("2025-12-31 22:00"), utc("2025-12-31 23:00"), 1.0)
+    assert spans(found) == [gap] * len(series)
+    stamp = "2025-12-31T23:00:00+00:00"
+    empty_row = {"first_stamp": stamp, "last_stamp": stamp, "absent_stamps": 0, "empty_stamps": 1}
+    assert evidence(found) == [empty_row] * len(series)
+
+
+@pytest.mark.parametrize(
+    ("week_ms", "hours"), [(1742770800000, 167), (1760911200000, 169)], ids=["spring", "autumn"]
+)
+def test_smard_weeks_of_the_clock_changes_are_complete(
+    week_ms: int, hours: int, tmp_path: Path
+) -> None:
+    files = {
+        "index_quarterhour.json": SMARD / "4068_DE_index_quarterhour.json",
+        f"4068_DE_quarterhour_{week_ms}.json": SMARD / f"4068_DE_quarterhour_{week_ms}.json",
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=files[request.url.path.rsplit("/", 1)[-1]].read_bytes())
+
+    start = pd.Timestamp(week_ms, unit="ms", tz="UTC")
+    end = start + pd.Timedelta(hours=hours)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        solar = smard.fetch_series(
+            smard.SOLAR, "DE", "quarterhour", start, end, client=client, cache_dir=tmp_path
+        )
+
+    found = completeness(
+        {"smard.DE.solar": solar},
+        start,
+        end,
+        step=smard.FEED_IN_STEP,
+        label=smard.FEED_IN_LABEL,
+        dataset="smard.4068.DE",
+        provenance="Bundesnetzagentur | SMARD.de, filter 4068, region DE",
+    )
+
+    assert found.empty
+
+
+@pytest.mark.parametrize("endpoint", ["public_power", "total_power"])
+@pytest.mark.parametrize("day", ["2025-03-30", "2025-06-21", "2025-10-26"])
+def test_energy_charts_days_are_complete(endpoint: str, day: str) -> None:
+    payload = json.loads((ENERGY_CHARTS / f"{endpoint}_de_{day}.json").read_bytes())
+    power = energy_charts.parse_power(payload)
+    local = pd.Timestamp(day, tz=energy_charts.TIMEZONE)
+
+    found = completeness(
+        {f"energy_charts.DE.{endpoint}.{name}": power[name] for name in power.columns},
+        local.tz_convert("UTC"),
+        (local + pd.DateOffset(days=1)).tz_convert("UTC"),
+        step=energy_charts.QUARTER_HOUR,
+        label=energy_charts.POWER_LABEL,
+        dataset=f"energy_charts.{endpoint}",
+        provenance=f"Energy-Charts.info, Fraunhofer ISE, {endpoint}",
+    )
+
+    assert found.empty
