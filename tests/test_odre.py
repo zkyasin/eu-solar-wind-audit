@@ -212,6 +212,20 @@ def test_negative_load_fails_validation(tmp_path: Path) -> None:
         )
 
 
+def test_negative_production_is_kept(tmp_path: Path) -> None:
+    stamps = pd.date_range("2025-03-30", periods=2, freq="30min", tz="UTC")
+    rows = published_rows("Données définitives", stamps).assign(solaire=[0, -23], eolien=[-2, 0])
+    content = parquet_bytes(rows, tmp_path)
+
+    with serving(content, []) as client:
+        frame = odre.fetch_national_consolidated(
+            client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=tmp_path / "cache"
+        )
+
+    assert list(frame["solar_mw"]) == [0.0, -23.0]
+    assert list(frame["wind_mw"]) == [-2.0, 0.0]
+
+
 def test_download_export_uses_the_cache(tmp_path: Path) -> None:
     requests: list[httpx.Request] = []
     with serving(b"export", requests) as client:
