@@ -1,0 +1,6 @@
+turbine,technology,rated_power_kw,rotor_diameter_m,specific_power_w_m2
+VestasV82_1.65MW_82,onshore,1650,82,312.4
+IEA_Reference_3.4MW_130,onshore,3370,130,253.9
+2020ATB_NREL_Reference_5.5MW_175,onshore,5500,175,228.7
+NREL_Reference_5MW_126,offshore,5000,126,401.0
+IEA_Reference_15MW_240,offshore,15000,240,331.6
