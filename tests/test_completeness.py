@@ -283,3 +283,41 @@ def test_the_rows_on_the_grid_convert_to_hours() -> None:
 
     assert hourly["energy_mwh"].tolist() == [0.0 + 1 + 2 + 3, 4.0 + 5 + 6 + 7]
     assert hourly["complete"].all()
+
+
+def test_a_day_of_finer_values_is_a_change_of_resolution() -> None:
+    published = pd.concat(
+        [
+            rows(DAY_START, "2022-06-01 23:30", step="30min"),
+            rows("2022-06-02 00:00", "2022-06-02 23:45", step="15min"),
+        ]
+    )
+
+    found = check(published, DAY_START, "2022-06-03 00:00", step="30min")
+
+    changes = found[found["kind"] == "resolution_change"]
+    assert spans(changes) == [
+        ("resolution_change", utc("2022-06-02 00:00"), utc("2022-06-03 00:00"), 15.0)
+    ]
+    assert evidence(changes) == [{"step_minutes": 30, "days": 1}]
+    # The values between the half-hours are off the grid.
+    assert found.loc[found["kind"] == "off_grid", "score"].tolist() == [48.0]
+
+
+def test_days_of_hourly_values_are_one_change_of_resolution_and_gaps() -> None:
+    published = pd.concat(
+        [
+            rows(DAY_START, "2022-06-01 23:45"),
+            rows("2022-06-02 00:00", "2022-06-03 23:00", step="1h"),
+            rows("2022-06-04 00:00", "2022-06-04 23:45"),
+        ]
+    )
+
+    found = check(published, DAY_START, "2022-06-05 00:00")
+
+    assert spans(found) == [
+        ("gap", utc("2022-06-02 00:00"), utc("2022-06-04 00:00"), 48.0),
+        ("resolution_change", utc("2022-06-02 00:00"), utc("2022-06-04 00:00"), 60.0),
+    ]
+    assert evidence(found)[0]["absent_stamps"] == 2 * 72
+    assert evidence(found)[1] == {"step_minutes": 15, "days": 2}
