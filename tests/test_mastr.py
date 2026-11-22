@@ -445,7 +445,7 @@ def test_the_only_implausible_unit_of_the_fixture_is_dated_1900(units: pd.DataFr
         ("net_kw", -5.0, "power not positive"),
         ("gross_kw", np.nan, "power not positive"),
         ("net_kw", 4000.0, "net power above gross power"),
-        ("gross_kw", 250_000.0, "power above the documented maximum"),
+        ("gross_kw", 250_000.0, "power above the plausible maximum"),
         ("commissioned", pd.Timestamp("2027-01-01"), "commissioning date in the future"),
         ("commissioned", pd.Timestamp("1900-01-01"), "commissioning date before 1950"),
         ("decommissioned", pd.Timestamp("2027-01-01"), "decommissioning date in the future"),

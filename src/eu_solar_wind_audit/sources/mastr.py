@@ -2,9 +2,9 @@
 the Marktstammdatenregister (MaStR) of the Bundesnetzagentur (licence dl-de/by-2-0).
 
 Powers are in kW in the export and in MW in the outputs. For solar units the gross power
-(Bruttoleistung) is the module power in kWp, so DC, and the net rated power (Nettonennleistung) is
-the lesser of the inverter active power and the gross power, so AC (MaStR field definitions,
-version 26.2). For wind units both are the same rated power.
+(Bruttoleistung) is the module power in kWp, so DC (MaStR registration help for solar units), and
+the net rated power (Nettonennleistung) is the lesser of the gross power and the inverter active
+power, so AC: this holds for every solar unit with an inverter power in the export of 2026-11-22.
 """
 
 import hashlib
@@ -77,7 +77,8 @@ WIND_FIELDS = {
     "NameWindpark": "wind_farm",
 }
 DATES = ["commissioned", "decommissioned", "shutdown_start", "shutdown_end"]
-# Upper bounds of the field definitions: gross power for solar, net power for wind.
+# Plausibility bounds, gross power for solar and net power for wind. The largest units in the
+# export of 2026-11-22 are a 200 MWp solar park and 15 MW offshore turbines.
 MAX_KW = {"solar": 200_000.0, "wind_onshore": 20_000.0, "wind_offshore": 20_000.0}
 # Districts merged since: Göttingen into the new Göttingen district (2016-11-01), Eisenach into the
 # Wartburgkreis (2021-07-01). Some units still carry the former keys.
@@ -279,7 +280,7 @@ def implausible_units(units: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
     checks = {
         "power not positive": ~(units["net_kw"] > 0) | ~(units["gross_kw"] > 0),
         "net power above gross power": units["net_kw"] > units["gross_kw"],
-        "power above the documented maximum": capped > maximum,
+        "power above the plausible maximum": capped > maximum,
         "commissioning date in the future": units["commissioned"] > as_of,
         "commissioning date before 1950": units["commissioned"] < EARLIEST_COMMISSIONING,
         "decommissioning date in the future": units["decommissioned"] > as_of,
