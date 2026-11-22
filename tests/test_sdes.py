@@ -239,6 +239,18 @@ def test_each_technology_ends_at_its_own_last_quarter() -> None:
     assert monthly_values(monthly, "wind_onshore").index.max() == pd.Timestamp("2026-03-31")
 
 
+def test_department_names_are_kept_per_technology() -> None:
+    wind = quarterly({"2025-12-31": 5.0, "2026-03-31": 6.0}, technology="wind_onshore")
+    wind["department"] = "AIN"
+    panel = pd.concat([quarterly({"2025-12-31": 10.0, "2026-03-31": 20.0}), wind])
+
+    monthly = sdes.monthly_capacity(panel)
+
+    assert len(monthly) == 2 * 4
+    names = monthly.groupby("technology")["department"].unique()
+    assert names.map(list).to_dict() == {"solar": ["Ain"], "wind_onshore": ["AIN"]}
+
+
 def test_quarter_ends_keep_their_published_values() -> None:
     panel = sdes.read_capacity(WIND)
 

@@ -169,6 +169,9 @@ def monthly_capacity(panel: pd.DataFrame, until: pd.Timestamp | None = None) -> 
         [_monthly_one_technology(group, until) for _, group in panel.groupby("technology")],
         ignore_index=True,
     )
-    names = panel[["department_code", "department", "region"]].drop_duplicates()
+    keys = ["department_code", "technology"]
+    # The solar and wind workbooks may spell a department differently.
+    names = panel[[*keys, "department", "region"]].drop_duplicates()
+    monthly = monthly.merge(names, on=keys, validate="many_to_one")
     columns = ["department_code", "department", "region", "technology", "month_end"]
-    return monthly.merge(names, on="department_code")[[*columns, "capacity_mw", "provisional"]]
+    return monthly[[*columns, "capacity_mw", "provisional"]]
