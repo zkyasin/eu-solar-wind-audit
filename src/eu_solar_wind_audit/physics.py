@@ -166,7 +166,8 @@ def model(
     capacities = [
         hourly_capacity(part.isel(latitude=rows, longitude=columns), hours) for part in per_cell
     ]
-    cells = weather.isel(latitude=rows, longitude=columns).load()
+    # Selecting cells on the lazy zarr store peaks at about four times the memory of loading first.
+    cells = weather.load().isel(latitude=rows, longitude=columns)
 
     energy = xr.zeros_like(cells["time"], dtype=float)
     for index, capacity_mw in enumerate(capacities):
