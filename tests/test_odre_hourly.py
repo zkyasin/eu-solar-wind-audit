@@ -119,8 +119,7 @@ def test_realtime_hours_are_trapezoids_and_the_autumn_hour_is_incomplete(
 def test_switch_to_realtime_keeps_every_hour_once(
     series: odre.NationalSeries, tmp_path: Path
 ) -> None:
-    requests: list[httpx.Request] = []
-    frame = national(series, "2026-08-31", "2026-09-02", SWITCH, tmp_path, requests)
+    frame = national(series, "2026-08-31", "2026-09-02", SWITCH, tmp_path)
 
     assert frame.index.equals(hours("2026-08-31", "2026-09-02"))
     switch = pd.Timestamp("2026-08-31 22:00", tz="UTC")
@@ -129,8 +128,6 @@ def test_switch_to_realtime_keeps_every_hour_once(
     # The half-hour ending at 22:00 is published neither as a consolidated mean nor with the
     # real-time points it would need.
     assert frame.index[~frame["complete"]].equals(utc("2026-08-31 21:00"))
-    realtime = [r for r in requests if r.url.path.split("/")[-3] == odre.NATIONAL_REALTIME]
-    assert realtime[0].url.params["where"].startswith("date_heure >= date'2026-08-31T00:00")
 
 
 def test_switch_takes_each_hour_from_its_own_source(tmp_path: Path) -> None:
@@ -141,6 +138,15 @@ def test_switch_takes_each_hour_from_its_own_source(tmp_path: Path) -> None:
     # Real-time points from 22:00 to 23:00: 42233, 42256, 41091, 39517, 38939 MW.
     expected = (42233 / 2 + 42256 + 41091 + 39517 + 38939 / 2) / 4
     assert load.loc[utc("2026-08-31 22:00"), "energy_mwh"].item() == expected
+
+
+def test_realtime_is_requested_from_the_day_of_the_switch(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    national("load", "2026-08-30", "2026-09-02", SWITCH, tmp_path, requests)
+
+    # Real time fills the hours from 31 August 22:00 on, not the whole period.
+    (realtime,) = [r for r in requests if r.url.path.split("/")[-3] == odre.NATIONAL_REALTIME]
+    assert realtime.url.params["where"] == odre.utc_days(date(2026, 8, 31), date(2026, 9, 1))
 
 
 def test_a_period_within_a_day_keeps_only_its_hours(tmp_path: Path) -> None:
