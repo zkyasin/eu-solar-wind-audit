@@ -296,10 +296,15 @@ def test_consolidated_fetch_is_cached_and_realtime_fetch_is_not(tmp_path: Path) 
     assert len(realtime) == 2
 
 
-def test_consolidated_export_cached_before_the_end_is_downloaded_again(tmp_path: Path) -> None:
+# An export cut at 23:00 stops at 22:45 UTC, as the last consolidated month does when it ends at
+# midnight in Paris in winter: only the last hour of the day misses its rows.
+@pytest.mark.parametrize("cut", ["2025-03-30 12:00", "2025-03-30 23:00"])
+def test_consolidated_export_cached_before_the_end_is_downloaded_again(
+    cut: str, tmp_path: Path
+) -> None:
     full = pd.read_parquet(NATIONAL_CONSOLIDATED)
     short_path = tmp_path / "short.parquet"
-    full[full["date_heure"] < utc("2025-03-30 12:00")].to_parquet(short_path, index=False)
+    full[full["date_heure"] < utc(cut)].to_parquet(short_path, index=False)
     exports = [short_path.read_bytes(), NATIONAL_CONSOLIDATED.read_bytes()]
     requests: list[httpx.Request] = []
 
