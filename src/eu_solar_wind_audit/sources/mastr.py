@@ -24,6 +24,7 @@ from pandera.typing import DataFrame, Series
 
 DOWNLOAD_PAGE = "https://www.marktstammdatenregister.de/MaStR/Datendownload"
 CACHE_DIR = Path("data/raw/mastr")
+OUTPUT_DIR = Path("data/processed/mastr")
 # The daily export gets a new name each day; the quarterly exports are under /Stichtag/.
 EXPORT_LINK = re.compile(
     r'href="(https://download\.marktstammdatenregister\.de/Gesamtdatenexport_\d{8}_[\d.]+\.zip)"'
@@ -78,6 +79,8 @@ WIND_FIELDS = {
 DATES = ["commissioned", "decommissioned", "shutdown_start", "shutdown_end"]
 # Upper bounds of the field definitions: gross power for solar, net power for wind.
 MAX_KW = {"solar": 200_000.0, "wind_onshore": 20_000.0, "wind_offshore": 20_000.0}
+# The evaluation period starts in 2019.
+PANEL_START = pd.Timestamp("2019-01-31")
 # ERA5 grid spacing in degrees.
 CELL_DEGREES = 0.25
 
@@ -286,6 +289,53 @@ def implausible_units(units: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
     }
     flagged = [units[mask].assign(problem=problem) for problem, mask in checks.items()]
     return pd.concat(flagged, ignore_index=True)
+
+
+def extract_capacity(
+    *,
+    start: pd.Timestamp = PANEL_START,
+    cache_dir: Path = CACHE_DIR,
+    output_dir: Path = OUTPUT_DIR,
+    client: httpx.Client | None = None,
+) -> Path:
+    """Download the current export unless cached, then write its tables with `write_capacity`.
+    Returns the panel path."""
+    if client is None:
+        with httpx.Client(timeout=TIMEOUT, follow_redirects=True) as own_client:
+            return extract_capacity(
+                start=start, cache_dir=cache_dir, output_dir=output_dir, client=own_client
+            )
+    export = download_export(client, find_export_url(client), cache_dir)
+    return write_capacity(export, output_dir, start=start)
+
+
+def write_capacity(
+    export: Path, output_dir: Path = OUTPUT_DIR, *, start: pd.Timestamp = PANEL_START
+) -> Path:
+    """Write the monthly capacity panel, the offshore wind table and the unit table of a
+    downloaded export as parquet files under `output_dir`, and return the panel path.
+
+    The panel ends at the last month end before the export date. Each parquet file has a JSON
+    sidecar with the export file name, its SHA-256, and the retrieval and extraction times.
+    """
+    export_date = export_date_of(export)
+    units = read_units(export)
+    end = export_date - pd.offsets.MonthEnd(1)
+    outputs: dict[str, pd.DataFrame] = {
+        "mastr_capacity_monthly": monthly_capacity(units, start, end),
+        "mastr_offshore_wind": offshore_wind(units, end),
+        "mastr_units": units,
+    }
+    metadata = {
+        **json.loads(_metadata_path(export).read_text()),
+        "export_date": export_date.date().isoformat(),
+        "extracted_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for name, frame in outputs.items():
+        frame.to_parquet(output_dir / f"{name}.parquet", index=False)
+        (output_dir / f"{name}.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    return output_dir / "mastr_capacity_monthly.parquet"
 
 
 def export_date_of(path: Path) -> pd.Timestamp:

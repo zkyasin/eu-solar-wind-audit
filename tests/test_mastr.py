@@ -435,6 +435,37 @@ def test_implausible_units_are_reported(
     assert report[["unit_id", "problem"]].to_numpy().tolist() == [["SEE983469276431", problem]]
 
 
+def test_extract_capacity_downloads_and_writes_the_tables_with_their_provenance(
+    tmp_path: Path,
+) -> None:
+    page = PAGE.read_bytes()
+    content = EXPORT.read_bytes()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == mastr.DOWNLOAD_PAGE:
+            return httpx.Response(200, content=page)
+        if str(request.url) == EXPORT_URL:
+            return httpx.Response(200, headers={"content-type": ZIP_TYPE}, content=content)
+        return httpx.Response(404)
+
+    with serving(handler) as client:
+        path = mastr.extract_capacity(
+            cache_dir=tmp_path / "raw", output_dir=tmp_path / "out", client=client
+        )
+
+    panel = pd.read_parquet(path)
+    assert panel["month_end"].min() == pd.Timestamp("2019-01-31")
+    # The export is dated 2026-11-22: November is not complete.
+    assert panel["month_end"].max() == pd.Timestamp("2026-10-31")
+    assert len(pd.read_parquet(tmp_path / "out" / "mastr_units.parquet")) == 37
+    assert len(pd.read_parquet(tmp_path / "out" / "mastr_offshore_wind.parquet")) == 5
+    metadata = json.loads(path.with_suffix(".json").read_text())
+    assert metadata["file"] == EXPORT.name
+    assert metadata["sha256"] == hashlib.sha256(content).hexdigest()
+    assert metadata["export_date"] == "2026-11-22"
+    assert {"retrieved_at", "extracted_at"} <= metadata.keys()
+
+
 def test_export_date_comes_from_the_file_name() -> None:
     assert mastr.export_date_of(EXPORT) == pd.Timestamp("2026-11-22")
     with pytest.raises(ValueError, match="not a daily export"):
