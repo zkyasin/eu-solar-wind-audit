@@ -80,9 +80,9 @@ DATES = ["commissioned", "decommissioned", "shutdown_start", "shutdown_end"]
 # Plausibility bounds, gross power for solar and net power for wind. The largest units in the
 # export of 2026-11-22 are a 200 MWp solar park and 15 MW offshore turbines.
 MAX_KW = {"solar": 200_000.0, "wind_onshore": 20_000.0, "wind_offshore": 20_000.0}
-# Districts merged since: Göttingen into the new Göttingen district (2016-11-01), Eisenach into the
-# Wartburgkreis (2021-07-01). Some units still carry the former keys.
-FORMER_DISTRICTS = {"03152": "03159", "16056": "16063"}
+# Districts merged since: Göttingen and Osterode am Harz into the new Göttingen district
+# (2016-11-01), Eisenach into the Wartburgkreis (2021-07-01). Some units still carry former keys.
+FORMER_DISTRICTS = {"03152": "03159", "03156": "03159", "16056": "16063"}
 # Earlier dates are placeholders, such as 1900-01-01.
 EARLIEST_COMMISSIONING = pd.Timestamp("1950-01-01")
 # The evaluation period starts in 2019.
