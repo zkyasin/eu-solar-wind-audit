@@ -5,7 +5,7 @@ import pytest
 import xarray as xr
 from shapely.geometry import box
 
-from eu_solar_wind_audit.spatial import capacity_weights, region_fractions
+from eu_solar_wind_audit.spatial import capacity_weights, point_weights, region_fractions
 
 STEP = 0.25
 LATITUDE = np.arange(45.0, 46.0, STEP)
@@ -164,3 +164,29 @@ def test_capacity_in_a_region_without_polygon_raises() -> None:
 
     with pytest.raises(ValueError, match="971"):
         capacity_weights(fractions, capacity_of({"a": 1.0, "971": 2.0}))
+
+
+def test_points_go_to_the_nearest_cell_and_add_up() -> None:
+    points = pd.DataFrame(
+        {
+            "latitude": [45.1, 45.2, 45.74],
+            "longitude": [2.1, 1.9, 2.87],
+            "capacity_mw": [480.0, 20.0, 500.0],
+        }
+    )
+
+    weights = point_weights(points, LATITUDE, LONGITUDE)
+
+    assert weights.dims == ("latitude", "longitude")
+    assert float(weights.sel(latitude=45.0, longitude=2.0)) == 480.0
+    assert float(weights.sel(latitude=45.25, longitude=2.0)) == 20.0
+    assert float(weights.sel(latitude=45.75, longitude=2.75)) == 500.0
+    assert float(weights.sum()) == 1000.0
+
+
+@pytest.mark.parametrize(("latitude", "longitude"), [(44.86, 2.0), (45.0, 2.88), (np.nan, 2.0)])
+def test_point_outside_the_grid_raises(latitude: float, longitude: float) -> None:
+    points = pd.DataFrame({"latitude": [latitude], "longitude": [longitude], "capacity_mw": [1.0]})
+
+    with pytest.raises(ValueError, match="outside the grid"):
+        point_weights(points, LATITUDE, LONGITUDE)

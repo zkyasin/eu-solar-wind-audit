@@ -9,6 +9,7 @@ region is not known here.
 import geopandas as gpd
 import numpy as np
 import numpy.typing as npt
+import pandas as pd
 import regionmask
 import xarray as xr
 
@@ -56,3 +57,29 @@ def capacity_weights(fractions: xr.DataArray, capacity: xr.DataArray) -> xr.Data
     share = area / total.where(total > 0, 1.0)
     weights: xr.DataArray = xr.dot(capacity, share, dim="region")
     return weights.transpose(..., *GRID)
+
+
+def point_weights(
+    points: pd.DataFrame, latitude: npt.ArrayLike, longitude: npt.ArrayLike
+) -> xr.DataArray:
+    """Capacity in MW per cell of point sources (columns `latitude`, `longitude`, `capacity_mw`),
+    each added to the cell whose centre is nearest. The grid must be ascending and equally spaced.
+    """
+    weights = xr.DataArray(
+        0.0,
+        coords={"latitude": np.asarray(latitude), "longitude": np.asarray(longitude)},
+        dims=GRID,
+    )
+    rows = _nearest_cell(weights.indexes["latitude"], points["latitude"])
+    columns = _nearest_cell(weights.indexes["longitude"], points["longitude"])
+    np.add.at(weights.values, (rows, columns), points["capacity_mw"].to_numpy(dtype=float))
+    return weights
+
+
+def _nearest_cell(centres: pd.Index, values: "pd.Series[float]") -> npt.NDArray[np.intp]:
+    """Index of the cell holding each value; a value beyond the grid's outer edges raises."""
+    half_step = float(np.diff(centres.to_numpy()).max()) / 2
+    cells = centres.get_indexer(pd.Index(values), method="nearest", tolerance=half_step)
+    if (cells < 0).any():
+        raise ValueError(f"points outside the grid: {values[cells < 0].to_list()}")
+    return cells
