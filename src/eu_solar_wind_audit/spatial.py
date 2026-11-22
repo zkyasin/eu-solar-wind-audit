@@ -2,8 +2,8 @@
 degree). A weight is the capacity in MW attributed to a cell, so a capacity-weighted sum of cell
 capacity factors gives the power of the fleet.
 
-Within a region, capacity is spread in proportion to land area: the true distribution inside a
-region is not known here.
+Within a region, capacity is spread in proportion to the area of its polygon: the true
+distribution inside a region is not known here.
 """
 
 import geopandas as gpd
