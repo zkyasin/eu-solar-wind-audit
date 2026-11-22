@@ -467,6 +467,21 @@ def test_model_france_runs_one_calendar_year_at_a_time(
     assert result["energy_mwh"].to_numpy() == pytest.approx(50.0)
 
 
+def test_period_ending_at_new_year_stays_in_its_year(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monthly = panel("solar", {"01": constant(100.0)})
+    monkeypatch.setattr(physics, "load_monthly_capacity", lambda technology, until: monthly)
+    monkeypatch.setattr(natural_earth, "load_admin1", lambda country: REGIONS)
+    start, end = utc("2019-12-31 22:00"), utc("2020-01-01")
+
+    result = physics.model_france("solar", start, end, COUNTRY, cache_dir=tmp_path)
+
+    assert result.index.equals(pd.date_range(start, end, freq="h", inclusive="left"))
+    assert store.calls == [(pd.Timestamp("2019-01-01"), pd.Timestamp("2020-01-01"))]
+
+
 def test_capacity_is_loaded_up_to_the_month_of_the_last_utc_hour(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
