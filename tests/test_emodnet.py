@@ -155,6 +155,30 @@ def test_a_newer_planned_zone_does_not_remove_operating_farms() -> None:
     assert sorted(farms["status"]) == ["planned", "production"]
 
 
+def test_superseded_records_are_dropped_before_the_status_filter() -> None:
+    # As HKZ Kavel I-IV: still construction (updated 2016) inside the operating farm (2026).
+    farm = feature(square(4.0, 52.3, 0.3), "Production", "2026")
+    lots = feature(square(4.1, 52.4, 0.1), "Construction", "2016")
+
+    farms = emodnet.parse_farms(collection([farm, lots]), ["DE"], ("construction",))
+
+    assert farms.empty
+
+
+def test_dismantled_and_test_site_records_are_never_superseded() -> None:
+    old_farm = feature(square(11.0, 54.5, 0.05), "Dismantled", "2020")
+    turbine = feature(square(11.06, 54.5, 0.02), "Test site", "2024")
+    repowered = feature(square(11.0, 54.5, 0.1), "Production", "2026")
+    production = feature(square(12.0, 54.5, 0.05), "Production", "2024")
+    removed = feature(square(12.0, 54.5, 0.1), "Dismantled", "2026")
+
+    farms = emodnet.parse_farms(
+        collection([old_farm, turbine, repowered, production, removed]), ["DE"], ALL_STATUSES
+    )
+
+    assert len(farms) == 5
+
+
 def test_records_with_the_same_update_year_are_both_kept() -> None:
     # A large farm polygon can contain a smaller, separate farm.
     large = feature(square(4.0, 52.5, 0.3), "Production", "2026")
