@@ -369,7 +369,11 @@ def test_era5_source_and_missing_hours_are_carried(
     assert result["complete"].iloc[1:].all()
 
 
-def test_complete_year_is_read_once_and_kept(store: FakeStore, tmp_path: Path) -> None:
+def test_complete_year_is_read_once_and_kept(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Final ERA5 covers December 2020 but not January 2021 yet.
+    monkeypatch.setattr(physics, "era5_final_until", lambda today: pd.Timestamp("2021-01-01"))
     start, end = pd.Timestamp("2020-03-01"), pd.Timestamp("2020-03-04")
 
     first = read_weather("FR", BOX, physics.WEATHER, start, end, tmp_path)
