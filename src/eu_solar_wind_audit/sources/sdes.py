@@ -81,7 +81,7 @@ def _read_sheet(book: pd.ExcelFile, sheet: str) -> pd.DataFrame:
         {
             "label": body[0],
             "department_code": body[2],
-            # Corsica and the overseas departments are single rows with a code and no region.
+            # Corsica and the overseas departments are region rows with a code and no department.
             "department": body[1].fillna(body[0]),
             "region": body[0].ffill(),
         }
