@@ -62,3 +62,24 @@ class Predictions(pa.DataFrameModel):
 
     class Config:
         strict = True
+
+
+def climatology(hours: pd.DataFrame, held_out_year: int) -> pd.Series:
+    """Monthly-hourly climatology of the hours of `held_out_year`, in MWh: the mean capacity factor
+    of the eligible hours of the other years in `hours` with the same calendar month and UTC hour,
+    times the capacity of the hour. NaN where no eligible hour of another year has that month and
+    hour.
+
+    `hours` has a UTC time index and the columns `published_mwh`, `capacity_mw` and `eligible` of
+    `Predictions`.
+    """
+    time = hours.index
+    if not isinstance(time, pd.DatetimeIndex) or str(time.tz) != "UTC":
+        raise ValueError("expected a DatetimeIndex in UTC")
+    training = (time.year != held_out_year) & hours["eligible"].to_numpy()
+    held_out = time.year == held_out_year
+    factor = hours["published_mwh"] / hours["capacity_mw"]
+    mean_factor = factor[training].groupby([time.month[training], time.hour[training]]).mean()
+    cells = pd.MultiIndex.from_arrays([time.month[held_out], time.hour[held_out]])
+    energy = mean_factor.reindex(cells).to_numpy() * hours["capacity_mw"].to_numpy()[held_out]
+    return pd.Series(energy, index=time[held_out], name="climatology_mwh")
