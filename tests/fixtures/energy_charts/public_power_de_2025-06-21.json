@@ -1,0 +1,800 @@
+{
+ "schema_version": "2.0",
+ "endpoint": "public_power",
+ "country": "de",
+ "bidding_zone": null,
+ "timezone": "Europe/Berlin",
+ "resolution": "PT15M",
+ "interval_minutes": 15,
+ "unit": "MW",
+ "generated_at": "2026-11-22T16:53:55+01:00",
+ "available_from": "2025-06-21T00:00:00+02:00",
+ "available_until": "2025-06-21T23:45:00+02:00",
+ "series": [
+  {
+   "id": "wind_offshore",
+   "name": "Wind offshore"
+  },
+  {
+   "id": "wind_onshore",
+   "name": "Wind onshore"
+  },
+  {
+   "id": "solar",
+   "name": "Solar"
+  }
+ ],
+ "data": [
+  {
+   "timestamp": "2025-06-21T00:00:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5317.8,
+    "wind_offshore": 314.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T00:15:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5285.9,
+    "wind_offshore": 324.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T00:30:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5272.9,
+    "wind_offshore": 331.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T00:45:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5371.7,
+    "wind_offshore": 327.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T01:00:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5388.4,
+    "wind_offshore": 335.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T01:15:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5365.3,
+    "wind_offshore": 348.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T01:30:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5325.2,
+    "wind_offshore": 376.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T01:45:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5292.2,
+    "wind_offshore": 392.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T02:00:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5156.8,
+    "wind_offshore": 440.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T02:15:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5084.3,
+    "wind_offshore": 425.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T02:30:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5070.2,
+    "wind_offshore": 371.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T02:45:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5045.3,
+    "wind_offshore": 372.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T03:00:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 5001.6,
+    "wind_offshore": 406.6
+   }
+  },
+  {
+   "timestamp": "2025-06-21T03:15:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 4902.7,
+    "wind_offshore": 428.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T03:30:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 4791.3,
+    "wind_offshore": 442.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T03:45:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 4730.4,
+    "wind_offshore": 413.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T04:00:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 4674.8,
+    "wind_offshore": 424.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T04:15:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 4666.0,
+    "wind_offshore": 439.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T04:30:00+02:00",
+   "values": {
+    "solar": 62.8,
+    "wind_onshore": 4656.7,
+    "wind_offshore": 480.6
+   }
+  },
+  {
+   "timestamp": "2025-06-21T04:45:00+02:00",
+   "values": {
+    "solar": 89.8,
+    "wind_onshore": 4700.4,
+    "wind_offshore": 547.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T05:00:00+02:00",
+   "values": {
+    "solar": 213.3,
+    "wind_onshore": 4850.7,
+    "wind_offshore": 606.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T05:15:00+02:00",
+   "values": {
+    "solar": 447.1,
+    "wind_onshore": 5031.3,
+    "wind_offshore": 641.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T05:30:00+02:00",
+   "values": {
+    "solar": 919.9,
+    "wind_onshore": 5051.3,
+    "wind_offshore": 633.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T05:45:00+02:00",
+   "values": {
+    "solar": 1585.5,
+    "wind_onshore": 4997.1,
+    "wind_offshore": 645.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T06:00:00+02:00",
+   "values": {
+    "solar": 2449.1,
+    "wind_onshore": 5044.0,
+    "wind_offshore": 672.2
+   }
+  },
+  {
+   "timestamp": "2025-06-21T06:15:00+02:00",
+   "values": {
+    "solar": 3568.7,
+    "wind_onshore": 5019.0,
+    "wind_offshore": 673.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T06:30:00+02:00",
+   "values": {
+    "solar": 5045.2,
+    "wind_onshore": 4956.4,
+    "wind_offshore": 642.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T06:45:00+02:00",
+   "values": {
+    "solar": 6855.2,
+    "wind_onshore": 4862.0,
+    "wind_offshore": 608.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T07:00:00+02:00",
+   "values": {
+    "solar": 8938.0,
+    "wind_onshore": 4746.9,
+    "wind_offshore": 611.2
+   }
+  },
+  {
+   "timestamp": "2025-06-21T07:15:00+02:00",
+   "values": {
+    "solar": 11229.0,
+    "wind_onshore": 4507.3,
+    "wind_offshore": 648.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T07:30:00+02:00",
+   "values": {
+    "solar": 13757.1,
+    "wind_onshore": 4139.4,
+    "wind_offshore": 687.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T07:45:00+02:00",
+   "values": {
+    "solar": 16503.1,
+    "wind_onshore": 3715.9,
+    "wind_offshore": 674.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T08:00:00+02:00",
+   "values": {
+    "solar": 19406.1,
+    "wind_onshore": 3180.9,
+    "wind_offshore": 666.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T08:15:00+02:00",
+   "values": {
+    "solar": 22287.8,
+    "wind_onshore": 2611.0,
+    "wind_offshore": 694.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T08:30:00+02:00",
+   "values": {
+    "solar": 25132.6,
+    "wind_onshore": 2144.1,
+    "wind_offshore": 683.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T08:45:00+02:00",
+   "values": {
+    "solar": 27872.2,
+    "wind_onshore": 1766.8,
+    "wind_offshore": 669.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T09:00:00+02:00",
+   "values": {
+    "solar": 30020.5,
+    "wind_onshore": 1497.3,
+    "wind_offshore": 325.5
+   }
+  },
+  {
+   "timestamp": "2025-06-21T09:15:00+02:00",
+   "values": {
+    "solar": 32422.8,
+    "wind_onshore": 1318.8,
+    "wind_offshore": 326.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T09:30:00+02:00",
+   "values": {
+    "solar": 34256.3,
+    "wind_onshore": 1135.8,
+    "wind_offshore": 307.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T09:45:00+02:00",
+   "values": {
+    "solar": 36090.2,
+    "wind_onshore": 974.3,
+    "wind_offshore": 300.2
+   }
+  },
+  {
+   "timestamp": "2025-06-21T10:00:00+02:00",
+   "values": {
+    "solar": 38138.3,
+    "wind_onshore": 949.7,
+    "wind_offshore": 278.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T10:15:00+02:00",
+   "values": {
+    "solar": 39029.5,
+    "wind_onshore": 862.0,
+    "wind_offshore": 329.5
+   }
+  },
+  {
+   "timestamp": "2025-06-21T10:30:00+02:00",
+   "values": {
+    "solar": 40085.0,
+    "wind_onshore": 811.3,
+    "wind_offshore": 366.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T10:45:00+02:00",
+   "values": {
+    "solar": 41136.2,
+    "wind_onshore": 759.2,
+    "wind_offshore": 372.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T11:00:00+02:00",
+   "values": {
+    "solar": 40882.6,
+    "wind_onshore": 640.5,
+    "wind_offshore": 499.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T11:15:00+02:00",
+   "values": {
+    "solar": 41617.8,
+    "wind_onshore": 614.6,
+    "wind_offshore": 508.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T11:30:00+02:00",
+   "values": {
+    "solar": 41849.2,
+    "wind_onshore": 624.3,
+    "wind_offshore": 508.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T11:45:00+02:00",
+   "values": {
+    "solar": 42655.9,
+    "wind_onshore": 669.4,
+    "wind_offshore": 374.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T12:00:00+02:00",
+   "values": {
+    "solar": 42057.6,
+    "wind_onshore": 656.8,
+    "wind_offshore": 321.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T12:15:00+02:00",
+   "values": {
+    "solar": 42363.1,
+    "wind_onshore": 666.7,
+    "wind_offshore": 309.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T12:30:00+02:00",
+   "values": {
+    "solar": 42209.1,
+    "wind_onshore": 670.6,
+    "wind_offshore": 290.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T12:45:00+02:00",
+   "values": {
+    "solar": 42523.5,
+    "wind_onshore": 652.2,
+    "wind_offshore": 281.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T13:00:00+02:00",
+   "values": {
+    "solar": 42778.2,
+    "wind_onshore": 645.3,
+    "wind_offshore": 496.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T13:15:00+02:00",
+   "values": {
+    "solar": 42598.5,
+    "wind_onshore": 668.5,
+    "wind_offshore": 483.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T13:30:00+02:00",
+   "values": {
+    "solar": 43279.0,
+    "wind_onshore": 672.1,
+    "wind_offshore": 503.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T13:45:00+02:00",
+   "values": {
+    "solar": 43255.9,
+    "wind_onshore": 627.0,
+    "wind_offshore": 518.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T14:00:00+02:00",
+   "values": {
+    "solar": 43207.3,
+    "wind_onshore": 651.9,
+    "wind_offshore": 535.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T14:15:00+02:00",
+   "values": {
+    "solar": 42865.1,
+    "wind_onshore": 713.2,
+    "wind_offshore": 564.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T14:30:00+02:00",
+   "values": {
+    "solar": 42826.4,
+    "wind_onshore": 660.5,
+    "wind_offshore": 574.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T14:45:00+02:00",
+   "values": {
+    "solar": 42659.6,
+    "wind_onshore": 680.4,
+    "wind_offshore": 571.6
+   }
+  },
+  {
+   "timestamp": "2025-06-21T15:00:00+02:00",
+   "values": {
+    "solar": 41988.9,
+    "wind_onshore": 717.5,
+    "wind_offshore": 612.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T15:15:00+02:00",
+   "values": {
+    "solar": 41286.5,
+    "wind_onshore": 776.3,
+    "wind_offshore": 623.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T15:30:00+02:00",
+   "values": {
+    "solar": 40535.3,
+    "wind_onshore": 819.4,
+    "wind_offshore": 646.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T15:45:00+02:00",
+   "values": {
+    "solar": 39447.4,
+    "wind_onshore": 832.8,
+    "wind_offshore": 674.5
+   }
+  },
+  {
+   "timestamp": "2025-06-21T16:00:00+02:00",
+   "values": {
+    "solar": 39165.1,
+    "wind_onshore": 836.9,
+    "wind_offshore": 790.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T16:15:00+02:00",
+   "values": {
+    "solar": 37832.5,
+    "wind_onshore": 912.9,
+    "wind_offshore": 1192.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T16:30:00+02:00",
+   "values": {
+    "solar": 36927.8,
+    "wind_onshore": 927.9,
+    "wind_offshore": 1167.6
+   }
+  },
+  {
+   "timestamp": "2025-06-21T16:45:00+02:00",
+   "values": {
+    "solar": 34874.0,
+    "wind_onshore": 974.5,
+    "wind_offshore": 1134.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T17:00:00+02:00",
+   "values": {
+    "solar": 32805.5,
+    "wind_onshore": 928.1,
+    "wind_offshore": 1144.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T17:15:00+02:00",
+   "values": {
+    "solar": 30725.6,
+    "wind_onshore": 939.7,
+    "wind_offshore": 1166.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T17:30:00+02:00",
+   "values": {
+    "solar": 28165.3,
+    "wind_onshore": 999.7,
+    "wind_offshore": 1199.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T17:45:00+02:00",
+   "values": {
+    "solar": 25680.8,
+    "wind_onshore": 1065.6,
+    "wind_offshore": 1235.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T18:00:00+02:00",
+   "values": {
+    "solar": 22796.6,
+    "wind_onshore": 1070.8,
+    "wind_offshore": 1232.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T18:15:00+02:00",
+   "values": {
+    "solar": 19984.8,
+    "wind_onshore": 1033.0,
+    "wind_offshore": 1193.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T18:30:00+02:00",
+   "values": {
+    "solar": 17113.5,
+    "wind_onshore": 1005.2,
+    "wind_offshore": 1130.7
+   }
+  },
+  {
+   "timestamp": "2025-06-21T18:45:00+02:00",
+   "values": {
+    "solar": 14243.5,
+    "wind_onshore": 948.8,
+    "wind_offshore": 1092.2
+   }
+  },
+  {
+   "timestamp": "2025-06-21T19:00:00+02:00",
+   "values": {
+    "solar": 11526.4,
+    "wind_onshore": 925.1,
+    "wind_offshore": 1062.5
+   }
+  },
+  {
+   "timestamp": "2025-06-21T19:15:00+02:00",
+   "values": {
+    "solar": 9108.9,
+    "wind_onshore": 906.6,
+    "wind_offshore": 1041.2
+   }
+  },
+  {
+   "timestamp": "2025-06-21T19:30:00+02:00",
+   "values": {
+    "solar": 7087.0,
+    "wind_onshore": 939.4,
+    "wind_offshore": 994.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T19:45:00+02:00",
+   "values": {
+    "solar": 5538.6,
+    "wind_onshore": 956.8,
+    "wind_offshore": 942.3
+   }
+  },
+  {
+   "timestamp": "2025-06-21T20:00:00+02:00",
+   "values": {
+    "solar": 4182.7,
+    "wind_onshore": 1017.3,
+    "wind_offshore": 825.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T20:15:00+02:00",
+   "values": {
+    "solar": 3033.5,
+    "wind_onshore": 1100.3,
+    "wind_offshore": 771.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T20:30:00+02:00",
+   "values": {
+    "solar": 2065.9,
+    "wind_onshore": 1227.5,
+    "wind_offshore": 774.4
+   }
+  },
+  {
+   "timestamp": "2025-06-21T20:45:00+02:00",
+   "values": {
+    "solar": 1336.3,
+    "wind_onshore": 1363.8,
+    "wind_offshore": 806.0
+   }
+  },
+  {
+   "timestamp": "2025-06-21T21:00:00+02:00",
+   "values": {
+    "solar": 753.5,
+    "wind_onshore": 1572.5,
+    "wind_offshore": 776.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T21:15:00+02:00",
+   "values": {
+    "solar": 344.8,
+    "wind_onshore": 1850.8,
+    "wind_offshore": 759.5
+   }
+  },
+  {
+   "timestamp": "2025-06-21T21:30:00+02:00",
+   "values": {
+    "solar": 121.9,
+    "wind_onshore": 2035.6,
+    "wind_offshore": 763.2
+   }
+  },
+  {
+   "timestamp": "2025-06-21T21:45:00+02:00",
+   "values": {
+    "solar": 68.7,
+    "wind_onshore": 2022.2,
+    "wind_offshore": 786.8
+   }
+  },
+  {
+   "timestamp": "2025-06-21T22:00:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 2031.7,
+    "wind_offshore": 807.6
+   }
+  },
+  {
+   "timestamp": "2025-06-21T22:15:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 2315.8,
+    "wind_offshore": 871.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T22:30:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 2536.1,
+    "wind_offshore": 915.6
+   }
+  },
+  {
+   "timestamp": "2025-06-21T22:45:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 2812.4,
+    "wind_offshore": 1007.6
+   }
+  },
+  {
+   "timestamp": "2025-06-21T23:00:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 3097.9,
+    "wind_offshore": 1143.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T23:15:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 3417.0,
+    "wind_offshore": 1268.1
+   }
+  },
+  {
+   "timestamp": "2025-06-21T23:30:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 3726.6,
+    "wind_offshore": 1376.9
+   }
+  },
+  {
+   "timestamp": "2025-06-21T23:45:00+02:00",
+   "values": {
+    "solar": 0.0,
+    "wind_onshore": 4059.4,
+    "wind_offshore": 1499.2
+   }
+  }
+ ],
+ "attributes": {},
+ "license": "CC BY 4.0 (creativecommons.org/licenses/by/4.0), attribution: energy-charts.info",
+ "deprecated": false
+}

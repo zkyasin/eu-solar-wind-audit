@@ -1,8 +1,12 @@
-"""Installed capacity from the Energy-Charts API of Fraunhofer ISE (licence CC BY 4.0, attribution
-"energy-charts.info", as stated in the `license` field of each response).
+"""German production and installed capacity from the Energy-Charts API of Fraunhofer ISE (licence
+CC BY 4.0, attribution "energy-charts.info", as stated in the `license` field of each response).
 
-Each value is the capacity installed at the end of a month and is labelled with that month's last
-day. Monthly values are published for Germany only.
+Each capacity value is the capacity installed at the end of a month and is labelled with that
+month's last day. Monthly values are published for Germany only.
+
+Production is mean power in MW over quarter-hours labelled at their start. `public_power` is the
+net production fed into the public grid; `total_power` adds industrial self-supply and, for solar,
+self-consumption. Both are published for Germany only.
 """
 
 import json
@@ -15,7 +19,10 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Series
 
+from eu_solar_wind_audit import grid
+
 URL = "https://api.energy-charts.info/v2/installed_power"
+POWER_URL = "https://api.energy-charts.info/v2/{endpoint}"
 CACHE_DIR = Path("data/raw/energy_charts")
 TIMEOUT_SECONDS = 30.0
 # The API allows about 2 requests per minute and answers 429 with a Retry-After in seconds.
@@ -23,6 +30,11 @@ RETRY_DELAYS_SECONDS = (10.0, 30.0, 60.0)
 
 TECHNOLOGIES = ("solar_ac", "solar_dc", "wind_onshore", "wind_offshore")
 MW_PER_UNIT = {"MW": 1.0, "GW": 1000.0}
+
+PERIMETERS = {"public_power": "public", "total_power": "total"}
+POWER_SERIES = ("solar", "wind_onshore", "wind_offshore")
+TIMEZONE = "Europe/Berlin"
+QUARTER_HOUR = pd.Timedelta(minutes=15)
 
 
 class InstalledCapacity(pa.DataFrameModel):
@@ -58,9 +70,9 @@ def fetch_installed_capacity(
     params = {"country": country, "time_step": "monthly"}
     if client is None:
         with httpx.Client(timeout=TIMEOUT_SECONDS) as own_client:
-            content = _get(own_client, params)
+            content = _get(own_client, URL, params)
     else:
-        content = _get(client, params)
+        content = _get(client, URL, params)
     # Parsed before caching, so that a response that does not parse is never kept.
     capacity = parse_installed_power(json.loads(content))
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -77,9 +89,7 @@ def parse_installed_power(payload: dict[str, Any]) -> DataFrame[InstalledCapacit
     The month in progress at `generated_at` is dropped: its value is not yet an end-of-month
     capacity.
     """
-    # The API states the licence per response and some of its data is not open.
-    if not payload["license"].startswith("CC BY 4.0"):
-        raise ValueError(f"unexpected licence: {payload['license']}")
+    _check_licence(payload)
     units = {series["id"]: series.get("unit") or payload["unit"] for series in payload["series"]}
     technologies = [technology for technology in TECHNOLOGIES if technology in units]
     unknown = {units[technology] for technology in technologies} - MW_PER_UNIT.keys()
@@ -104,12 +114,106 @@ def parse_installed_power(payload: dict[str, Any]) -> DataFrame[InstalledCapacit
     return InstalledCapacity.validate(tidy.reset_index(drop=True))
 
 
-def _get(client: httpx.Client, params: dict[str, str]) -> bytes:
+def fetch_hourly_power(
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    client: httpx.Client | None = None,
+    cache_dir: Path = CACHE_DIR,
+) -> dict[str, DataFrame[grid.Hourly]]:
+    """German solar and wind production on the UTC hours of [start, end).
+
+    Keys are `<public|total>.<technology>` and `self_consumption.solar` (total minus public).
+    Whole local months are requested.
+    """
+    if client is None:
+        with httpx.Client(timeout=TIMEOUT_SECONDS) as own_client:
+            return fetch_hourly_power(start, end, client=own_client, cache_dir=cache_dir)
+
+    months = pd.period_range(_local(start), _local(end - grid.HOUR), freq="M")
+    series: dict[str, DataFrame[grid.Hourly]] = {}
+    for endpoint, perimeter in PERIMETERS.items():
+        monthly = [fetch_power_month(endpoint, month, client, cache_dir) for month in months]
+        power = pd.concat(monthly)
+        for technology in POWER_SERIES:
+            energy = power[technology] * (QUARTER_HOUR / grid.HOUR)
+            hourly = grid.hourly_from_period_start_energy(energy)
+            name = f"{perimeter}.{technology}"
+            series[name] = grid.Hourly.validate(grid.on_hours(hourly, start, end))
+
+    public, total = series["public.solar"], series["total.solar"]
+    series["self_consumption.solar"] = grid.Hourly.validate(
+        total.assign(
+            energy_mwh=total["energy_mwh"] - public["energy_mwh"],
+            complete=total["complete"] & public["complete"],
+        )
+    )
+    return series
+
+
+def fetch_power_month(
+    endpoint: str, month: pd.Period, client: httpx.Client, cache_dir: Path
+) -> pd.DataFrame:
+    """Solar and wind power of one local month, from the cache once the month is settled."""
+    path = cache_dir / f"{endpoint}_de_{month}.json"
+    if path.exists():
+        return parse_power(json.loads(path.read_bytes()))
+
+    params = {
+        "country": "de",
+        "start": str(month.start_time.date()),
+        "end": str(month.end_time.date()),
+    }
+    content = _get(client, POWER_URL.format(endpoint=endpoint), params)
+    # Parsed before caching, so that a response that does not parse is never kept.
+    power = parse_power(json.loads(content))
+    # Values of the current and previous month can still be filled in or revised.
+    this_month = _local(pd.Timestamp.now(tz="UTC")).to_period("M")
+    if month < this_month - 1:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        partial = path.with_name(path.name + ".part")
+        partial.write_bytes(content)
+        partial.replace(path)
+    return power
+
+
+def parse_power(payload: dict[str, Any]) -> pd.DataFrame:
+    """Mean power in MW of each series of POWER_SERIES, indexed by the UTC start of each
+    quarter-hour; null values become NaN."""
+    _check_licence(payload)
+    if payload["interval_minutes"] != QUARTER_HOUR // pd.Timedelta(minutes=1):
+        raise ValueError(f"unexpected interval: {payload['interval_minutes']} minutes")
+    units = {series["id"]: series.get("unit") or payload["unit"] for series in payload["series"]}
+    unknown = {units.get(technology) for technology in POWER_SERIES} - {"MW"}
+    if unknown:
+        raise ValueError(f"unexpected units: {unknown}")
+
+    rows = payload["data"]
+    stamps = pd.to_datetime([row["timestamp"] for row in rows], utc=True)
+    return pd.DataFrame(
+        [row["values"] for row in rows],
+        index=pd.DatetimeIndex(stamps, name="time"),
+        columns=list(POWER_SERIES),
+        dtype=float,
+    )
+
+
+def _local(stamp: pd.Timestamp) -> pd.Timestamp:
+    return stamp.tz_convert(TIMEZONE).tz_localize(None)
+
+
+def _check_licence(payload: dict[str, Any]) -> None:
+    # The API states the licence per response and some of its data is not open.
+    if not payload["license"].startswith("CC BY 4.0"):
+        raise ValueError(f"unexpected licence: {payload['license']}")
+
+
+def _get(client: httpx.Client, url: str, params: dict[str, str]) -> bytes:
     """Retries rate limits, timeouts, connection errors and server errors; other HTTP errors
     raise at once."""
     for delay in RETRY_DELAYS_SECONDS:
         try:
-            response = client.get(URL, params=params)
+            response = client.get(url, params=params)
         except httpx.TransportError:
             time.sleep(delay)
             continue
@@ -117,6 +221,6 @@ def _get(client: httpx.Client, params: dict[str, str]) -> bytes:
             break
         time.sleep(float(response.headers.get("Retry-After", delay)))
     else:
-        response = client.get(URL, params=params)
+        response = client.get(url, params=params)
     response.raise_for_status()
     return response.content
