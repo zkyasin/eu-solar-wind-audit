@@ -359,10 +359,11 @@ def test_wind_matches_the_model_within_the_binning_error(
 
 def test_wind_covariates_refer_to_the_wind_fleet(store: WeatherStore, tmp_path: Path) -> None:
     start, end = utc("2020-06-01"), utc("2020-06-03")
+    # The second window adds capacity in "01" only, so that each window has its own weights.
     monthly = panel(
         "wind_onshore",
         {
-            "01": {"2012-12-31": 100.0, "2020-12-31": 100.0},
+            "01": {"2012-12-31": 100.0, "2020-12-31": 500.0},
             "02": {"2012-12-31": 300.0, "2020-12-31": 300.0},
         },
     )
@@ -387,8 +388,9 @@ def test_wind_covariates_refer_to_the_wind_fleet(store: WeatherStore, tmp_path: 
     for column, values in [("ghi_w_m2", ghi), ("clear_sky_ghi_w_m2", clear)]:
         expected = np.average(values, axis=1, weights=weights)
         np.testing.assert_allclose(covariates[column], expected, rtol=1e-12, atol=1e-12)
-    # Weighted by capacity: the plain mean latitude of the three cells is 45.25.
-    assert 45.25 < latitude < 45.5
+    # The plain mean latitude of the three cells is 45.25, and the first window alone puts the
+    # centroid above it.
+    assert 45.0 < latitude < 45.25
 
 
 def test_wind_speeds_beyond_the_power_curves_are_refused(
