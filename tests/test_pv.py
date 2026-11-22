@@ -72,8 +72,21 @@ def run(ds: xr.Dataset, *fleet: System, dc_ac_ratio: float = 1.1) -> np.ndarray:
 
 @pytest.mark.parametrize(("day", "temp_c"), [(SUMMER, 25.0), (WINTER, 2.0)])
 @pytest.mark.parametrize("system", [SOUTH_30, TRACKER])
-def test_matches_pvlib_modelchain(day: str, temp_c: float, system: System) -> None:
-    params = PVParameters((system,))
+@pytest.mark.parametrize("defaults", [True, False], ids=["defaults", "custom"])
+def test_matches_pvlib_modelchain(day: str, temp_c: float, system: System, defaults: bool) -> None:
+    # Away from the defaults, a parameter that does not reach pvlib makes the results differ.
+    losses = {} if defaults else {"soiling": 10.0}
+    params = (
+        PVParameters((system,))
+        if defaults
+        else PVParameters(
+            (system,),
+            dc_ac_ratio=1.3,
+            dc_losses=pvlib.pvsystem.pvwatts_losses(**losses) / 100,
+            gamma_pdc=-0.0035,
+            albedo=0.35,
+        )
+    )
     sky = clear_sky(day)
     times = mid_hours(day)
     zenith = SITE.get_solarposition(times, temperature=temp_c)["zenith"]
@@ -105,7 +118,9 @@ def test_matches_pvlib_modelchain(day: str, temp_c: float, system: System) -> No
         temperature_model_parameters={"u0": 25.0, "u1": 6.84},
     )
     chain = pvlib.modelchain.ModelChain(
-        pvlib.pvsystem.PVSystem(arrays=[array], inverter_parameters={"pdc0": 1 / 0.96}),
+        pvlib.pvsystem.PVSystem(
+            arrays=[array], inverter_parameters={"pdc0": 1 / 0.96}, losses_parameters=losses
+        ),
         SITE,
         transposition_model="haydavies",
         aoi_model="no_loss",
@@ -117,7 +132,7 @@ def test_matches_pvlib_modelchain(day: str, temp_c: float, system: System) -> No
     )
     chain.run_model(chain_weather)
 
-    cf = run(clear_weather(day, temp_c), system)
+    cf = series(capacity_factor(clear_weather(day, temp_c), params))
 
     # From 88 degrees pvlib rejects the DNI, which the model then counts as diffuse.
     trusted = (zenith < 88).to_numpy()
