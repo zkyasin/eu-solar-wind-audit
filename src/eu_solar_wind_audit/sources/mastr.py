@@ -220,8 +220,8 @@ def monthly_capacity(
     counted at a month end on or after its commissioning date and before its decommissioning date.
     Planned units have no commissioning date and never count, nor do units decommissioned before
     their commissioning date. Temporarily shut down units keep counting: the export holds only
-    their latest shutdown, and they remain installed. Recent months are incomplete, since units are
-    registered up to a month after commissioning, often later.
+    their latest shutdown, and they remain installed. Recent months are incomplete: units must be
+    registered within a month of commissioning (MaStRV section 5(5)), and some are registered later.
     """
     counted = _countable(units)
     starts = _events(counted, "commissioned", sign=1.0)
