@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 import geopandas as gpd
 import numpy as np
@@ -12,7 +13,7 @@ from eu_solar_wind_audit import physics, pv, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.physics import read_weather, split_by_commissioning
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import era5
+from eu_solar_wind_audit.sources import era5, natural_earth
 
 STEP = 0.25
 LATITUDE = np.array([45.0, 45.25, 45.5])
@@ -340,3 +341,30 @@ def test_cache_of_another_box_is_refused(store: FakeStore, tmp_path: Path) -> No
 
     with pytest.raises(ValueError, match="box"):
         read_weather("FR", BOX._replace(west=1.0), physics.WEATHER, start, end, tmp_path)
+
+
+def test_model_france_runs_one_calendar_year_at_a_time(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monthly = panel("solar", {"01": constant(100.0)})
+    monkeypatch.setattr(physics, "load_monthly_capacity", lambda technology, until: monthly)
+    monkeypatch.setattr(natural_earth, "load_admin1", lambda country: REGIONS)
+    periods: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    model = physics.model
+
+    def spy(
+        technology: physics.Technology, start: pd.Timestamp, end: pd.Timestamp, *args: Any
+    ) -> pd.DataFrame:
+        periods.append((start, end))
+        return model(technology, start, end, *args)
+
+    monkeypatch.setattr(physics, "model", spy)
+    start, end = pd.Timestamp("2019-12-31 22:00"), pd.Timestamp("2020-01-01 02:00")
+
+    result = physics.model_france("solar", start, end, COUNTRY, cache_dir=tmp_path)
+
+    assert periods == [(start, pd.Timestamp("2020-01-01")), (pd.Timestamp("2020-01-01"), end)]
+    expected = pd.date_range(start, end, freq="h", inclusive="left", tz="UTC", name="time")
+    assert result.index.equals(expected)
+    assert result["energy_mwh"].to_numpy() == pytest.approx(50.0)

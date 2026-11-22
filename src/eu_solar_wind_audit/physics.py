@@ -166,7 +166,7 @@ def model(
     capacities = [
         hourly_capacity(part.isel(latitude=rows, longitude=columns), hours) for part in per_cell
     ]
-    cells = weather.load().isel(latitude=rows, longitude=columns)
+    cells = weather.isel(latitude=rows, longitude=columns).load()
 
     energy = xr.zeros_like(cells["time"], dtype=float)
     for index, capacity_mw in enumerate(capacities):
@@ -207,7 +207,12 @@ def model_france(
     cache_dir: Path = ERA5_CACHE_DIR,
 ) -> pd.DataFrame:
     """Hourly modelled output of mainland France without Corsica for hours [start, end), naive
-    UTC; see `model`."""
+    UTC, computed one calendar year at a time; see `model`."""
     monthly = load_monthly_capacity(technology, end - HOUR)
     regions = natural_earth.load_admin1("FR")
-    return model(technology, start, end, parameters, monthly, regions, cache_dir)
+    years = []
+    for year in range(start.year, (end - HOUR).year + 1):
+        first = max(start, pd.Timestamp(year, 1, 1))
+        stop = min(end, pd.Timestamp(year + 1, 1, 1))
+        years.append(model(technology, first, stop, parameters, monthly, regions, cache_dir))
+    return pd.concat(years)
