@@ -15,7 +15,7 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
 import httpx
 import numpy as np
@@ -23,7 +23,7 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Index, Series
 
-from eu_solar_wind_audit.grid import HOUR, hourly_from_instantaneous, hourly_from_period_end_means
+from eu_solar_wind_audit import grid
 
 BASE_URL = "https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets"
 CACHE_DIR = Path("data/raw/odre")
@@ -92,13 +92,11 @@ REGIONAL_CONSOLIDATED_FIELDS = {
     "eolien_offshore": "wind_offshore_mw",
 }
 
-UtcTime = Annotated[pd.DatetimeTZDtype, "ns", "UTC"]
-
 
 # Production is not checked for sign: the source publishes small negative values, which the
 # anomaly detectors must see.
 class NationalConsolidated(pa.DataFrameModel):
-    time: Index[UtcTime]
+    time: Index[grid.UtcTime]
     status: Series[str] = pa.Field(isin=["definitive", "consolidated"])
     load_mw: Series[float] = pa.Field(ge=0, nullable=True)
     solar_mw: Series[float] = pa.Field(nullable=True)
@@ -109,7 +107,7 @@ class NationalConsolidated(pa.DataFrameModel):
 
 
 class NationalRealtime(pa.DataFrameModel):
-    time: Index[UtcTime]
+    time: Index[grid.UtcTime]
     status: Series[str] = pa.Field(isin=["realtime"])
     load_mw: Series[float] = pa.Field(ge=0, nullable=True)
     solar_mw: Series[float] = pa.Field(nullable=True)
@@ -122,7 +120,7 @@ class NationalRealtime(pa.DataFrameModel):
 
 
 class RegionalConsolidated(pa.DataFrameModel):
-    time: Index[UtcTime]
+    time: Index[grid.UtcTime]
     region_code: Series[str] = pa.Field(isin=list(REGIONS))
     region: Series[str]
     status: Series[str] = pa.Field(isin=["definitive", "consolidated"])
@@ -137,21 +135,15 @@ class RegionalConsolidated(pa.DataFrameModel):
         strict = True
 
 
-class Hourly(pa.DataFrameModel):
-    """Energy over the hour starting at `time`, NaN when the hour is incomplete. The status is the
-    least final one among the published rows of the hour, null when the hour has none."""
+class Hourly(grid.Hourly):
+    """The status is the least final one among the published rows of the hour, null when the hour
+    has none."""
 
-    time: Index[UtcTime] = pa.Field(unique=True)
-    energy_mwh: Series[float] = pa.Field(nullable=True)
-    complete: Series[bool]
     status: Series[str] = pa.Field(isin=STATUS_ORDER, nullable=True)
-
-    class Config:
-        strict = True
 
 
 class RegionalHourly(pa.DataFrameModel):
-    time: Index[UtcTime]
+    time: Index[grid.UtcTime]
     region_code: Series[str] = pa.Field(isin=list(REGIONS))
     region: Series[str]
     energy_mwh: Series[float] = pa.Field(nullable=True)
@@ -280,7 +272,7 @@ def national_hourly(
 
     covered = hourly.index[hourly["status"].notna()]
     if covered.empty or covered[-1] < hours[-1]:
-        after = hours[0] if covered.empty else covered[-1] + HOUR
+        after = hours[0] if covered.empty else covered[-1] + grid.HOUR
         realtime = fetch_national_realtime(client, after.date(), end, cache_dir=cache_dir)
         later = _realtime_hourly(realtime[f"{series}_mw"], hours[hours >= after])
         hourly = pd.concat([hourly[hourly.index < after], later])
@@ -377,7 +369,7 @@ def _consolidated_hourly(
 ) -> pd.DataFrame:
     hourly = pd.DataFrame(columns=["energy_mwh", "complete", "status"])
     if not power_mw.empty:
-        hourly = hourly_from_period_end_means(power_mw)
+        hourly = grid.hourly_from_period_end_means(power_mw)
         # Same shift as the values: a row labelled 00:00 belongs to the hour starting at 23:00.
         rank = status.map(STATUS_ORDER.index).shift(-1, freq="30min").resample("h").max()
         hourly["status"] = rank.reindex(hourly.index).map(dict(enumerate(STATUS_ORDER)))
@@ -387,7 +379,7 @@ def _consolidated_hourly(
 def _realtime_hourly(power_mw: pd.Series, hours: pd.DatetimeIndex) -> pd.DataFrame:
     hourly = pd.DataFrame(columns=["energy_mwh", "complete", "status"])
     if not power_mw.empty:
-        hourly = hourly_from_instantaneous(power_mw).assign(status="realtime")
+        hourly = grid.hourly_from_instantaneous(power_mw).assign(status="realtime")
     return _on_hours(hourly, hours)
 
 
