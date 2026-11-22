@@ -1,7 +1,9 @@
 import json
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pandas as pd
 import pytest
 from pandera.errors import SchemaError
@@ -11,6 +13,8 @@ from eu_solar_wind_audit.sources import energy_charts
 # Fixture: https://api.energy-charts.info/v2/installed_power?country=de&time_step=monthly&installation_decommission=false,
 # retrieved 2026-11-22.
 FIXTURE = Path(__file__).parent / "fixtures" / "energy_charts" / "installed_power_de_monthly.json"
+
+Handler = Callable[[httpx.Request], httpx.Response]
 
 
 @pytest.fixture
@@ -139,3 +143,116 @@ def test_negative_capacity_is_rejected() -> None:
 
     with pytest.raises(SchemaError, match="capacity_mw"):
         energy_charts.parse_installed_power(payload(data, units={"wind_onshore": None}))
+
+
+@pytest.fixture
+def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    delays: list[float] = []
+    monkeypatch.setattr("time.sleep", delays.append)
+    return delays
+
+
+def replay(responses: list[httpx.Response | Exception], requests: list[httpx.Request]) -> Handler:
+    """Answers each request with the next response, or raises the next exception."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        response = responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
+
+    return handler
+
+
+def fetch(
+    responses: list[httpx.Response | Exception],
+    requests: list[httpx.Request],
+    cache_dir: Path,
+    *,
+    refresh: bool = False,
+) -> pd.DataFrame:
+    transport = httpx.MockTransport(replay(responses, requests))
+    with httpx.Client(transport=transport) as client:
+        return energy_charts.fetch_installed_capacity(
+            "de", client=client, cache_dir=cache_dir, refresh=refresh
+        )
+
+
+def test_fetch_requests_monthly_values_and_caches_the_raw_response(
+    tmp_path: Path, sleeps: list[float]
+) -> None:
+    requests: list[httpx.Request] = []
+
+    panel = fetch([httpx.Response(200, content=FIXTURE.read_bytes())], requests, tmp_path)
+
+    assert len(requests) == 1
+    assert str(requests[0].url).startswith(energy_charts.URL)
+    assert dict(requests[0].url.params) == {"country": "de", "time_step": "monthly"}
+    assert (tmp_path / "installed_power_de_monthly.json").read_bytes() == FIXTURE.read_bytes()
+    assert capacity(panel, "2025-12-01", "solar_ac") == pytest.approx(107_856)
+    assert sleeps == []
+
+
+def test_cached_response_is_read_without_a_request_unless_refreshed(tmp_path: Path) -> None:
+    (tmp_path / "installed_power_de_monthly.json").write_bytes(FIXTURE.read_bytes())
+    requests: list[httpx.Request] = []
+
+    cached = fetch([], requests, tmp_path)
+    refreshed = fetch(
+        [httpx.Response(200, content=FIXTURE.read_bytes())], requests, tmp_path, refresh=True
+    )
+
+    assert len(requests) == 1
+    assert cached.equals(refreshed)
+
+
+def test_rate_limit_waits_as_long_as_the_server_asks(tmp_path: Path, sleeps: list[float]) -> None:
+    requests: list[httpx.Request] = []
+    responses: list[httpx.Response | Exception] = [
+        httpx.Response(429, headers={"Retry-After": "7"}),
+        httpx.Response(503),
+        httpx.ReadTimeout("timed out"),
+        httpx.Response(200, content=FIXTURE.read_bytes()),
+    ]
+
+    fetch(responses, requests, tmp_path)
+
+    assert len(requests) == 4
+    assert sleeps == [7.0, *energy_charts.RETRY_DELAYS_SECONDS[1:]]
+
+
+def test_persistent_server_errors_raise_and_cache_nothing(
+    tmp_path: Path, sleeps: list[float]
+) -> None:
+    attempts = len(energy_charts.RETRY_DELAYS_SECONDS) + 1
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(httpx.HTTPStatusError):
+        fetch([httpx.Response(502)] * attempts, requests, tmp_path)
+
+    assert len(requests) == attempts
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_country_without_monthly_values_fails_at_once(tmp_path: Path, sleeps: list[float]) -> None:
+    requests: list[httpx.Request] = []
+    # Answer of the live API for country=fr, 2026-11-22.
+    not_found = httpx.Response(404, text="monthly data is only available for: de")
+
+    with pytest.raises(httpx.HTTPStatusError):
+        fetch([not_found], requests, tmp_path)
+
+    assert len(requests) == 1
+    assert sleeps == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_response_that_does_not_parse_is_not_cached(tmp_path: Path) -> None:
+    data = [{"timestamp": "2025-01-01T00:00:00+01:00", "values": {"solar_ac": 2.5}}]
+    body = json.dumps(payload(data, units={"solar_ac": "kW"})).encode()
+
+    with pytest.raises(ValueError, match="kW"):
+        fetch([httpx.Response(200, content=body)], [], tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
