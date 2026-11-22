@@ -434,6 +434,18 @@ def test_whole_local_months_are_requested_from_both_endpoints(tmp_path: Path) ->
     ]
 
 
+def test_a_period_ending_at_a_local_month_start_asks_for_no_later_month(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    # 22:00 UTC on 30 June is midnight on 1 July in Berlin.
+    end = pd.Timestamp("2025-06-30 22:00", tz="UTC")
+    with power_server(day_contents("2025-06-21"), requests) as client:
+        energy_charts.fetch_hourly_power(
+            end - pd.Timedelta(hours=2), end, client=client, cache_dir=tmp_path
+        )
+
+    assert [request.url.params["start"] for request in requests] == ["2025-06-01", "2025-06-01"]
+
+
 def test_settled_months_are_cached_and_the_last_two_are_downloaded_again(tmp_path: Path) -> None:
     this_month = pd.Timestamp.now(tz="Europe/Berlin").tz_localize(None).to_period("M")
     months = [this_month - 2, this_month - 1, this_month]
