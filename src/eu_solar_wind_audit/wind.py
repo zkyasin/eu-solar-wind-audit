@@ -7,7 +7,7 @@ are at every cell and hour.
 """
 
 from dataclasses import dataclass
-from functools import cache
+from functools import lru_cache
 from importlib.resources import files
 from typing import NamedTuple
 
@@ -91,7 +91,8 @@ def power_curve(turbine: str) -> tuple[FloatArray, FloatArray]:
     return speeds, fraction
 
 
-@cache
+# Bounded: each set of smoothing constants tried during fitting adds an entry.
+@lru_cache
 def smoothed_curve(turbine: str, base_m_s: float, slope: float) -> tuple[FloatArray, FloatArray]:
     """Speeds (m/s) and output fraction of the curve convolved with a Gaussian of standard
     deviation `base_m_s + slope * v` centred on each speed v; the raw curve if both are 0."""
