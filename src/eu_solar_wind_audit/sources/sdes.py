@@ -130,3 +130,30 @@ def metropolitan_without_corsica(panel: pd.DataFrame) -> pd.DataFrame:
     """Rows of mainland France, the perimeter of the national éCO2mix series."""
     code = panel["department_code"]
     return panel[(code.str.len() == 2) & ~code.isin(CORSICA)]
+
+
+def _monthly_one_technology(panel: pd.DataFrame) -> pd.DataFrame:
+    wide = panel.pivot(index="quarter_end", columns="department_code", values="capacity_mw")
+    monthly = wide.resample("ME").asfreq().interpolate(method="time", limit_area="inside")
+
+    final = panel.loc[~panel["provisional"], "quarter_end"].max()
+    long = monthly.rename_axis("month_end").melt(ignore_index=False, value_name="capacity_mw")
+    long = long.reset_index()
+    long["technology"] = str(panel["technology"].iat[0])
+    long["provisional"] = long["month_end"] > final
+    return long
+
+
+def monthly_capacity(panel: pd.DataFrame) -> pd.DataFrame:
+    """Month-end capacity per department and technology, from a panel of `read_capacity`.
+
+    Capacity is linear in time between quarter ends. Months after the last final quarter are
+    provisional.
+    """
+    monthly = pd.concat(
+        [_monthly_one_technology(group) for _, group in panel.groupby("technology")],
+        ignore_index=True,
+    )
+    names = panel[["department_code", "department", "region"]].drop_duplicates()
+    columns = ["department_code", "department", "region", "technology", "month_end"]
+    return monthly.merge(names, on="department_code")[[*columns, "capacity_mw", "provisional"]]

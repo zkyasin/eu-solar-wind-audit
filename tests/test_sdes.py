@@ -167,3 +167,85 @@ def test_metropolitan_perimeter_drops_corsica_and_overseas() -> None:
     june = mainland[mainland["quarter_end"] == pd.Timestamp("2026-06-30")]
     # Sum of the Bretagne and Normandie region rows of the workbook.
     assert june["capacity_mw"].sum() == pytest.approx(1171.964331 + 717.98565)
+
+
+def quarterly(capacity: dict[str, float], *, technology: str = "solar") -> pd.DataFrame:
+    """Panel of one department with the last quarter provisional."""
+    quarter_ends = pd.to_datetime(list(capacity))
+    return pd.DataFrame(
+        {
+            "department_code": "01",
+            "department": "Ain",
+            "region": "Auvergne-Rhône-Alpes",
+            "quarter_end": quarter_ends,
+            "technology": technology,
+            "installations": 0,
+            "capacity_mw": list(capacity.values()),
+            "provisional": quarter_ends == quarter_ends.max(),
+        }
+    )
+
+
+def monthly_values(monthly: pd.DataFrame, technology: str = "solar") -> pd.Series:
+    selected = monthly[monthly["technology"] == technology]
+    return selected.set_index("month_end")["capacity_mw"]
+
+
+def test_month_ends_are_linear_in_time_between_quarter_ends() -> None:
+    panel = quarterly({"2025-12-31": 100.0, "2026-03-31": 190.0})
+
+    values = monthly_values(sdes.monthly_capacity(panel))
+
+    # 31 and 59 of the 90 days between the two quarter ends.
+    assert values.to_dict() == pytest.approx(
+        {
+            pd.Timestamp("2025-12-31"): 100.0,
+            pd.Timestamp("2026-01-31"): 131.0,
+            pd.Timestamp("2026-02-28"): 159.0,
+            pd.Timestamp("2026-03-31"): 190.0,
+        }
+    )
+
+
+def test_a_missing_quarter_is_bridged_linearly() -> None:
+    panel = quarterly({"2025-06-30": 0.0, "2025-12-31": 184.0})
+
+    values = monthly_values(sdes.monthly_capacity(panel))
+
+    assert values[pd.Timestamp("2025-07-31")] == pytest.approx(31.0)
+    assert values[pd.Timestamp("2025-09-30")] == pytest.approx(92.0)
+
+
+def test_months_after_the_last_final_quarter_are_provisional() -> None:
+    panel = quarterly({"2025-12-31": 100.0, "2026-03-31": 190.0})
+
+    monthly = sdes.monthly_capacity(panel).set_index("month_end")
+
+    assert not monthly.loc[pd.Timestamp("2025-12-31"), "provisional"]
+    assert monthly.loc[pd.Timestamp("2026-01-31") :, "provisional"].all()
+
+
+def test_each_technology_ends_at_its_own_last_quarter() -> None:
+    panel = pd.concat(
+        [
+            quarterly({"2025-12-31": 10.0, "2026-06-30": 20.0}),
+            quarterly({"2025-12-31": 5.0, "2026-03-31": 6.0}, technology="wind_onshore"),
+        ]
+    )
+
+    monthly = sdes.monthly_capacity(panel)
+
+    assert monthly_values(monthly).index.max() == pd.Timestamp("2026-06-30")
+    assert monthly_values(monthly, "wind_onshore").index.max() == pd.Timestamp("2026-03-31")
+
+
+def test_quarter_ends_keep_their_published_values() -> None:
+    panel = sdes.read_capacity(WIND)
+
+    monthly = sdes.monthly_capacity(panel)
+
+    keys = ["department_code", "technology", "quarter_end"]
+    at_quarter_ends = monthly.rename(columns={"month_end": "quarter_end"}).merge(panel, on=keys)
+    assert len(at_quarter_ends) == len(panel)
+    assert (at_quarter_ends["capacity_mw_x"] == at_quarter_ends["capacity_mw_y"]).all()
+    assert (at_quarter_ends["department_x"] == at_quarter_ends["department_y"]).all()
