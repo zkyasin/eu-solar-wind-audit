@@ -61,9 +61,8 @@ def test_model_france_writes_the_series_and_its_inputs(
     parquet, sidecar = map(Path, capsys.readouterr().out.splitlines())
     assert (parquet, sidecar) == (output, output.with_suffix(".json"))
     pd.testing.assert_frame_equal(pd.read_parquet(parquet), hourly, check_freq=False)
-    assert calls == [
-        ("solar", pd.Timestamp("2025-06-01"), pd.Timestamp("2025-06-02"), load_country(FR))
-    ]
+    start, end = pd.Timestamp("2025-06-01", tz="UTC"), pd.Timestamp("2025-06-02", tz="UTC")
+    assert calls == [("solar", start, end, load_country(FR))]
     metadata = json.loads(sidecar.read_text(encoding="utf-8"))
     assert metadata["era5_sources"] == {"ERA5": 2, "ERA5T": 1}
     assert metadata["capacity"]["provisional_hours"] == 2

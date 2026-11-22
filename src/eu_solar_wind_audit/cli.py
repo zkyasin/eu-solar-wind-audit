@@ -42,7 +42,7 @@ def main(argv: list[str] | None = None) -> None:
         print(saved.path.with_suffix(".json"))
     elif args.command == "model-france":
         parameters = load_country(args.config)
-        start, end = pd.Timestamp(args.start), pd.Timestamp(args.end)
+        start, end = pd.Timestamp(args.start, tz="UTC"), pd.Timestamp(args.end, tz="UTC")
         hourly = physics.model_france(args.technology, start, end, parameters)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         hourly.to_parquet(args.output)

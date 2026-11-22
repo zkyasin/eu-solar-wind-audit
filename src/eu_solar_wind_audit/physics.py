@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import xarray as xr
 
-from eu_solar_wind_audit import pv, spatial, wind
+from eu_solar_wind_audit import grid, pv, spatial, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.sources import era5, natural_earth, odre, sdes
 
@@ -111,7 +111,8 @@ def split_by_commissioning(
 
 
 def hourly_capacity(per_cell: xr.DataArray, hours: pd.DatetimeIndex) -> xr.DataArray:
-    """Capacity at the start of each hour, linear in time between month ends."""
+    """Capacity at the start of each of `hours`, in naive UTC as ERA5 gives them, linear in time
+    between month ends."""
     # A month-end figure is the capacity at the end of that day. xarray interpolates wrongly
     # between datetimes of different units, so both are set to nanoseconds.
     instants = pd.DatetimeIndex(per_cell.indexes["month_end"] + DAY).as_unit("ns")
@@ -137,21 +138,29 @@ def model(
     regions: gpd.GeoDataFrame,
     cache_dir: Path = ERA5_CACHE_DIR,
 ) -> pd.DataFrame:
-    """Hourly modelled output for hours [start, end) in naive UTC.
+    """Hourly modelled output for hours [start, end), both hour starts in UTC.
 
     `monthly` is a month-end capacity panel as sdes.monthly_capacity returns it and `regions` the
     department polygons of natural_earth.load_admin1. The result, indexed by UTC hour start, has
     the energy in MWh, whether the hour is complete, the modelled capacity in MW, whether that
     capacity uses provisional SDES months, and the ERA5 source of the hour.
     """
+    grid.check_period(start, end)
     # The only perimeter of Country so far.
     mainland = sdes.metropolitan_without_corsica(monthly)
     mainland = mainland[mainland["technology"] == technology]
     capacity = mainland.pivot(index="month_end", columns="department_code", values="capacity_mw")
     capacity = capacity.rename_axis(index="month_end", columns="region")
 
-    box = parameters.era5_box
-    weather = read_weather(parameters.country, box, INPUTS[technology], start, end, cache_dir)
+    # ERA5 times are naive UTC.
+    weather = read_weather(
+        parameters.country,
+        parameters.era5_box,
+        INPUTS[technology],
+        start.tz_convert(None),
+        end.tz_convert(None),
+        cache_dir,
+    )
     hours = pd.DatetimeIndex(weather.indexes["time"])
     polygons = regions[regions["region"].isin(capacity.columns)]
     fractions = spatial.region_fractions(polygons, weather["latitude"], weather["longitude"])
@@ -196,10 +205,11 @@ def model(
 
 
 def load_monthly_capacity(technology: Technology, until: pd.Timestamp) -> pd.DataFrame:
-    """Month-end SDES capacity per department up to the month end at or after `until`."""
+    """Month-end SDES capacity per department up to the month end at or after `until`, in UTC."""
     with odre.make_client() as client:
         workbook = sdes.download_dashboard(client, SDES_MEDIA[technology])
-    month_end = (until + pd.offsets.MonthEnd(0)).normalize()
+    # SDES month ends are naive dates.
+    month_end = (until.tz_convert(None) + pd.offsets.MonthEnd(0)).normalize()
     return sdes.monthly_capacity(sdes.read_capacity(workbook), until=month_end)
 
 
@@ -210,15 +220,14 @@ def model_france(
     parameters: Country,
     cache_dir: Path = ERA5_CACHE_DIR,
 ) -> pd.DataFrame:
-    """Hourly modelled output of mainland France without Corsica for hours [start, end), naive
-    UTC, computed one calendar year at a time; see `model`."""
-    if end <= start:
-        raise ValueError(f"empty period from {start} to {end}")
+    """Hourly modelled output of mainland France without Corsica for hours [start, end), both
+    hour starts in UTC, computed one calendar year at a time; see `model`."""
+    grid.check_period(start, end)
     monthly = load_monthly_capacity(technology, end - HOUR)
     regions = natural_earth.load_admin1("FR")
     years = []
     for year in range(start.year, (end - HOUR).year + 1):
-        first = max(start, pd.Timestamp(year, 1, 1))
-        stop = min(end, pd.Timestamp(year + 1, 1, 1))
+        first = max(start, pd.Timestamp(year, 1, 1, tz="UTC"))
+        stop = min(end, pd.Timestamp(year + 1, 1, 1, tz="UTC"))
         years.append(model(technology, first, stop, parameters, monthly, regions, cache_dir))
     return pd.concat(years)

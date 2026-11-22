@@ -25,7 +25,8 @@ def test_three_days_are_close_to_the_published_national_output(
     era5_cache: Path, technology: physics.Technology, first: date
 ) -> None:
     last = first + pd.Timedelta(days=2)
-    start, end = pd.Timestamp(first), pd.Timestamp(last) + pd.Timedelta(days=1)
+    start = pd.Timestamp(first, tz="UTC")
+    end = pd.Timestamp(last, tz="UTC") + pd.Timedelta(days=1)
 
     modelled = physics.model_france(technology, start, end, load_country(FRANCE), era5_cache)
     with odre.make_client() as client:
@@ -35,8 +36,8 @@ def test_three_days_are_close_to_the_published_national_output(
             # National wind includes offshore farms; the 12 mainland regions split it.
             regional = odre.fetch_regional_consolidated(client, first, last)
             published = regional.groupby(level="time")["wind_onshore_mw"].sum(min_count=12)
-    hourly = grid.hourly_from_period_end_means(published)["energy_mwh"]
-    both = pd.DataFrame({"model": modelled["energy_mwh"], "published": hourly}).loc[modelled.index]
+    hourly = grid.on_hours(grid.hourly_from_period_end_means(published), start, end)
+    both = pd.DataFrame({"model": modelled["energy_mwh"], "published": hourly["energy_mwh"]})
 
     assert both.notna().all().all()
     daily = both.resample("D").sum()

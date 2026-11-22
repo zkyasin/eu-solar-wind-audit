@@ -13,8 +13,9 @@ from eu_solar_wind_audit import physics, pv, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.physics import read_weather, split_by_commissioning
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import era5, natural_earth
+from eu_solar_wind_audit.sources import era5, natural_earth, sdes
 
+SDES_SOLAR = Path(__file__).parent / "fixtures" / "sdes" / "solaire-pv-2026-t2.xlsx"
 STEP = 0.25
 LATITUDE = np.array([45.0, 45.25, 45.5])
 LONGITUDE = np.array([2.0, 2.25, 2.5, 2.75])
@@ -112,6 +113,10 @@ def constant(value: float) -> dict[str, float]:
     return {str(day.date()): value for day in pd.date_range("2011-12-31", "2020-12-31", freq="ME")}
 
 
+def utc(stamp: str) -> pd.Timestamp:
+    return pd.Timestamp(stamp, tz="UTC")
+
+
 def constant_factor(value: float) -> object:
     def factor(weather: xr.Dataset, parameters: object) -> xr.DataArray:
         return xr.full_like(weather["u10"], value, dtype=float)
@@ -128,8 +133,8 @@ def run(
 ) -> pd.DataFrame:
     return physics.model(
         technology,
-        pd.Timestamp(start),
-        pd.Timestamp(end),
+        utc(start),
+        utc(end),
         COUNTRY,
         monthly,
         REGIONS,
@@ -387,27 +392,62 @@ def test_model_france_runs_one_calendar_year_at_a_time(
         return model(technology, start, end, *args)
 
     monkeypatch.setattr(physics, "model", spy)
-    start, end = pd.Timestamp("2019-12-31 22:00"), pd.Timestamp("2020-01-01 02:00")
+    start, end = utc("2019-12-31 22:00"), utc("2020-01-01 02:00")
 
     result = physics.model_france("solar", start, end, COUNTRY, cache_dir=tmp_path)
 
-    assert periods == [(start, pd.Timestamp("2020-01-01")), (pd.Timestamp("2020-01-01"), end)]
-    expected = pd.date_range(start, end, freq="h", inclusive="left", tz="UTC", name="time")
+    assert periods == [(start, utc("2020-01-01")), (utc("2020-01-01"), end)]
+    expected = pd.date_range(start, end, freq="h", inclusive="left", name="time")
     assert result.index.equals(expected)
     assert result["energy_mwh"].to_numpy() == pytest.approx(50.0)
 
 
-def test_empty_period_is_refused_before_any_download(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_capacity_is_loaded_up_to_the_month_of_the_last_utc_hour(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sdes, "download_dashboard", lambda client, media_id: SDES_SOLAR)
+
+    monthly = physics.load_monthly_capacity("solar", utc("2026-07-31 23:00"))
+
+    assert monthly["month_end"].max() == pd.Timestamp("2026-07-31")
+
+
+WRONG_PERIODS = [
+    pytest.param(utc("2025-01-01"), utc("2025-01-01"), "empty period", id="empty"),
+    pytest.param(pd.Timestamp("2025-01-01"), pd.Timestamp("2025-01-02"), "hour in UTC", id="naive"),
+    pytest.param(
+        pd.Timestamp("2025-01-01", tz="Europe/Paris"), utc("2025-01-02"), "hour in UTC", id="paris"
+    ),
+    pytest.param(utc("2025-01-01 00:30"), utc("2025-01-02"), "hour in UTC", id="off-hour"),
+]
+
+
+@pytest.mark.parametrize(("start", "end", "error"), WRONG_PERIODS)
+def test_wrong_period_is_refused_before_any_download(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    error: str,
 ) -> None:
     def no_download(technology: physics.Technology, until: pd.Timestamp) -> pd.DataFrame:
         raise AssertionError("capacity was downloaded")
 
     monkeypatch.setattr(physics, "load_monthly_capacity", no_download)
-    day = pd.Timestamp("2025-01-01")
 
-    with pytest.raises(ValueError, match="empty period"):
-        physics.model_france("solar", day, day, COUNTRY, cache_dir=tmp_path)
+    with pytest.raises(ValueError, match=error):
+        physics.model_france("solar", start, end, COUNTRY, cache_dir=tmp_path)
+
+
+@pytest.mark.parametrize(("start", "end", "error"), WRONG_PERIODS)
+def test_wrong_period_is_refused_before_reading_era5(
+    store: FakeStore, tmp_path: Path, start: pd.Timestamp, end: pd.Timestamp, error: str
+) -> None:
+    monthly = panel("solar", {"01": constant(1.0)})
+
+    with pytest.raises(ValueError, match=error):
+        physics.model("solar", start, end, COUNTRY, monthly, REGIONS, tmp_path)
+    assert store.calls == []
 
 
 def test_hours_after_the_last_final_month_end_use_provisional_capacity(
