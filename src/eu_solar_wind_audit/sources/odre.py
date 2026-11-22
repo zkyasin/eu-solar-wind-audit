@@ -7,7 +7,8 @@ is empty in the national dataset, on a 30-minute grid in the regional one. Real-
 autumn days it has no rows for the repeated local hour.
 
 `national_hourly` and `regional_hourly` put these series on the common grid of `grid`, with the
-publication status of each hour.
+publication status of each hour. `onshore_hourly` gives onshore wind on the hours where the
+published series tell it apart from offshore wind.
 """
 
 import hashlib
@@ -67,6 +68,11 @@ SHORT_EXPORT_MAX_AGE = timedelta(hours=12)
 # not, until 31 December 2023 (ODRÉ export read on 2026-11-22). The national consolidated dataset
 # has no split.
 WIND_SPLIT_START = pd.Timestamp("2024-01-01", tz="Europe/Paris").tz_convert("UTC")
+
+# Saint-Nazaire, the first offshore wind farm in France, delivered its first power in early June
+# 2022 (EDF; AFP, 2022-06-10). Earlier offshore output, from the 2 MW Floatgen demonstrator
+# connected in 2018, is ignored.
+FIRST_OFFSHORE_POWER = pd.Timestamp("2022-06-01", tz="Europe/Paris").tz_convert("UTC")
 
 NationalSeries = Literal["load", "solar", "wind", "wind_onshore", "wind_offshore"]
 RegionalSeries = Literal["solar", "wind", "wind_onshore", "wind_offshore"]
@@ -293,6 +299,31 @@ def regional_hourly(
             hourly.loc[unpublished, "complete"] = False
         by_region[code] = Hourly.validate(hourly)
     return by_region
+
+
+def onshore_hourly(
+    client: httpx.Client,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    cache_dir: Path = CACHE_DIR,
+) -> DataFrame[Hourly]:
+    """Onshore wind for every hour of [start, end), both hour starts in UTC: national wind before
+    `FIRST_OFFSHORE_POWER`, national onshore wind from `WIND_SPLIT_START`. Hours in between are
+    incomplete and have no status: published wind then includes offshore output, which no series
+    gives separately."""
+    grid.check_period(start, end)
+    parts = []
+    if start < FIRST_OFFSHORE_POWER:
+        wind_end = min(end, FIRST_OFFSHORE_POWER)
+        parts.append(national_hourly(client, "wind", start, wind_end, cache_dir=cache_dir))
+    if end > WIND_SPLIT_START:
+        onshore_start = max(start, WIND_SPLIT_START)
+        parts.append(
+            national_hourly(client, "wind_onshore", onshore_start, end, cache_dir=cache_dir)
+        )
+    hourly = pd.concat(parts) if parts else Hourly.empty()
+    return Hourly.validate(grid.on_hours(hourly, start, end))
 
 
 def snapshot_realtime(client: httpx.Client, directory: Path) -> Snapshot:
