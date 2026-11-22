@@ -48,7 +48,8 @@ def hours(start: str, end: str) -> pd.DatetimeIndex:
     return pd.date_range(start, end, freq="h")
 
 
-def test_radiation_is_the_mean_power_of_the_hour_before_its_stamp() -> None:
+@pytest.mark.parametrize("name", ["ssrd", "fdir", "tisr"])
+def test_radiation_is_the_mean_power_of_the_hour_before_its_stamp(name: str) -> None:
     times = hours("2026-06-01 00:00", "2026-06-01 06:00")
     joules = 3600.0 * np.arange(len(times))
     final = era5.from_icechunk(icechunk_store(times, joules))
@@ -56,7 +57,7 @@ def test_radiation_is_the_mean_power_of_the_hour_before_its_stamp() -> None:
     out = era5.combine_stores(
         final,
         None,
-        ["ssrd"],
+        [name],
         FRANCE,
         pd.Timestamp("2026-06-01 02:00"),
         pd.Timestamp("2026-06-01 05:00"),
@@ -64,25 +65,26 @@ def test_radiation_is_the_mean_power_of_the_hour_before_its_stamp() -> None:
 
     assert out.indexes["time"].equals(hours("2026-06-01 02:00", "2026-06-01 04:00"))
     # The 03:00 stamp holds the energy of [02:00, 03:00).
-    assert out["ssrd"].isel(latitude=0, longitude=0).values.tolist() == [3.0, 4.0, 5.0]
-    assert out["ssrd"].attrs["units"] == "W m-2"
+    assert out[name].isel(latitude=0, longitude=0).values.tolist() == [3.0, 4.0, 5.0]
+    assert out[name].attrs["units"] == "W m-2"
 
 
-def test_instantaneous_field_is_the_mean_of_both_ends_of_the_hour() -> None:
+@pytest.mark.parametrize("name", ["t2m", "tcc", "u10", "v10", "u100", "v100"])
+def test_instantaneous_field_is_the_mean_of_both_ends_of_the_hour(name: str) -> None:
     times = hours("2026-06-01 00:00", "2026-06-01 06:00")
     final = era5.from_icechunk(icechunk_store(times, 2.0 * np.arange(len(times))))
 
     out = era5.combine_stores(
         final,
         None,
-        ["u100"],
+        [name],
         FRANCE,
         pd.Timestamp("2026-06-01 02:00"),
         pd.Timestamp("2026-06-01 05:00"),
     )
 
     assert out.indexes["time"].equals(hours("2026-06-01 02:00", "2026-06-01 04:00"))
-    assert out["u100"].isel(latitude=0, longitude=0).values.tolist() == [5.0, 7.0, 9.0]
+    assert out[name].isel(latitude=0, longitude=0).values.tolist() == [5.0, 7.0, 9.0]
 
 
 def test_period_needing_a_stamp_before_the_store_is_refused() -> None:
