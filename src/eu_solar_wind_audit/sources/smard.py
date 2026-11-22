@@ -37,8 +37,8 @@ FEED_IN: dict[Technology, int] = {
     "wind_onshore": WIND_ONSHORE,
     "wind_offshore": WIND_OFFSHORE,
 }
-REGIONS = ("DE", "50Hertz", "Amprion", "TenneT", "TransnetBW")
-OFFSHORE_REGIONS = ("DE", "50Hertz", "TenneT")
+Region = Literal["DE", "50Hertz", "Amprion", "TenneT", "TransnetBW"]
+OFFSHORE_REGIONS: tuple[Region, ...] = ("DE", "50Hertz", "TenneT")
 
 # Day-ahead price filter and region by bidding zone. Foreign zones are served under region DE.
 PRICES = {
@@ -100,7 +100,7 @@ def fetch_series(
 
 
 def fetch_hourly_feed_in(
-    region: str,
+    region: Region,
     technology: Technology,
     start: pd.Timestamp,
     end: pd.Timestamp,

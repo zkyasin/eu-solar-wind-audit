@@ -402,7 +402,7 @@ def test_hours_before_the_first_published_week_are_incomplete(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize("region", ["DE", "50Hertz", "TenneT"])
-def test_offshore_wind_is_read_where_it_is_published(region: str, tmp_path: Path) -> None:
+def test_offshore_wind_is_read_where_it_is_published(region: smard.Region, tmp_path: Path) -> None:
     start = pd.Timestamp("2025-03-25", tz="UTC")
     with serve(solar_files(region, smard.WIND_OFFSHORE), []) as client:
         offshore = smard.fetch_hourly_feed_in(
@@ -418,7 +418,9 @@ def test_offshore_wind_is_read_where_it_is_published(region: str, tmp_path: Path
 
 
 @pytest.mark.parametrize("region", ["Amprion", "TransnetBW"])
-def test_offshore_wind_is_refused_where_it_is_not_published(region: str, tmp_path: Path) -> None:
+def test_offshore_wind_is_refused_where_it_is_not_published(
+    region: smard.Region, tmp_path: Path
+) -> None:
     requests: list[str] = []
     with serve({}, requests) as client, pytest.raises(ValueError, match=region):
         smard.fetch_hourly_feed_in(

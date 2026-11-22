@@ -64,7 +64,7 @@ CAPACITY_2025_MW = {"solar": 107_856, "wind_onshore": 68_178, "wind_offshore": 9
     [("DE", "solar"), ("TenneT", "wind_onshore"), ("50Hertz", "wind_offshore")],
 )
 def test_a_june_week_of_feed_in_is_complete_and_below_capacity(
-    region: str, technology: smard.Technology, tmp_path: Path
+    region: smard.Region, technology: smard.Technology, tmp_path: Path
 ) -> None:
     start = pd.Timestamp("2025-06-16", tz="UTC")
 
