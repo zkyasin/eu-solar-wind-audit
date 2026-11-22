@@ -215,14 +215,15 @@ def download_export(
 def fetch_national_consolidated(
     client: httpx.Client, start: date, end: date, *, cache_dir: Path = CACHE_DIR
 ) -> DataFrame[NationalConsolidated]:
-    path = download_export(
+    return _consolidated_export(
         client,
         NATIONAL_CONSOLIDATED,
-        select=",".join(NATIONAL_CONSOLIDATED_FIELDS),
-        where=utc_days(start, end),
-        cache_dir=cache_dir,
+        NATIONAL_CONSOLIDATED_FIELDS,
+        NationalConsolidated,
+        start,
+        end,
+        cache_dir,
     )
-    return NationalConsolidated.validate(_tidy(path, NATIONAL_CONSOLIDATED_FIELDS))
 
 
 def fetch_national_realtime(
@@ -243,14 +244,15 @@ def fetch_national_realtime(
 def fetch_regional_consolidated(
     client: httpx.Client, start: date, end: date, *, cache_dir: Path = CACHE_DIR
 ) -> DataFrame[RegionalConsolidated]:
-    path = download_export(
+    return _consolidated_export(
         client,
         REGIONAL_CONSOLIDATED,
-        select=",".join(REGIONAL_CONSOLIDATED_FIELDS),
-        where=utc_days(start, end),
-        cache_dir=cache_dir,
+        REGIONAL_CONSOLIDATED_FIELDS,
+        RegionalConsolidated,
+        start,
+        end,
+        cache_dir,
     )
-    return RegionalConsolidated.validate(_tidy(path, REGIONAL_CONSOLIDATED_FIELDS))
 
 
 def national_hourly(
@@ -336,6 +338,29 @@ def _stream_to(client: httpx.Client, url: str, params: dict[str, str], dest: Pat
             for chunk in response.iter_bytes():
                 file.write(chunk)
     partial.replace(dest)
+
+
+def _consolidated_export[Schema: pa.DataFrameModel](
+    client: httpx.Client,
+    dataset: str,
+    fields: dict[str, str],
+    schema: type[Schema],
+    start: date,
+    end: date,
+    cache_dir: Path,
+) -> DataFrame[Schema]:
+    """Cached export, downloaded again when it stops before the last hour of `end`: consolidated
+    months are added in the middle of the next month (ODRÉ dataset description) and then leave
+    the real-time dataset."""
+    select, where = ",".join(fields), utc_days(start, end)
+    path = download_export(client, dataset, select=select, where=where, cache_dir=cache_dir)
+    frame = schema.validate(_tidy(path, fields))
+    if frame.empty or frame.index[-1] < pd.Timestamp(end, tz="UTC") + pd.Timedelta(hours=23):
+        path = download_export(
+            client, dataset, select=select, where=where, cache_dir=cache_dir, refresh=True
+        )
+        frame = schema.validate(_tidy(path, fields))
+    return frame
 
 
 def _hours(start: date, end: date) -> pd.DatetimeIndex:

@@ -80,14 +80,14 @@ def test_fetch_requests_the_dataset_days_and_fields(
 ) -> None:
     requests: list[httpx.Request] = []
     with serving(fixture.read_bytes(), requests) as client:
-        fetch(client, date(2025, 3, 30), date(2025, 3, 31), cache_dir=tmp_path)
+        fetch(client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=tmp_path)
 
     (request,) = requests
     assert request.url.path == f"/api/explore/v2.1/catalog/datasets/{dataset}/exports/parquet"
     assert request.url.params["select"] == fields
     assert request.url.params["where"] == (
         "date_heure >= date'2025-03-30T00:00:00+00:00'"
-        " AND date_heure <= date'2025-04-01T00:00:00+00:00'"
+        " AND date_heure <= date'2025-03-31T00:00:00+00:00'"
     )
 
 
@@ -283,6 +283,29 @@ def test_consolidated_fetch_is_cached_and_realtime_fetch_is_not(tmp_path: Path) 
 
     assert len(consolidated) == 1
     assert len(realtime) == 2
+
+
+def test_consolidated_export_cached_before_the_end_is_downloaded_again(tmp_path: Path) -> None:
+    full = pd.read_parquet(NATIONAL_CONSOLIDATED)
+    short_path = tmp_path / "short.parquet"
+    full[full["date_heure"] < utc("2025-03-30 12:00")].to_parquet(short_path, index=False)
+    exports = [short_path.read_bytes(), NATIONAL_CONSOLIDATED.read_bytes()]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, content=exports[min(len(requests), 2) - 1])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        frames = [
+            odre.fetch_national_consolidated(
+                client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=tmp_path / "cache"
+            )
+            for _ in range(2)
+        ]
+
+    assert [frame.index.max() for frame in frames] == [utc("2025-03-31 00:00")] * 2
+    assert len(requests) == 2
 
 
 def test_failed_download_leaves_no_file(tmp_path: Path) -> None:
