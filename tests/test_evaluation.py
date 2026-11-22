@@ -8,6 +8,7 @@ from eu_solar_wind_audit.evaluation import (
     Metrics,
     Predictions,
     climatology,
+    mean_absolute_by_period,
     metrics,
 )
 
@@ -360,3 +361,54 @@ def test_group_biases_relative_to_the_bias_of_the_year() -> None:
     relative = table[(table["model"] == "scaled") & (table["metric"] == "bias_relative_to_year")]
     assert relative["value"].to_numpy() == pytest.approx(0.0)
     assert sorted(relative["group"]) == ["DJF", "JJA", "clear", "overcast"]
+
+
+def annual_biases(by_year: dict[int, float]) -> pd.DataFrame:
+    """`Metrics` table of the annual biases of a solar model, each over 100 hours."""
+    return pd.DataFrame(
+        {
+            "technology": "solar",
+            "held_out_year": list(by_year),
+            "model": "fitted",
+            "metric": "bias",
+            "group": "all",
+            "value": list(by_year.values()),
+            "hours": 100,
+        }
+    )
+
+
+def test_each_period_is_summarised_by_the_mean_absolute_value_of_its_folds() -> None:
+    table = annual_biases({2019: 0.1, 2020: -0.3, 2021: 0.02, 2023: -0.04, 2024: 0.06, 2026: 0.5})
+
+    summary = mean_absolute_by_period(table)
+
+    # The prospective 2026 fold belongs to no period.
+    assert summary["period"].tolist() == ["2019-2022", "2023-2025"]
+    assert summary["mean_absolute_value"].tolist() == pytest.approx([0.14, 0.05])
+    assert summary["folds"].tolist() == [3, 2]
+    assert summary["hours"].tolist() == [300, 200]
+
+
+def test_undefined_values_are_left_out_of_the_summary() -> None:
+    summary = mean_absolute_by_period(annual_biases({2019: np.nan, 2020: -0.2}))
+
+    assert summary["mean_absolute_value"].tolist() == pytest.approx([0.2])
+    assert summary["folds"].tolist() == [1]
+
+
+def test_models_metrics_and_groups_are_summarised_apart() -> None:
+    table = pd.concat(
+        [
+            annual_biases({2019: 0.1}),
+            annual_biases({2019: 0.3}).assign(model="raw"),
+            annual_biases({2019: 0.2}).assign(group="DJF"),
+            annual_biases({2019: 0.4}).assign(metric="rmse_cf"),
+        ],
+        ignore_index=True,
+    )
+
+    summary = mean_absolute_by_period(table)
+
+    assert summary["mean_absolute_value"].tolist() == pytest.approx([0.1, 0.3, 0.2, 0.4])
+    assert set(summary["folds"]) == {1}

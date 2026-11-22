@@ -23,6 +23,9 @@ SKY_CLASSES = ["clear", "mixed", "overcast"]
 # Every energy column other than the published one holds the prediction of a model.
 MODEL_COLUMNS = r"^(?!published_mwh$).+_mwh$"
 METRICS = ["correlation", "rmse_cf", "bias", "bias_relative_to_year"]
+# The 2019-2022 folds are the years the model forms were chosen on, so their errors are optimistic;
+# the minimal detectable effect uses the 2023-2025 folds (evaluation plan, Deviations).
+PERIODS = {"2019-2022": range(2019, 2023), "2023-2025": range(2023, 2026)}
 
 
 class Predictions(pa.DataFrameModel):
@@ -154,3 +157,23 @@ def metrics(predictions: pd.DataFrame, technology: str) -> DataFrame[Metrics]:
     )
     table.insert(0, "technology", technology)
     return Metrics.validate(table)
+
+
+def mean_absolute_by_period(table: pd.DataFrame) -> pd.DataFrame:
+    """Mean absolute value of each metric of a `Metrics` table over the folds of each period of
+    `PERIODS`, with the number of folds and their eligible hours. Undefined values and folds of
+    other years, such as a prospective test year, are left out."""
+    Metrics.validate(table)
+    defined = table.dropna(subset=["value"])
+    period_of_year = {year: period for period, years in PERIODS.items() for year in years}
+    by_period = defined.assign(
+        period=defined["held_out_year"].map(period_of_year),
+        absolute_value=defined["value"].abs(),
+    )
+    keys = ["technology", "period", "model", "metric", "group"]
+    summary = by_period.groupby(keys, sort=False).agg(
+        folds=("value", "size"),
+        mean_absolute_value=("absolute_value", "mean"),
+        hours=("hours", "sum"),
+    )
+    return summary.reset_index()
