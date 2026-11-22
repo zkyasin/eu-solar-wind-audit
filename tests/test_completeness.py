@@ -247,6 +247,20 @@ def test_clock_change_rows_beyond_the_convention_are_still_reported() -> None:
     assert evidence(found)[1]["rows"] == 3
 
 
+def test_empty_rows_at_a_repeated_spring_stamp_are_a_gap() -> None:
+    published = local_day_rows()
+    published.loc[published.index == utc("2022-03-27 01:00")] = np.nan
+
+    found = check_season(published, local_days="Europe/Paris")
+
+    # Both rows ending at 01:00 are empty: their repetition follows the convention, not the gap.
+    assert spans(found) == [
+        ("gap", utc("2022-03-27 00:00"), utc("2022-03-27 01:00"), 1.0),
+        ("clock_change_convention", utc("2022-03-27 00:00"), utc("2022-10-30 01:00"), 2.0),
+    ]
+    assert evidence(found)[0]["empty_stamps"] == 1
+
+
 def test_rows_stamped_in_utc_across_clock_changes_give_no_finding() -> None:
     published = rows("2022-03-26 00:30", SEASON_END, step="30min")
 

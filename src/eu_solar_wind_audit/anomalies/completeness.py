@@ -129,16 +129,17 @@ def completeness(
         repeated = pd.DatetimeIndex(counts.index[counts > 1])
         missing = expected.difference(stamps[rows[on_step].notna().to_numpy()])
         absent = missing.difference(stamps)
-        # Stamps published twice in the hour after a spring change, and stamps without a row in
-        # the hour before an autumn change, follow the convention of the dataset.
+        # Stamps published twice in the hour after a spring change are not duplicates, and stamps
+        # without a row in the hour before an autumn change are not gaps: they follow the
+        # convention of the dataset. A repeated stamp whose rows are all empty is still a gap.
         twice = repeated[(counts[repeated] == 2).to_numpy()]
-        explained = twice[twice.floor("h").isin(after_spring)].union(
-            absent[absent.floor("h").isin(before_autumn)]
-        )
+        repeated_in_spring = twice[twice.floor("h").isin(after_spring)]
+        absent_in_autumn = absent[absent.floor("h").isin(before_autumn)]
+        explained = repeated_in_spring.union(absent_in_autumn)
         if not explained.empty:
             conventional.append(explained)
 
-        for run in layout.runs(missing.difference(explained)):
+        for run in layout.runs(missing.difference(absent_in_autumn)):
             absent_stamps = len(run.stamps.intersection(absent))
             empty_stamps = len(run.stamps) - absent_stamps
             records.append(
@@ -152,7 +153,7 @@ def completeness(
                     empty_stamps=empty_stamps,
                 )
             )
-        for run in layout.runs(repeated.difference(explained)):
+        for run in layout.runs(repeated.difference(repeated_in_spring)):
             rows_at = int(counts[run.stamps].sum())
             records.append(
                 _record(series, provenance, run, "duplicate", len(run.stamps), rows=rows_at)
