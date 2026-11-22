@@ -249,3 +249,43 @@ def test_quarter_ends_keep_their_published_values() -> None:
     assert len(at_quarter_ends) == len(panel)
     assert (at_quarter_ends["capacity_mw_x"] == at_quarter_ends["capacity_mw_y"]).all()
     assert (at_quarter_ends["department_x"] == at_quarter_ends["department_y"]).all()
+
+
+def test_capacity_after_the_last_quarter_follows_the_last_four_quarters() -> None:
+    # 365 MW over the last four quarters, 1 MW a day; the last quarter alone grew 295 MW.
+    panel = quarterly(
+        {
+            "2025-06-30": 100.0,
+            "2025-09-30": 130.0,
+            "2025-12-31": 150.0,
+            "2026-03-31": 170.0,
+            "2026-06-30": 465.0,
+        }
+    )
+
+    monthly = sdes.monthly_capacity(panel, until=pd.Timestamp("2026-08-31"))
+
+    values = monthly_values(monthly)
+    assert values[pd.Timestamp("2026-07-31")] == pytest.approx(496.0)
+    assert values[pd.Timestamp("2026-08-31")] == pytest.approx(527.0)
+    assert values.index.max() == pd.Timestamp("2026-08-31")
+    provisional = monthly.set_index("month_end")["provisional"]
+    assert not provisional[pd.Timestamp("2026-03-31")]
+    assert provisional[pd.Timestamp("2026-04-30") :].all()
+
+
+def test_extended_capacity_never_goes_below_zero() -> None:
+    panel = quarterly({"2025-06-30": 100.0, "2026-06-30": 10.0})
+
+    values = monthly_values(sdes.monthly_capacity(panel, until=pd.Timestamp("2027-06-30")))
+
+    assert values[pd.Timestamp("2026-07-31")] == pytest.approx(10.0 - 90.0 * 31 / 365)
+    assert values[pd.Timestamp("2027-06-30")] == 0.0
+
+
+def test_until_before_the_last_quarter_cuts_the_months() -> None:
+    panel = quarterly({"2025-12-31": 100.0, "2026-03-31": 190.0})
+
+    values = monthly_values(sdes.monthly_capacity(panel, until=pd.Timestamp("2026-01-31")))
+
+    assert list(values.index) == [pd.Timestamp("2025-12-31"), pd.Timestamp("2026-01-31")]

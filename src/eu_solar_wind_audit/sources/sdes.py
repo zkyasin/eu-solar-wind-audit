@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import httpx
+import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing.pandas import Series
@@ -132,9 +133,23 @@ def metropolitan_without_corsica(panel: pd.DataFrame) -> pd.DataFrame:
     return panel[(code.str.len() == 2) & ~code.isin(CORSICA)]
 
 
-def _monthly_one_technology(panel: pd.DataFrame) -> pd.DataFrame:
+def _monthly_one_technology(panel: pd.DataFrame, until: pd.Timestamp | None) -> pd.DataFrame:
     wide = panel.pivot(index="quarter_end", columns="department_code", values="capacity_mw")
     monthly = wide.resample("ME").asfreq().interpolate(method="time", limit_area="inside")
+    last = wide.index.max()
+    if until is not None and until > last:
+        year_before = last - pd.DateOffset(months=12)
+        per_day = (wide.loc[last] - wide.loc[year_before]) / (last - year_before).days
+        future = pd.date_range(last, until, freq="ME", inclusive="right")
+        days = (future - last).days.to_numpy()
+        extension = pd.DataFrame(
+            wide.loc[last].to_numpy() + np.outer(days, per_day.to_numpy()),
+            index=future,
+            columns=wide.columns,
+        ).clip(lower=0)
+        monthly = pd.concat([monthly, extension])
+    if until is not None:
+        monthly = monthly.loc[:until]
 
     final = panel.loc[~panel["provisional"], "quarter_end"].max()
     long = monthly.rename_axis("month_end").melt(ignore_index=False, value_name="capacity_mw")
@@ -144,14 +159,14 @@ def _monthly_one_technology(panel: pd.DataFrame) -> pd.DataFrame:
     return long
 
 
-def monthly_capacity(panel: pd.DataFrame) -> pd.DataFrame:
+def monthly_capacity(panel: pd.DataFrame, until: pd.Timestamp | None = None) -> pd.DataFrame:
     """Month-end capacity per department and technology, from a panel of `read_capacity`.
 
-    Capacity is linear in time between quarter ends. Months after the last final quarter are
-    provisional.
+    Capacity is linear in time between quarter ends. Up to `until`, it then follows the growth of
+    the last four quarters. Months after the last final quarter are provisional.
     """
     monthly = pd.concat(
-        [_monthly_one_technology(group) for _, group in panel.groupby("technology")],
+        [_monthly_one_technology(group, until) for _, group in panel.groupby("technology")],
         ignore_index=True,
     )
     names = panel[["department_code", "department", "region"]].drop_duplicates()
