@@ -3,7 +3,8 @@ plan, axis 2): gaps and repeated stamps.
 
 The detector reads the rows as fetched, before the hourly conversion of `grid`, which drops
 repeated stamps, so that their hours only look incomplete. Its findings are facts and use no
-threshold. Scores: `gap`, hours that lack a value; `duplicate`, stamps that come more than once.
+threshold. Scores: `gap`, hours that lack a value; `duplicate`, stamps that come more than once;
+`clock_change_convention`, clock changes whose rows follow the convention of the dataset.
 """
 
 from collections.abc import Mapping
@@ -20,6 +21,7 @@ from eu_solar_wind_audit.anomalies import findings
 from eu_solar_wind_audit.anomalies.findings import Findings
 
 NO_MERGING = pd.Timedelta(0)
+DAY = pd.Timedelta(days=1)
 
 # The periods a value covers, as the offsets in steps from its stamp to the starts of the first
 # and the last of them. An instantaneous value bounds the period before it and the one after it.
@@ -88,21 +90,31 @@ def completeness(
     *,
     step: pd.Timedelta,
     label: grid.Label,
+    dataset: str,
     provenance: str,
+    local_days: str | None = None,
 ) -> DataFrame[Findings]:
     """Findings on the raw rows of the series of one dataset that cover the hours [start, end),
     both hour starts in UTC.
 
     `published` maps each series id to its values as fetched: indexed by UTC stamps, with repeated
     stamps kept and missing values as NaN. `step` and `label` give the layout of the rows.
+
+    `local_days` is the time zone of a dataset that publishes the same rows for every local day,
+    as éCO2mix does. In UTC, the stamps of the hour after a spring clock change then come twice,
+    and those of the hour before an autumn change are missing. These rows give one
+    `clock_change_convention` finding named `dataset` for all the series, instead of a duplicate
+    and a gap in each of them.
     """
     grid.check_period(start, end)
     if grid.HOUR % step:
         raise ValueError(f"{step} does not divide an hour")
     layout = Layout(start, end, step, label)
     expected = layout.expected()
+    after_spring, before_autumn = _clock_change_hours(local_days, start, end)
 
     records: list[dict[str, object]] = []
+    conventional: list[pd.DatetimeIndex] = []
     for series, values in published.items():
         rows = layout.covering(values)
         on_step = _on_step(pd.DatetimeIndex(rows.index), step)
@@ -111,8 +123,16 @@ def completeness(
         repeated = pd.DatetimeIndex(counts.index[counts > 1])
         missing = expected.difference(stamps[rows[on_step].notna().to_numpy()])
         absent = missing.difference(stamps)
+        # Stamps published twice in the hour after a spring change, and stamps without a row in
+        # the hour before an autumn change, follow the convention of the dataset.
+        twice = repeated[(counts[repeated] == 2).to_numpy()]
+        explained = twice[twice.floor("h").isin(after_spring)].union(
+            absent[absent.floor("h").isin(before_autumn)]
+        )
+        if not explained.empty:
+            conventional.append(explained)
 
-        for run in layout.runs(missing):
+        for run in layout.runs(missing.difference(explained)):
             absent_stamps = len(run.stamps.intersection(absent))
             empty_stamps = len(run.stamps) - absent_stamps
             records.append(
@@ -126,12 +146,16 @@ def completeness(
                     empty_stamps=empty_stamps,
                 )
             )
-        for run in layout.runs(repeated):
+        for run in layout.runs(repeated.difference(explained)):
             rows_at = int(counts[run.stamps].sum())
             records.append(
                 _record(series, provenance, run, "duplicate", len(run.stamps), rows=rows_at)
             )
 
+    if conventional:
+        records.append(
+            _convention(dataset, provenance, local_days, conventional, layout, after_spring)
+        )
     return findings.from_records(records)
 
 
@@ -156,3 +180,51 @@ def _record(
             **evidence,
         },
     }
+
+
+def _clock_change_hours(
+    time_zone: str | None, start: pd.Timestamp, end: pd.Timestamp
+) -> tuple[pd.DatetimeIndex, pd.DatetimeIndex]:
+    """The UTC hours after each spring clock change and before each autumn change of
+    `time_zone`, within a day of [start, end); none without a time zone."""
+    hours = pd.date_range(start - DAY, end + DAY, freq="h", unit="ns")
+    if time_zone is None:
+        return hours[:0], hours[:0]
+    utc_offset = hours.tz_convert(time_zone).tz_localize(None) - hours.tz_localize(None)
+    change = utc_offset[1:] - utc_offset[:-1]
+    changed_at = hours[1:]
+    return changed_at[change > pd.Timedelta(0)], changed_at[change < pd.Timedelta(0)] - grid.HOUR
+
+
+def _convention(
+    dataset: str,
+    provenance: str,
+    time_zone: str | None,
+    conventional: list[pd.DatetimeIndex],
+    layout: Layout,
+    after_spring: pd.DatetimeIndex,
+) -> dict[str, object]:
+    """One finding for the rows of all the series that follow the clock-change convention."""
+    stamps = pd.DatetimeIndex(conventional[0].append(conventional[1:])).unique()
+    runs = layout.runs(stamps)
+    stamp_hours = stamps.floor("h").unique().sort_values()
+    in_spring = stamp_hours.isin(after_spring)
+    return {
+        "series": dataset,
+        "provenance": provenance,
+        "start": runs[0].start,
+        "end": runs[-1].end,
+        "kind": "clock_change_convention",
+        "score": len(stamp_hours),
+        "evidence": {
+            "time_zone": time_zone,
+            "repeated_stamps": [_interval(hour) for hour in stamp_hours[in_spring]],
+            "missing_stamps": [_interval(hour) for hour in stamp_hours[~in_spring]],
+            "series_count": len(conventional),
+        },
+    }
+
+
+def _interval(hour: pd.Timestamp) -> str:
+    """The hour from `hour` as an ISO 8601 interval."""
+    return f"{hour.isoformat()}/{(hour + grid.HOUR).isoformat()}"

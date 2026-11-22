@@ -7,6 +7,7 @@ import pytest
 from eu_solar_wind_audit import grid
 from eu_solar_wind_audit.anomalies.completeness import completeness
 
+DATASET = "test.dataset"
 PROVENANCE = "Producer, test dataset"
 DAY_START, DAY_END = "2022-06-01 00:00", "2022-06-02 00:00"
 
@@ -37,6 +38,7 @@ def check(
         utc(end),
         step=pd.Timedelta(step),
         label=label,
+        dataset=DATASET,
         provenance=PROVENANCE,
     )
 
