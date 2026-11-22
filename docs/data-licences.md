@@ -40,6 +40,7 @@ What the project may publish:
 | GWA bias factors | Karkossa et al. (Zenodo) | ERA5 bias-correction factors (GWA v2, SARAH-3) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Dataset citation, DOI 10.5281/zenodo.23686879 | Raw values | Verified 2026-11-22, [Zenodo record](https://zenodo.org/records/23686878) |
 | MaStR | Bundesnetzagentur | Unit register (via open-mastr) | [dl-de/by-2-0](https://www.govdata.de/dl-de/by-2-0) | Provider name, licence notice, dataset URI; mark changed data | Raw values | Verified 2026-11-22, [Datendownload](https://www.marktstammdatenregister.de/MaStR/Datendownload) |
 | NREL turbine-models | NREL, Alliance for Sustainable Energy (repository now under NatLabRockies) | Power curves of five turbines, copied into `src/eu_solar_wind_audit/data/` | [BSD 3-Clause](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) | Copyright notice and licence text kept with the copied tables | Raw values | Verified 2026-11-22, [LICENSE.txt](https://github.com/NatLabRockies/turbine-models/blob/main/LICENSE.txt) |
+| Natural Earth | Natural Earth | Admin-1 states and provinces, 1:10m, release v5.1.2 | Public domain ([terms of use](https://www.naturalearthdata.com/about/terms-of-use/)) | None required; optional `Made with Natural Earth.` | Raw values | Verified 2026-11-22, [terms of use](https://www.naturalearthdata.com/about/terms-of-use/) |
 
 ## Notes
 
@@ -111,6 +112,12 @@ What the project may publish:
     of the Virtual Wind Farm model are excluded from its BSD licence and "remain the property of the
     respective copyright holders", and the OpenEnergy turbine library is under ODbL 1.0
     (share-alike) with manufacturer sources that carry no licence.
+21. **Natural Earth.** All Natural Earth vector data are in the public domain and crediting the
+    authors is optional. The terms page also lists data the authors received under non-exclusive
+    licences to build the base map (The Washington Post base map data, JRC rivers and lakes of
+    Europe, XNR roads of North America, IMA time zones) and Wikidata names under CC0, and still
+    places all Natural Earth data in the public domain. The admin-1 polygons serve only to spread
+    capacity over the weather grid.
 
 ## Attribution
 
@@ -136,6 +143,7 @@ ERA5 accessed through Icechunk ERA5 (Earthmover), https://registry.opendata.aws/
 Copyright <year> EUMETSAT. This work used data from EUMETSAT's Satellite Application Facility on Climate Monitoring (CM SAF), SARAH-3.
 Turbine power curves: NREL turbine-models, Copyright (c) 2020 Alliance for Sustainable Energy, LLC, BSD 3-Clause.
 ERA5 bias-correction factors: Karkossa, Grochowicz, Koivisto, Hahmann and Victoria (2026), Zenodo, doi:10.5281/zenodo.23686879, CC BY 4.0.
+Made with Natural Earth.
 Baselines: Renewables.ninja (Pfenninger and Staffell 2016; Staffell and Pfenninger 2016), CC BY-NC 4.0.
 Copernicus Climate Change Service (2024): Climate and energy related variables from the Pan-European Climate Database derived from reanalysis and climate projections. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.f323c5ec (Accessed on <date>). PECD v4.2, modified.
 Copyright © <year> ECMWF/C3S/ENTSO-E. ECMWF & C3S & ENTSO-E does not accept any liability whatsoever for any error or omission in the data, their availability, or for any loss or damage arising from their use.
