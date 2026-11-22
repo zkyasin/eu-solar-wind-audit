@@ -24,9 +24,9 @@ What the project may publish:
 | ERA5 (CDS) | Copernicus Climate Change Service (C3S), ECMWF | ERA5 hourly single levels, ERA5T | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Copernicus line (see Attribution) and citation, DOI 10.24381/cds.adbb2d47 | Raw values | Verified 2026-11-22, [CDS catalogue](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=overview) |
 | Icechunk ERA5 | Earthmover (AWS Open Data) | ERA5 single levels, Icechunk store | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | Earthmover and the registry link, plus the Copernicus line and ERA5 citation | Raw values | Verified 2026-11-22, [registry entry](https://registry.opendata.aws/earthmover-era5/) |
 | ARCO-ERA5 | Google Research | ERA5 Zarr stores on Google Cloud | ERA5 terms; the README links the older Licence to use Copernicus Products | Copernicus line | Raw values | Verified 2026-11-22, [README](https://github.com/google-research/arco-era5#can-i-use-the-data-for-researchcommercial-purposes) |
-| Eurostat | European Commission (Eurostat) | Annual gross electricity production | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `Source: <dataset DOI or link>, <access date>`; state modifications | Raw values | Verified 2026-11-22, [copyright notice](https://ec.europa.eu/eurostat/help/copyright-notice) |
+| Eurostat | European Commission (Eurostat) | Annual gross electricity production | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `Source: <dataset DOI or link>, <access date>`; state modifications with a non-responsibility disclaimer | Raw values | Verified 2026-11-22, [copyright notice](https://ec.europa.eu/eurostat/help/copyright-notice) |
 | SDES | Ministry for the Ecological Transition (SDES) | Quarterly solar and wind capacity tables | Open licence under décret n° 2017-638 | `Service des données et études statistiques (SDES), <publication>` and date of last update; data not altered | Raw values | Verified 2026-11-22, [mentions légales](https://www.statistiques.developpement-durable.gouv.fr/mentions-legales) |
-| Enedis open data | Enedis | Production capacity by size class, half-hourly production aggregates | [Licence Ouverte 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence), per dataset | Producer name and date of last update | Raw values | Verified 2026-11-22, [data.gouv.fr organisation](https://www.data.gouv.fr/organizations/electricite-reseau-distribution-france/) |
+| Enedis open data | Enedis | Production capacity by size class, half-hourly production aggregates | [Licence Ouverte 2.0](https://www.etalab.gouv.fr/licence-ouverte-open-licence), per dataset | Producer name and date of last update | Raw values | Organisation listing verified 2026-11-22, [data.gouv.fr organisation](https://www.data.gouv.fr/organizations/electricite-reseau-distribution-france/); each dataset to verify |
 | Elia Open Data | Elia Transmission Belgium | Solar and wind measured and upscaled production | [Elia Open Data Licence](https://opendata.elia.be/pages/licence/) (CC BY 4.0 under Belgian law) | `Elia Transmission Belgium SA` | Raw values | Verified 2026-11-22, [licence page](https://opendata.elia.be/pages/licence/) |
 | Energi Data Service | Energinet | Production per price area (DK1, DK2) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `Source: Energinet (www.energidataservice.dk).` | Raw values | Verified 2026-11-22, [terms and conditions](https://www.energidataservice.dk/terms-and-conditions) |
 | REData | Red Eléctrica (REE) | Generation by technology | REE website legal notice: information and non-commercial use only | Source: Red Eléctrica, date of last update; meaning not altered | Derived only | Verified 2026-11-22, [legal notice](https://www.ree.es/en/legal-notice-privacy-policy) section 5.1 |
@@ -67,7 +67,8 @@ What the project may publish:
    has replaced with CC BY 4.0 for ERA5. Both require the Copernicus attribution; the CDS
    licence is the one applied.
 8. **Eurostat.** Statistical data may be reused for any purpose with the source acknowledged.
-   Changes must be stated, which applies to the harmonized annual totals.
+   Changes must be stated, with a disclaimer of Eurostat's responsibility; this applies to the
+   harmonized annual totals.
 9. **SDES.** Free reuse, including commercial, provided the data are not altered and the source
    and date of last update are cited. Capacities converted to AC are labelled as derived, next to
    the SDES value.
@@ -85,8 +86,8 @@ What the project may publish:
     FR, HU, IT-North, NL, NO2, PL, SE4 and SI, all from SMARD (so note 3 applies). For every other
     zone, including ES, PT and the Italian zones other than IT-North, any external use is
     prohibited, raw or derived. Energy-Charts is not used as a price source for these zones.
-15. **Renewables.ninja.** CC BY-NC 4.0 allows non-commercial sharing, but non-commercial terms do
-    not combine with the CC BY outputs of this project. Only comparison metrics are published.
+15. **Renewables.ninja.** CC BY-NC 4.0 allows non-commercial sharing only. Publishing only
+    comparison metrics keeps the non-commercial condition off the project's published values.
 16. **PECD and C3S energy indicators.** The licence would allow raw values; they are used as
     baselines, so only metrics are published. The PECD catalogue entry contains v4.1 (deprecated)
     and v4.2; only v4.2 is used. Its citation and attribution tab differs from the other C3S
@@ -114,10 +115,10 @@ Germany: Bundesnetzagentur | SMARD.de, CC BY 4.0.
 Germany, unit register: Bundesnetzagentur, Marktstammdatenregister, dl-de/by-2-0 (www.govdata.de/dl-de/by-2-0), <dataset URI>; data changed.
 Source of publication: ENTSO-E Transparency Platform (transparency.entsoe.eu). Values shown are derived from the published data.
 Belgium: Elia Transmission Belgium SA, Elia Open Data, CC BY 4.0.
-Source: Energinet (www.energidataservice.dk).
+Source: Energinet (www.energidataservice.dk). CC BY 4.0.
 Spain: source Red Eléctrica (REData), last updated <date>.
 Energy-Charts.info, Fraunhofer ISE, CC BY 4.0.
-Source: Eurostat, <dataset DOI or link>, <access date>; data modified.
+Source: Eurostat, <dataset DOI or link>, <access date>. Data modified by this project; Eurostat is not responsible for the modified data.
 Service des données et études statistiques (SDES), <publication>, last updated <date>.
 Enedis open data, <dataset>, Licence Ouverte 2.0, last updated <date>.
 Contains modified Copernicus Climate Change Service information <year>. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.
