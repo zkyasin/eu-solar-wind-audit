@@ -64,10 +64,10 @@ def onshore(
         return odre.onshore_hourly(client, hour(start), hour(end), cache_dir=tmp_path)
 
 
-def national_day_of_first_offshore_power(path: Path) -> Path:
-    """Synthetic national definitive export of 31 May 2022 in UTC, on a 30-minute grid, with wind
-    in MW written as the time of the row: 2130 at 21:30."""
-    stamps = pd.date_range("2022-05-31", "2022-06-01", freq="30min", tz="UTC", unit="ms")
+def national_end_of_may_2022(path: Path) -> Path:
+    """Synthetic national definitive export of 30 and 31 May 2022 in UTC, on a 30-minute grid, with
+    wind in MW written as the time of the row: 2130 at 21:30."""
+    stamps = pd.date_range("2022-05-30", "2022-06-01", freq="30min", tz="UTC", unit="ms")
     export = pd.DataFrame(
         {
             "date_heure": stamps,
@@ -330,7 +330,7 @@ def test_onshore_reference_is_national_wind_until_the_first_offshore_power(
     tmp_path: Path,
 ) -> None:
     requests: list[httpx.Request] = []
-    export = national_day_of_first_offshore_power(tmp_path / "export.parquet")
+    export = national_end_of_may_2022(tmp_path / "export.parquet")
 
     reference = onshore(
         "2022-05-31 20:00",
@@ -373,7 +373,7 @@ def test_onshore_reference_is_the_regional_onshore_sum_from_the_split(tmp_path: 
 
 
 def test_onshore_reference_is_incomplete_between_its_two_sources(tmp_path: Path) -> None:
-    export = national_day_of_first_offshore_power(tmp_path / "export.parquet")
+    export = national_end_of_may_2022(tmp_path / "export.parquet")
     exports = {odre.NATIONAL_CONSOLIDATED: export, odre.REGIONAL_CONSOLIDATED: SPLIT_START_REGIONAL}
 
     reference = onshore("2022-05-31 21:00", "2024-01-01 00:00", exports, tmp_path / "cache")
@@ -398,13 +398,32 @@ def test_onshore_reference_inside_the_gap_downloads_nothing(tmp_path: Path) -> N
     assert not requests
 
 
+def test_onshore_reference_before_the_first_offshore_power_is_national_wind(
+    tmp_path: Path,
+) -> None:
+    requests: list[httpx.Request] = []
+    exports = {odre.NATIONAL_CONSOLIDATED: national_end_of_may_2022(tmp_path / "export.parquet")}
+
+    reference = onshore("2022-05-30", "2022-05-31", exports, tmp_path / "cache", requests)
+
+    expected = national("wind", "2022-05-30", "2022-05-31", exports, tmp_path / "cache")
+    pd.testing.assert_frame_equal(reference, expected, check_freq=False)
+    # National wind is requested for the days of the period only.
+    (request,) = requests
+    assert request.url.params["where"] == odre.utc_days(date(2022, 5, 30), date(2022, 5, 30))
+
+
 def test_onshore_reference_after_the_split_is_national_onshore_wind(tmp_path: Path) -> None:
-    reference = onshore("2026-08-31", "2026-09-02", SWITCH, tmp_path)
+    requests: list[httpx.Request] = []
+    reference = onshore("2026-08-31", "2026-09-02", SWITCH, tmp_path, requests)
 
     expected = national("wind_onshore", "2026-08-31", "2026-09-02", SWITCH, tmp_path)
     pd.testing.assert_frame_equal(reference, expected, check_freq=False)
     # Sums of the consolidated regional rows, then national real-time values.
     assert list(reference["status"].unique()) == ["consolidated", "realtime"]
+    # Both datasets are requested for the days of the period only.
+    days = odre.utc_days(date(2026, 8, 31), date(2026, 9, 1))
+    assert {request.url.params["where"] for request in requests} == {days}
 
 
 @pytest.mark.parametrize(
