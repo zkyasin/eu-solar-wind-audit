@@ -1,14 +1,104 @@
-"""Client for dataset exports of ODRÉ, the open data portal of the French energy networks."""
+"""éCO2mix production and consumption from ODRÉ, the open data portal of the French networks.
+
+Values are in MW, as published, indexed by their UTC timestamp. Consolidated and definitive values
+are 30-minute averages labelled at the end of the period, on a 15-minute grid where every other row
+is empty. Real-time values are 15-minute instantaneous values. On spring clock-change days the
+source repeats UTC stamps; on autumn days it has no rows for the repeated local hour.
+"""
 
 import hashlib
 import json
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from typing import Annotated
 
 import httpx
+import numpy as np
+import pandas as pd
+import pandera.pandas as pa
+from pandera.typing import DataFrame, Index, Series
 
 BASE_URL = "https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets"
 CACHE_DIR = Path("data/raw/odre")
+
+NATIONAL_CONSOLIDATED = "eco2mix-national-cons-def"
+NATIONAL_REALTIME = "eco2mix-national-tr"
+REGIONAL_CONSOLIDATED = "eco2mix-regional-cons-def"
+
+STATUS = {
+    "Données définitives": "definitive",
+    "Données consolidées": "consolidated",
+    "Données temps réel": "realtime",
+}
+
+# ODRÉ field -> column name, in export order.
+NATIONAL_CONSOLIDATED_FIELDS = {
+    "date_heure": "time",
+    "nature": "status",
+    "consommation": "load_mw",
+    "solaire": "solar_mw",
+    "eolien": "wind_mw",
+}
+NATIONAL_REALTIME_FIELDS = {
+    **NATIONAL_CONSOLIDATED_FIELDS,
+    "eolien_terrestre": "wind_onshore_mw",
+    "eolien_offshore": "wind_offshore_mw",
+}
+REGIONAL_CONSOLIDATED_FIELDS = {
+    "date_heure": "time",
+    "code_insee_region": "region_code",
+    "libelle_region": "region",
+    "nature": "status",
+    "consommation": "load_mw",
+    "solaire": "solar_mw",
+    "eolien": "wind_mw",
+    "eolien_terrestre": "wind_onshore_mw",
+    "eolien_offshore": "wind_offshore_mw",
+}
+
+UtcTime = Annotated[pd.DatetimeTZDtype, "ns", "UTC"]
+
+
+# Production is not checked for sign: the source publishes small negative values, which the
+# anomaly detectors must see.
+class NationalConsolidated(pa.DataFrameModel):
+    time: Index[UtcTime]
+    status: Series[str] = pa.Field(isin=["definitive", "consolidated"])
+    load_mw: Series[float] = pa.Field(ge=0, nullable=True)
+    solar_mw: Series[float] = pa.Field(nullable=True)
+    wind_mw: Series[float] = pa.Field(nullable=True)
+
+    class Config:
+        strict = True
+
+
+class NationalRealtime(pa.DataFrameModel):
+    time: Index[UtcTime]
+    status: Series[str] = pa.Field(isin=["realtime"])
+    load_mw: Series[float] = pa.Field(ge=0, nullable=True)
+    solar_mw: Series[float] = pa.Field(nullable=True)
+    wind_mw: Series[float] = pa.Field(nullable=True)
+    wind_onshore_mw: Series[float] = pa.Field(nullable=True)
+    wind_offshore_mw: Series[float] = pa.Field(nullable=True)
+
+    class Config:
+        strict = True
+
+
+class RegionalConsolidated(pa.DataFrameModel):
+    time: Index[UtcTime]
+    region_code: Series[str]
+    region: Series[str]
+    status: Series[str] = pa.Field(isin=["definitive", "consolidated"])
+    load_mw: Series[float] = pa.Field(ge=0, nullable=True)
+    solar_mw: Series[float] = pa.Field(nullable=True)
+    wind_mw: Series[float] = pa.Field(nullable=True)
+    # Published from 2021 on.
+    wind_onshore_mw: Series[float] = pa.Field(nullable=True)
+    wind_offshore_mw: Series[float] = pa.Field(nullable=True)
+
+    class Config:
+        strict = True
 
 
 def make_client() -> httpx.Client:
@@ -56,6 +146,47 @@ def download_export(
     return dest
 
 
+def fetch_national_consolidated(
+    client: httpx.Client, start: date, end: date, *, cache_dir: Path = CACHE_DIR
+) -> DataFrame[NationalConsolidated]:
+    path = download_export(
+        client,
+        NATIONAL_CONSOLIDATED,
+        select=",".join(NATIONAL_CONSOLIDATED_FIELDS),
+        where=utc_days(start, end),
+        cache_dir=cache_dir,
+    )
+    return NationalConsolidated.validate(_tidy(path, NATIONAL_CONSOLIDATED_FIELDS))
+
+
+def fetch_national_realtime(
+    client: httpx.Client, start: date, end: date, *, cache_dir: Path = CACHE_DIR
+) -> DataFrame[NationalRealtime]:
+    # Always downloaded again: real-time values are revised until consolidation.
+    path = download_export(
+        client,
+        NATIONAL_REALTIME,
+        select=",".join(NATIONAL_REALTIME_FIELDS),
+        where=utc_days(start, end),
+        cache_dir=cache_dir,
+        refresh=True,
+    )
+    return NationalRealtime.validate(_tidy(path, NATIONAL_REALTIME_FIELDS))
+
+
+def fetch_regional_consolidated(
+    client: httpx.Client, start: date, end: date, *, cache_dir: Path = CACHE_DIR
+) -> DataFrame[RegionalConsolidated]:
+    path = download_export(
+        client,
+        REGIONAL_CONSOLIDATED,
+        select=",".join(REGIONAL_CONSOLIDATED_FIELDS),
+        where=utc_days(start, end),
+        cache_dir=cache_dir,
+    )
+    return RegionalConsolidated.validate(_tidy(path, REGIONAL_CONSOLIDATED_FIELDS))
+
+
 def _stream_to(client: httpx.Client, url: str, params: dict[str, str], dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     # Write under a temporary name so that an interrupted download never looks complete.
@@ -66,3 +197,13 @@ def _stream_to(client: httpx.Client, url: str, params: dict[str, str], dest: Pat
             for chunk in response.iter_bytes():
                 file.write(chunk)
     partial.replace(dest)
+
+
+def _tidy(path: Path, fields: dict[str, str]) -> pd.DataFrame:
+    frame = pd.read_parquet(path, columns=list(fields)).rename(columns=fields)
+    frame["status"] = frame["status"].replace(STATUS)
+    values = [column for column in frame.columns if column.endswith("_mw")]
+    # The regional wind field is text, with "-" for some missing values.
+    frame[values] = frame[values].replace("-", np.nan).apply(pd.to_numeric).astype("float64")
+    index = pd.DatetimeIndex(frame.pop("time"), name="time").as_unit("ns")
+    return frame.set_index(index).sort_index(kind="stable")
