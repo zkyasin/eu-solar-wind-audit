@@ -131,6 +131,12 @@ def test_predictions_reject_an_undeclared_column() -> None:
         Predictions.validate(valid_predictions().assign(price=50.0))
 
 
+def test_each_month_has_its_meteorological_season() -> None:
+    by_month = [SEASON_OF_MONTH[month] for month in range(1, 13)]
+
+    assert by_month == 2 * ["DJF"] + 3 * ["MAM"] + 3 * ["JJA"] + 3 * ["SON"] + ["DJF"]
+
+
 def observed(
     stamps: list[str], published_mwh: list[float], capacity_mw: list[float], eligible: list[bool]
 ) -> pd.DataFrame:
