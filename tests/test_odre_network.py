@@ -34,7 +34,7 @@ def test_one_day_of_each_dataset_matches_its_schema(tmp_path: Path) -> None:
 
 
 def test_one_month_of_hourly_series_adds_up(tmp_path: Path) -> None:
-    start, end = date(2025, 6, 1), date(2025, 6, 30)
+    start, end = pd.Timestamp("2025-06-01", tz="UTC"), pd.Timestamp("2025-07-01", tz="UTC")
     with odre.make_client() as client:
         solar = odre.national_hourly(client, "solar", start, end, cache_dir=tmp_path)
         onshore = odre.national_hourly(client, "wind_onshore", start, end, cache_dir=tmp_path)
