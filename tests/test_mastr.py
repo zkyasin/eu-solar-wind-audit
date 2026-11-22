@@ -418,6 +418,13 @@ def test_offshore_wind_leaves_out_units_commissioned_after_the_date(units: pd.Da
     ]
 
 
+def test_offshore_wind_counts_a_unit_from_its_commissioning_date(units: pd.DataFrame) -> None:
+    # The second alpha ventus turbine was commissioned on 2009-08-21.
+    table = mastr.offshore_wind(units, pd.Timestamp("2009-08-21"))
+
+    assert table["units"].tolist() == [2]
+
+
 def test_offshore_wind_leaves_out_decommissioned_units(units: pd.DataFrame) -> None:
     changed = units.copy()
     veja_mate = changed["unit_id"].eq("SEE991181426935")
