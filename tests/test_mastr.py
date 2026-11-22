@@ -430,8 +430,13 @@ def test_offshore_wind_leaves_out_decommissioned_units(units: pd.DataFrame) -> N
     assert table["capacity_mw"].sum() == pytest.approx(49.61 - 6.3)
 
 
-def test_the_fixture_has_no_implausible_unit(units: pd.DataFrame) -> None:
-    assert mastr.implausible_units(units, pd.Timestamp("2026-11-22")).empty
+def test_the_only_implausible_unit_of_the_fixture_is_dated_1900(units: pd.DataFrame) -> None:
+    report = mastr.implausible_units(units, pd.Timestamp("2026-11-22"))
+
+    # A 0.6 kW solar unit commissioned on 1900-04-22, as registered.
+    assert report[["unit_id", "problem"]].to_numpy().tolist() == [
+        ["SEE970825764190", "commissioning date before 1950"]
+    ]
 
 
 @pytest.mark.parametrize(
@@ -442,6 +447,7 @@ def test_the_fixture_has_no_implausible_unit(units: pd.DataFrame) -> None:
         ("net_kw", 4000.0, "net power above gross power"),
         ("gross_kw", 250_000.0, "power above the documented maximum"),
         ("commissioned", pd.Timestamp("2027-01-01"), "commissioning date in the future"),
+        ("commissioned", pd.Timestamp("1900-01-01"), "commissioning date before 1950"),
         ("decommissioned", pd.Timestamp("2027-01-01"), "decommissioning date in the future"),
         ("decommissioned", pd.Timestamp("2015-01-01"), "decommissioned before commissioning"),
         ("municipality_key", "0533", "municipality key malformed"),
@@ -458,7 +464,8 @@ def test_implausible_units_are_reported(
 
     report = mastr.implausible_units(changed, pd.Timestamp("2026-11-22"))
 
-    assert report[["unit_id", "problem"]].to_numpy().tolist() == [["SEE983469276431", problem]]
+    changed_unit = report[report["unit_id"].eq("SEE983469276431")]
+    assert changed_unit["problem"].tolist() == [problem]
 
 
 def test_extract_capacity_downloads_and_writes_the_tables_with_their_provenance(

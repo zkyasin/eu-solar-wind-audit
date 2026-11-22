@@ -82,6 +82,8 @@ MAX_KW = {"solar": 200_000.0, "wind_onshore": 20_000.0, "wind_offshore": 20_000.
 # Districts merged since: Göttingen into the new Göttingen district (2016-11-01), Eisenach into the
 # Wartburgkreis (2021-07-01). Some units still carry the former keys.
 FORMER_DISTRICTS = {"03152": "03159", "16056": "16063"}
+# Earlier dates are placeholders, such as 1900-01-01.
+EARLIEST_COMMISSIONING = pd.Timestamp("1950-01-01")
 # The evaluation period starts in 2019.
 PANEL_START = pd.Timestamp("2019-01-31")
 # ERA5 grid spacing in degrees.
@@ -279,6 +281,7 @@ def implausible_units(units: pd.DataFrame, as_of: pd.Timestamp) -> pd.DataFrame:
         "net power above gross power": units["net_kw"] > units["gross_kw"],
         "power above the documented maximum": capped > maximum,
         "commissioning date in the future": units["commissioned"] > as_of,
+        "commissioning date before 1950": units["commissioned"] < EARLIEST_COMMISSIONING,
         "decommissioning date in the future": units["decommissioned"] > as_of,
         "decommissioned before commissioning": units["decommissioned"] < units["commissioned"],
         "decommissioned without a date": units["status"].eq("decommissioned")
