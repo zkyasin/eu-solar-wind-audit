@@ -346,10 +346,9 @@ def _consolidated_export[Schema: pa.DataFrameModel](
 
 
 def _days(start: pd.Timestamp, end: pd.Timestamp) -> tuple[date, date]:
-    """First and last UTC days of the hours [start, end), refusing an empty period before any
+    """First and last UTC days of the hours [start, end), refusing a wrong period before any
     download."""
-    if end <= start:
-        raise ValueError(f"empty period from {start} to {end}")
+    grid.check_period(start, end)
     return start.date(), (end - grid.HOUR).date()
 
 

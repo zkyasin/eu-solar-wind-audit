@@ -288,8 +288,25 @@ def test_hours_without_published_values_have_no_status(tmp_path: Path) -> None:
     assert solar.loc[utc("2026-09-01 00:00"), "status"].item() == "realtime"
 
 
-@pytest.mark.parametrize("end", ["2025-03-29 12:00", "2025-03-30 12:00"])
-def test_an_empty_period_is_rejected_before_any_download(end: str, tmp_path: Path) -> None:
-    # No export is served, so any download would fail.
-    with pytest.raises(ValueError, match="empty period"):
-        national("solar", "2025-03-30 12:00", end, {}, tmp_path)
+@pytest.mark.parametrize(
+    ("start", "end", "error"),
+    [
+        (hour("2025-03-30 12:00"), hour("2025-03-29 12:00"), "empty period"),
+        (hour("2025-03-30 12:00"), hour("2025-03-30 12:00"), "empty period"),
+        (pd.Timestamp("2025-03-30"), hour("2025-03-31"), "hour in UTC"),
+        (pd.Timestamp("2025-03-30", tz="Europe/Paris"), hour("2025-03-31"), "hour in UTC"),
+        (hour("2025-03-30 00:30"), hour("2025-03-31"), "hour in UTC"),
+    ],
+    ids=["reversed", "empty", "naive", "not-in-utc", "off-hour"],
+)
+def test_a_wrong_period_is_rejected_before_any_download(
+    start: pd.Timestamp, end: pd.Timestamp, error: str, tmp_path: Path
+) -> None:
+    requests: list[httpx.Request] = []
+    with serving({}, requests) as client:
+        with pytest.raises(ValueError, match=error):
+            odre.national_hourly(client, "solar", start, end, cache_dir=tmp_path)
+        with pytest.raises(ValueError, match=error):
+            odre.regional_hourly(client, "solar", start, end, cache_dir=tmp_path)
+
+    assert not requests
