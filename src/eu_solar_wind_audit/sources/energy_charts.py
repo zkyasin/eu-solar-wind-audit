@@ -157,10 +157,14 @@ def fetch_power_month(
     endpoint: str, month: pd.Period, client: httpx.Client, cache_dir: Path
 ) -> pd.DataFrame:
     """Solar and wind power of one local month, from the cache once the month is settled and
-    complete."""
+    complete. A month that has not started has no values: the API answers 400 for it."""
     path = cache_dir / f"{endpoint}_de_{month}.json"
     if path.exists():
         return parse_power(json.loads(path.read_bytes()))
+    this_month = _local(pd.Timestamp.now(tz="UTC")).to_period("M")
+    if month > this_month:
+        no_rows = pd.DatetimeIndex([], tz="UTC", name="time")
+        return pd.DataFrame(index=no_rows, columns=list(POWER_SERIES), dtype=float)
 
     params = {
         "country": "de",
@@ -173,7 +177,6 @@ def fetch_power_month(
     # Values of the current and previous month can still be filled in or revised. The API leaves
     # out the quarter-hours it has no values for yet, and its documentation reads null as "not
     # (yet) available", so a month is kept only when no value of any quarter-hour is missing.
-    this_month = _local(pd.Timestamp.now(tz="UTC")).to_period("M")
     quarter_hours = pd.date_range(month.start_time, month.end_time, freq=QUARTER_HOUR, tz=TIMEZONE)
     if month < this_month - 1 and quarter_hours.isin(power.dropna().index).all():
         path.parent.mkdir(parents=True, exist_ok=True)

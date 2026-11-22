@@ -9,7 +9,7 @@ import pytest
 from pandera.errors import SchemaError
 from pandera.typing import DataFrame
 
-from eu_solar_wind_audit.grid import Hourly
+from eu_solar_wind_audit.grid import HOUR, Hourly
 from eu_solar_wind_audit.sources import energy_charts
 
 # Fixture: https://api.energy-charts.info/v2/installed_power?country=de&time_step=monthly&installation_decommission=false,
@@ -465,6 +465,25 @@ def test_a_wrong_period_is_refused_before_any_download(
         energy_charts.fetch_hourly_power(start, end, client=client, cache_dir=tmp_path)
 
     assert requests == []
+
+
+def test_a_month_not_yet_started_is_not_requested(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    this_month = pd.Timestamp.now(tz="Europe/Berlin").tz_localize(None).to_period("M")
+    month_start = str(this_month.start_time.date())
+    contents = {
+        (endpoint, month_start): month_content(endpoint, this_month)
+        for endpoint in energy_charts.PERIMETERS
+    }
+    next_start = (this_month + 1).start_time.tz_localize("Europe/Berlin").tz_convert("UTC")
+    with power_server(contents, requests) as client:
+        power = energy_charts.fetch_hourly_power(
+            next_start - HOUR, next_start + HOUR, client=client, cache_dir=tmp_path
+        )
+
+    assert [request.url.params["start"] for request in requests] == [month_start] * 2
+    for hourly in power.values():
+        assert hourly["complete"].tolist() == [True, False]
 
 
 def test_settled_months_are_cached_and_the_last_two_are_downloaded_again(tmp_path: Path) -> None:
