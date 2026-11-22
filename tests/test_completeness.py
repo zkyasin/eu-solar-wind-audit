@@ -355,6 +355,25 @@ def test_days_of_hourly_values_are_one_change_of_resolution_and_gaps() -> None:
     assert evidence(found)[1] == {"step_minutes": 15, "days": 2}
 
 
+def test_separate_days_of_one_spacing_are_separate_changes_of_resolution() -> None:
+    published = pd.concat(
+        [
+            rows(DAY_START, "2022-06-01 23:00", step="1h"),
+            rows("2022-06-02 00:00", "2022-06-02 23:45"),
+            rows("2022-06-03 00:00", "2022-06-03 23:00", step="1h"),
+        ]
+    )
+
+    found = check(published, DAY_START, "2022-06-04 00:00")
+
+    changes = found[found["kind"] == "resolution_change"]
+    assert spans(changes) == [
+        ("resolution_change", utc("2022-06-01 00:00"), utc("2022-06-02 00:00"), 60.0),
+        ("resolution_change", utc("2022-06-03 00:00"), utc("2022-06-04 00:00"), 60.0),
+    ]
+    assert evidence(changes) == [{"step_minutes": 15, "days": 1}] * 2
+
+
 # Exports from https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/<dataset>/exports/parquet
 # with the select of each fetch function and where=odre.utc_days(first day, last day), retrieved
 # 2026-11-22.
