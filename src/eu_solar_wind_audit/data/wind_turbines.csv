@@ -1,6 +1,13 @@
 turbine,technology,rated_power_kw,rotor_diameter_m,specific_power_w_m2
+EWT_DW58_1MW_58,onshore,1000,58,378.5
+BAR_HighSP_5.0MW_134.9,onshore,5000,134.9,349.8
 VestasV82_1.65MW_82,onshore,1650,82,312.4
+2023NREL_Bespoke_8.3MW_196,onshore,8300,196,275.1
 IEA_Reference_3.4MW_130,onshore,3370,130,253.9
 2020ATB_NREL_Reference_5.5MW_175,onshore,5500,175,228.7
+2023NREL_Bespoke_3.3MW_148,onshore,3300,148,191.8
+BAR_BAU_LowSP_3.25MW_166,onshore,3250,166,150.2
 NREL_Reference_5MW_126,offshore,5000,126,401.0
+LEANWIND_Reference_8MW_164,offshore,8000,164,378.7
 IEA_Reference_15MW_240,offshore,15000,240,331.6
+2016CACost_NREL_Reference_10MW_205,offshore,10000,205,303.0

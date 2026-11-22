@@ -88,7 +88,7 @@ def power_curve(turbine: str) -> tuple[FloatArray, FloatArray]:
     curves = _read_data("wind_power_curves.csv")
     curve = curves[curves["turbine"] == turbine]
     speeds: FloatArray = curve["wind_speed_m_s"].to_numpy(np.float64)
-    # Some tables overshoot rated power by a few parts in 10^5.
+    # Some tables overshoot rated power by up to 0.1 %.
     fraction: FloatArray = np.clip(curve["power_kw"].to_numpy(np.float64) / rated_kw, 0.0, 1.0)
     return speeds, fraction
 

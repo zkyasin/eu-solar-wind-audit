@@ -38,6 +38,11 @@ def unsmoothed(turbine: str, **kwargs: float) -> wind.WindParameters:
     return single(turbine, smoothing_base_m_s=0.0, smoothing_slope=0.0, **kwargs)
 
 
+def curves() -> pd.DataFrame:
+    with (files("eu_solar_wind_audit") / "data" / "wind_power_curves.csv").open("rb") as f:
+        return pd.read_csv(f)
+
+
 def test_speed_is_the_norm_of_the_components() -> None:
     speed = wind.wind_speed(speeds([3.0, -6.0]), speeds([-4.0, 8.0]))
 
@@ -92,8 +97,7 @@ def test_exponent_is_nan_where_either_speed_is_nan() -> None:
 
 @pytest.mark.parametrize("turbine", list(wind.turbines().index))
 def test_unsmoothed_curve_reproduces_the_table(turbine: str) -> None:
-    with (files("eu_solar_wind_audit") / "data" / "wind_power_curves.csv").open("rb") as f:
-        table = pd.read_csv(f).query("turbine == @turbine")
+    table = curves().query("turbine == @turbine")
     rated_kw = wind.turbines().loc[turbine, "rated_power_kw"]
 
     cf = wind.capacity_factor(weather(list(table["wind_speed_m_s"])), unsmoothed(turbine))
@@ -223,20 +227,38 @@ def test_negative_corrected_speed_gives_no_output() -> None:
     np.testing.assert_allclose(cf, [0.0])
 
 
-def test_package_data_matches_the_recorded_rated_and_specific_power() -> None:
+def test_every_turbine_has_a_curve_and_every_curve_a_turbine() -> None:
+    assert set(curves()["turbine"]) == set(wind.turbines().index)
+
+
+def test_specific_power_is_rated_power_over_swept_area() -> None:
     table = wind.turbines()
+    swept_area = np.pi * table["rotor_diameter_m"] ** 2 / 4
 
-    for turbine, row in table.iterrows():
-        _, fraction = wind.power_curve(str(turbine))
-        swept_area = np.pi * row["rotor_diameter_m"] ** 2 / 4
-        assert fraction.max() == pytest.approx(1.0, abs=1e-3)
-        assert row["specific_power_w_m2"] == pytest.approx(
-            row["rated_power_kw"] * 1000 / swept_area, abs=0.05
-        )
-    assert table["technology"].value_counts().to_dict() == {"onshore": 3, "offshore": 2}
+    np.testing.assert_allclose(
+        table["specific_power_w_m2"], table["rated_power_kw"] * 1000 / swept_area, atol=0.05
+    )
 
 
-def test_onshore_generations_have_decreasing_specific_power() -> None:
-    onshore = wind.turbines().query("technology == 'onshore'")
+@pytest.mark.parametrize("turbine", list(wind.turbines().index))
+def test_curve_speeds_increase_and_output_peaks_at_rated_power(turbine: str) -> None:
+    curve = curves().query("turbine == @turbine")
+    rated_kw = wind.turbines().loc[turbine, "rated_power_kw"]
 
-    assert onshore["specific_power_w_m2"].is_monotonic_decreasing
+    assert (np.diff(curve["wind_speed_m_s"]) > 0).all()
+    assert curve["power_kw"].max() == pytest.approx(rated_kw, rel=1e-3)
+
+
+@pytest.mark.parametrize(
+    ("technology", "lowest", "highest"), [("onshore", 150.0, 380.0), ("offshore", 300.0, 400.0)]
+)
+def test_specific_powers_span_the_fleet_range_in_steps_of_at_most_50_w_m2(
+    technology: str, lowest: float, highest: float
+) -> None:
+    specific_power = np.sort(
+        wind.turbines().query("technology == @technology")["specific_power_w_m2"].to_numpy()
+    )
+
+    assert specific_power[0] == pytest.approx(lowest, abs=5)
+    assert specific_power[-1] == pytest.approx(highest, abs=5)
+    assert np.diff(specific_power).max() <= 50
