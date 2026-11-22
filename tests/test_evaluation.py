@@ -402,15 +402,17 @@ def annual_biases(by_year: dict[int, float]) -> pd.DataFrame:
 
 
 def test_each_period_is_summarised_by_the_mean_absolute_value_of_its_folds() -> None:
-    table = annual_biases({2019: 0.1, 2020: -0.3, 2021: 0.02, 2023: -0.04, 2024: 0.06, 2026: 0.5})
+    table = annual_biases(
+        {2019: 0.1, 2020: -0.3, 2021: 0.2, 2022: 0.4, 2023: -0.1, 2024: 0.1, 2025: -0.4, 2026: 0.5}
+    )
 
     summary = mean_absolute_by_period(table)
 
     # The prospective 2026 fold belongs to no period.
     assert summary["period"].tolist() == ["2019-2022", "2023-2025"]
-    assert summary["mean_absolute_value"].tolist() == pytest.approx([0.14, 0.05])
-    assert summary["folds"].tolist() == [3, 2]
-    assert summary["hours"].tolist() == [300, 200]
+    assert summary["mean_absolute_value"].tolist() == pytest.approx([0.25, 0.2])
+    assert summary["folds"].tolist() == [4, 3]
+    assert summary["hours"].tolist() == [400, 300]
 
 
 def test_undefined_values_are_left_out_of_the_summary() -> None:
