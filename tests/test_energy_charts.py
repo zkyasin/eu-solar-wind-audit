@@ -284,6 +284,15 @@ def power_content(endpoint: str, day: str) -> bytes:
     return (FIXTURES / f"{endpoint}_de_{day}.json").read_bytes()
 
 
+def month_content(endpoint: str, month: pd.Period) -> bytes:
+    """A response with the same values in every quarter-hour of `month`."""
+    payload = json.loads(power_content(endpoint, "2025-06-21"))
+    stamps = pd.date_range(month.start_time, month.end_time, freq="15min", tz="Europe/Berlin")
+    values = dict.fromkeys(energy_charts.POWER_SERIES, 1.0)
+    payload["data"] = [{"timestamp": stamp.isoformat(), "values": values} for stamp in stamps]
+    return json.dumps(payload).encode()
+
+
 def power_server(
     contents: dict[tuple[str, str], bytes], requests: list[httpx.Request]
 ) -> httpx.Client:
@@ -429,7 +438,7 @@ def test_settled_months_are_cached_and_the_last_two_are_downloaded_again(tmp_pat
     this_month = pd.Timestamp.now(tz="Europe/Berlin").tz_localize(None).to_period("M")
     months = [this_month - 2, this_month - 1, this_month]
     contents = {
-        ("public_power", str(month.start_time.date())): power_content("public_power", "2025-06-21")
+        ("public_power", str(month.start_time.date())): month_content("public_power", month)
         for month in months
     }
     requests: list[httpx.Request] = []
@@ -447,7 +456,7 @@ def test_settled_months_are_cached_and_the_last_two_are_downloaded_again(tmp_pat
 
 
 def test_a_settled_month_with_a_missing_value_is_downloaded_again(tmp_path: Path) -> None:
-    payload = json.loads(power_content("public_power", "2025-06-21"))
+    payload = json.loads(month_content("public_power", pd.Period("2020-01")))
     payload["data"][48]["values"]["solar"] = None
     contents = {("public_power", "2020-01-01"): json.dumps(payload).encode()}
     requests: list[httpx.Request] = []
@@ -455,6 +464,19 @@ def test_a_settled_month_with_a_missing_value_is_downloaded_again(tmp_path: Path
     with power_server(contents, requests) as client:
         for _ in range(2):
             energy_charts.fetch_power_month("public_power", pd.Period("2020-01"), client, tmp_path)
+
+    assert len(requests) == 2
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_settled_month_with_missing_quarter_hours_is_downloaded_again(tmp_path: Path) -> None:
+    # The API leaves out the quarter-hours it has no values for: here, all of June but the 21st.
+    contents = {("public_power", "2025-06-01"): power_content("public_power", "2025-06-21")}
+    requests: list[httpx.Request] = []
+
+    with power_server(contents, requests) as client:
+        for _ in range(2):
+            energy_charts.fetch_power_month("public_power", pd.Period("2025-06"), client, tmp_path)
 
     assert len(requests) == 2
     assert list(tmp_path.iterdir()) == []

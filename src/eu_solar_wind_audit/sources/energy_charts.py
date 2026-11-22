@@ -169,10 +169,12 @@ def fetch_power_month(
     content = _get(client, POWER_URL.format(endpoint=endpoint), params)
     # Parsed before caching, so that a response that does not parse is never kept.
     power = parse_power(json.loads(content))
-    # Values of the current and previous month can still be filled in or revised, and the API
-    # documentation reads null as "not (yet) available", so a month with nulls is not kept either.
+    # Values of the current and previous month can still be filled in or revised. The API leaves
+    # out the quarter-hours it has no values for yet, and its documentation reads null as "not
+    # (yet) available", so a month is kept only when no value of any quarter-hour is missing.
     this_month = _local(pd.Timestamp.now(tz="UTC")).to_period("M")
-    if month < this_month - 1 and power.notna().to_numpy().all():
+    quarter_hours = pd.date_range(month.start_time, month.end_time, freq=QUARTER_HOUR, tz=TIMEZONE)
+    if month < this_month - 1 and quarter_hours.isin(power.dropna().index).all():
         path.parent.mkdir(parents=True, exist_ok=True)
         partial = path.with_name(path.name + ".part")
         partial.write_bytes(content)
