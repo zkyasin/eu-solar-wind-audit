@@ -2,11 +2,73 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from eu_solar_wind_audit.grid import hourly_from_period_start_energy
+from eu_solar_wind_audit.grid import hourly_from_period_end_means, hourly_from_period_start_energy
 
 
 def series(start: str, values: list[float], freq: str = "15min", tz: str = "UTC") -> pd.Series:
     return pd.Series(values, index=pd.date_range(start, periods=len(values), freq=freq, tz=tz))
+
+
+@pytest.mark.parametrize(("period", "per_hour"), [("30min", 2), ("15min", 4), ("1h", 1)])
+def test_constant_power_gives_power_times_one_hour(period: str, per_hour: int) -> None:
+    power = series("2025-06-01 00:00", [250.0] * (3 * per_hour + 1), freq=period)
+
+    hourly = hourly_from_period_end_means(power.iloc[1:], period=period)
+
+    assert hourly["energy_mwh"].tolist() == [250.0] * 3
+    assert hourly["complete"].all()
+
+
+def test_period_ending_on_the_hour_belongs_to_the_previous_hour() -> None:
+    power = series("2025-06-01 00:30", [100.0, 300.0, 500.0, 700.0], freq="30min")
+
+    hourly = hourly_from_period_end_means(power)
+
+    assert hourly.index.equals(series("2025-06-01 00:00", [0.0, 0.0], freq="h").index)
+    assert hourly["energy_mwh"].tolist() == [200.0, 600.0]
+
+
+def test_half_hour_values_on_a_quarter_hour_export_are_read() -> None:
+    # éCO2mix layout: a 15-minute grid with production filled every other row.
+    power = series("2025-06-01 00:15", [np.nan, 100.0, np.nan, 300.0, np.nan])
+
+    hourly = hourly_from_period_end_means(power)
+
+    assert hourly["energy_mwh"].tolist() == [200.0]
+    assert hourly["complete"].tolist() == [True]
+
+
+def test_a_missing_half_hour_leaves_the_hour_incomplete() -> None:
+    power = series("2025-06-01 00:30", [100.0, np.nan, 500.0, 700.0], freq="30min")
+
+    hourly = hourly_from_period_end_means(power)
+
+    assert np.isnan(hourly["energy_mwh"].iloc[0])
+    assert hourly["complete"].tolist() == [False, True]
+
+
+def test_repeated_end_stamps_are_dropped_without_choosing_one() -> None:
+    power = series("2025-06-01 00:30", [100.0, 300.0, 500.0, 700.0], freq="30min")
+    power = pd.concat([power, power.iloc[[0]]])
+
+    hourly = hourly_from_period_end_means(power)
+
+    assert hourly["complete"].tolist() == [False, True]
+    assert np.isnan(hourly["energy_mwh"].iloc[0])
+
+
+def test_a_value_between_half_hours_is_rejected() -> None:
+    power = series("2025-06-01 00:15", [5.0, 100.0, np.nan, 300.0])
+
+    with pytest.raises(ValueError, match="grid"):
+        hourly_from_period_end_means(power)
+
+
+def test_end_labelled_input_must_be_in_utc() -> None:
+    power = series("2025-06-01 00:30", [1.0] * 4, freq="30min", tz="Europe/Paris")
+
+    with pytest.raises(ValueError, match="UTC"):
+        hourly_from_period_end_means(power)
 
 
 def test_start_labelled_energy_is_summed_per_hour() -> None:
