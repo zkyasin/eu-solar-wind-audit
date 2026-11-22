@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from eu_solar_wind_audit import grid
-from eu_solar_wind_audit.anomalies.completeness import completeness
+from eu_solar_wind_audit.anomalies.completeness import completeness, on_grid
 
 DATASET = "test.dataset"
 PROVENANCE = "Producer, test dataset"
@@ -247,3 +247,39 @@ def test_rows_stamped_in_utc_across_clock_changes_give_no_finding() -> None:
     published = rows("2022-03-26 00:30", SEASON_END, step="30min")
 
     assert check_season(published, local_days="Europe/Paris").empty
+
+
+def test_values_off_the_grid_are_reported_in_the_hours_they_cover() -> None:
+    off = pd.Series([5.0, 6.0], index=[utc("2022-06-01 10:05"), utc("2022-06-01 10:20")])
+
+    found = check(pd.concat([rows(), off]))
+
+    assert spans(found) == [("off_grid", utc("2022-06-01 10:00"), utc("2022-06-01 11:00"), 2.0)]
+    assert evidence(found) == [
+        {
+            "first_stamp": "2022-06-01T10:05:00+00:00",
+            "last_stamp": "2022-06-01T10:20:00+00:00",
+            "minutes_past_hour": [5, 20],
+        }
+    ]
+
+
+def test_empty_rows_off_the_grid_are_not_reported() -> None:
+    # The éCO2mix national layout: a row every quarter-hour, a value every half-hour.
+    published = rows("2022-06-01 00:15", DAY_END)
+    published.loc[pd.DatetimeIndex(published.index).minute % 30 == 15] = np.nan
+
+    assert check(published, step="30min", label="end").empty
+
+
+def test_the_rows_on_the_grid_convert_to_hours() -> None:
+    published = pd.concat(
+        [rows(DAY_START, "2022-06-01 01:45"), pd.Series([5.0], index=[utc("2022-06-01 00:05")])]
+    )
+    with pytest.raises(ValueError, match="off the"):
+        grid.hourly_from_period_start_energy(published)
+
+    hourly = grid.hourly_from_period_start_energy(on_grid(published, pd.Timedelta("15min")))
+
+    assert hourly["energy_mwh"].tolist() == [0.0 + 1 + 2 + 3, 4.0 + 5 + 6 + 7]
+    assert hourly["complete"].all()
