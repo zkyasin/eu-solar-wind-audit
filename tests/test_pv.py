@@ -196,3 +196,74 @@ def test_direct_light_at_very_low_sun_counts_as_diffuse() -> None:
     assert low.size >= 2
     assert (with_direct[low] > 0).all()
     np.testing.assert_array_equal(with_direct[low], diffuse_only[low])
+
+
+def test_fleet_is_the_share_weighted_mean_of_its_systems() -> None:
+    ds = clear_weather(SUMMER)
+    fixed = System(tilt=35, azimuth=200, share=0.3)
+    tracked = System(tilt=0, azimuth=180, share=0.7, tracker=True)
+
+    fleet = run(ds, fixed, tracked)
+
+    expected = 0.3 * run(ds, System(35, 200, 1)) + 0.7 * run(ds, TRACKER)
+    np.testing.assert_allclose(fleet, expected, rtol=1e-12, atol=1e-15)
+
+
+def test_tracker_beats_horizontal_on_a_clear_summer_day() -> None:
+    ds = clear_weather(SUMMER)
+
+    assert run(ds, TRACKER).sum() > run(ds, HORIZONTAL).sum()
+
+
+def test_shares_must_sum_to_one() -> None:
+    with pytest.raises(ValueError, match="sum to 1"):
+        PVParameters((System(30, 180, 0.5), System(0, 180, 0.4, tracker=True)))
+
+
+def grid() -> xr.Dataset:
+    """Three by two cells, each with its own weather."""
+    sky = clear_sky(SUMMER)
+    ghi = sky["ghi"].to_numpy()[:, None, None]
+    scale = np.linspace(0.5, 1.0, 6).reshape(1, 3, 2)
+    dims = ("time", "latitude", "longitude")
+    return xr.Dataset(
+        {
+            "ssrd": (dims, ghi * scale),
+            "fdir": (dims, 0.7 * ghi * scale),
+            "t2m": (dims, np.broadcast_to(290.0 + 10 * scale, (24, 3, 2))),
+            "u10": (dims, np.broadcast_to(4 * scale, (24, 3, 2))),
+            "v10": (dims, np.ones((24, 3, 2))),
+        },
+        coords={"time": hours(SUMMER), "latitude": [37.5, 45.0, 53.5], "longitude": [-6.0, 10.0]},
+    )
+
+
+def test_each_cell_uses_its_own_coordinates_and_weather() -> None:
+    ds = grid()
+    params = PVParameters((SOUTH_30,))
+
+    cf = capacity_factor(ds, params)
+
+    assert cf.dims == ("time", "latitude", "longitude")
+    for lat in ds["latitude"].to_numpy():
+        for lon in ds["longitude"].to_numpy():
+            one = ds.sel(latitude=[lat], longitude=[lon])
+            np.testing.assert_array_equal(
+                cf.sel(latitude=lat, longitude=lon), series(capacity_factor(one, params))
+            )
+
+
+def test_layout_does_not_change_the_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    ds = grid()
+    params = PVParameters((SOUTH_30,))
+    reference = capacity_factor(ds, params)
+    monkeypatch.setattr(pv, "CELLS_PER_BLOCK", 4)
+
+    reordered = capacity_factor(ds.transpose("longitude", "time", "latitude"), params)
+    cells = ds.stack(cell=("latitude", "longitude")).reset_index("cell")
+    stacked = capacity_factor(cells, params)
+
+    assert reordered.dims == ("longitude", "time", "latitude")
+    xr.testing.assert_equal(reordered.transpose(*reference.dims), reference)
+    assert stacked.dims == ("time", "cell")
+    np.testing.assert_array_equal(stacked, reference.to_numpy().reshape(24, -1))
