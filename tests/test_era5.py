@@ -34,6 +34,9 @@ def arco_store(
     times: pd.DatetimeIndex, values: npt.ArrayLike, final_stop: str, era5t_stop: str
 ) -> xr.Dataset:
     store = _store("time", times, values, list(era5.ARCO_NAMES))
+    store = store.assign_coords(
+        latitude=LATITUDES.astype("float32"), longitude=LONGITUDES.astype("float32")
+    )
     return store.assign_attrs(
         valid_time_start="1940-01-01",
         valid_time_stop=final_stop,
@@ -119,6 +122,26 @@ def test_stores_join_at_the_end_of_final_era5() -> None:
     assert point["u100"].values.tolist() == [3600.0, 3600.0, 5400.0, 7200.0, 7200.0]
 
 
+def test_stores_on_different_grids_are_refused() -> None:
+    final = era5.from_icechunk(
+        icechunk_store(hours("2026-06-30 00:00", "2026-06-30 23:00"), np.zeros(24))
+    )
+    store = arco_store(
+        hours("2026-07-01 00:00", "2026-07-01 23:00"), np.zeros(24), "2026-06-30", "2026-07-01"
+    )
+    recent = era5.from_arco(store.assign_coords(longitude=store["longitude"] + 0.5))
+
+    with pytest.raises(ValueError, match="exact"):
+        era5.combine_stores(
+            final,
+            recent,
+            ["u100"],
+            FRANCE,
+            pd.Timestamp("2026-06-30 22:00"),
+            pd.Timestamp("2026-07-01 02:00"),
+        )
+
+
 def test_arco_labels_final_hours_and_drops_the_padding() -> None:
     times = hours("2026-06-30 22:00", "2026-07-02 01:00")
     store = arco_store(times, np.arange(len(times), dtype="float64"), "2026-06-30", "2026-07-01")
@@ -130,6 +153,7 @@ def test_arco_labels_final_hours_and_drops_the_padding() -> None:
     assert recent["source"].sel(time="2026-06-30 23:00").item() == "ERA5"
     assert recent["source"].sel(time="2026-07-01 00:00").item() == "ERA5T"
     assert not recent["t2m"].isnull().any()
+    assert recent["latitude"].dtype == recent["longitude"].dtype == np.float64
 
 
 def test_period_past_the_era5t_tail_is_refused() -> None:

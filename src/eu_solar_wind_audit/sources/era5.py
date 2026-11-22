@@ -40,8 +40,12 @@ class Box(NamedTuple):
 
 
 def _standard_grid(ds: xr.Dataset) -> xr.Dataset:
-    longitude = (ds["longitude"] + 180) % 360 - 180
-    return ds.assign_coords(longitude=longitude).sortby(["latitude", "longitude"])
+    # ARCO stores its coordinates as float32, Icechunk as float64.
+    latitude = ds["latitude"].astype("float64")
+    longitude = (ds["longitude"].astype("float64") + 180) % 360 - 180
+    return ds.assign_coords(latitude=latitude, longitude=longitude).sortby(
+        ["latitude", "longitude"]
+    )
 
 
 def from_icechunk(store: xr.Dataset) -> xr.Dataset:
@@ -103,7 +107,7 @@ def combine_stores(
     if recent is not None:
         parts.append(_subset(recent, variables, box, max(start, last_final + HOUR), end))
     # The hour starting at h needs the stamp h + 1 h, and h as well for instantaneous fields.
-    raw = xr.concat(parts, dim="time")
+    raw = xr.concat(parts, dim="time", join="exact")
     expected = pd.date_range(start, end, freq="h")
     if not raw.indexes["time"].equals(expected):
         raise ValueError(f"ERA5 stores do not hold every hour from {start} to {end}")
