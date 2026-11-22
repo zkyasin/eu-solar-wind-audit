@@ -63,6 +63,12 @@ def test_hour_is_classed_on_its_mean_not_on_its_quarters() -> None:
     assert hours["regime"].iloc[1] == "negative"
 
 
+def test_a_negative_quarter_alone_keeps_an_hour_out_of_reference() -> None:
+    hours = classify_hours(quarter_hours([50.0] * 4, [-1.0, 20.0, 20.0, 20.0], [50.0] * 4))
+
+    assert hours["regime"].to_list() == ["reference", "buffer", "reference"]
+
+
 def test_hours_next_to_a_negative_hour_are_buffer() -> None:
     hours = classify_hours(hourly(50, 50, 50, -5, 50, 50, 50))
 
