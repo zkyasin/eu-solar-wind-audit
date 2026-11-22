@@ -5,11 +5,16 @@ import pandas as pd
 import pytest
 from pandera.errors import SchemaError, SchemaErrors
 
-from eu_solar_wind_audit.anomalies.findings import Findings, from_records
+from eu_solar_wind_audit.anomalies.findings import Findings, from_records, runs
 
 
 def utc(stamp: str) -> pd.Timestamp:
     return pd.Timestamp(stamp, tz="UTC")
+
+
+def hours(*stamps: str) -> pd.DatetimeIndex:
+    """Stamps of 27 March 2022 in UTC, in nanoseconds like grid.UtcTime."""
+    return pd.DatetimeIndex([f"2022-03-27 {stamp}" for stamp in stamps], tz="UTC").as_unit("ns")
 
 
 def record(**changes: object) -> dict[str, object]:
@@ -102,3 +107,61 @@ def test_records_with_naive_times_are_refused() -> None:
 def test_records_are_validated() -> None:
     with pytest.raises(SchemaError, match="ends_after_start"):
         from_records([record(end=utc("2022-03-26 00:00"))])
+
+
+def expected_runs(*spans: tuple[str, str, int]) -> pd.DataFrame:
+    """Runs from (start, end, flagged hours) on 27 March 2022."""
+    return pd.DataFrame(
+        {
+            "start": hours(*[start for start, _, _ in spans]),
+            "end": hours(*[end for _, end, _ in spans]),
+            "flagged_hours": pd.Series([flagged for _, _, flagged in spans], dtype="int64"),
+        }
+    )
+
+
+def test_consecutive_hours_form_one_run() -> None:
+    found = runs(hours("01:00", "02:00", "03:00"), merge_gap=pd.Timedelta(0))
+
+    pd.testing.assert_frame_equal(found, expected_runs(("01:00", "04:00", 3)))
+
+
+def test_an_unflagged_hour_splits_runs_without_a_merge_gap() -> None:
+    found = runs(hours("01:00", "03:00", "04:00"), merge_gap=pd.Timedelta(0))
+
+    expected = expected_runs(("01:00", "02:00", 1), ("03:00", "05:00", 2))
+    pd.testing.assert_frame_equal(found, expected)
+
+
+def test_runs_closer_than_the_merge_gap_are_joined() -> None:
+    # One unflagged hour between the first two runs, two between the last two.
+    found = runs(hours("01:00", "03:00", "06:00"), merge_gap=pd.Timedelta(hours=2))
+
+    expected = expected_runs(("01:00", "04:00", 2), ("06:00", "07:00", 1))
+    pd.testing.assert_frame_equal(found, expected)
+
+
+def test_order_and_repeats_do_not_change_the_runs() -> None:
+    found = runs(hours("03:00", "01:00", "02:00", "03:00"), merge_gap=pd.Timedelta(0))
+
+    pd.testing.assert_frame_equal(found, expected_runs(("01:00", "04:00", 3)))
+
+
+def test_no_flagged_hour_gives_no_run() -> None:
+    found = runs(hours(), merge_gap=pd.Timedelta(hours=24))
+
+    pd.testing.assert_frame_equal(found, expected_runs())
+
+
+@pytest.mark.parametrize(
+    "flagged",
+    [
+        pd.DatetimeIndex(["2022-03-27 01:00"]),
+        pd.DatetimeIndex(["2022-03-27 01:00"], tz="Europe/Paris"),
+        hours("01:30"),
+    ],
+    ids=["naive", "not-in-utc", "off-hour"],
+)
+def test_runs_need_hour_starts_in_utc(flagged: pd.DatetimeIndex) -> None:
+    with pytest.raises(ValueError, match="hour starts in UTC"):
+        runs(flagged, merge_gap=pd.Timedelta(0))
