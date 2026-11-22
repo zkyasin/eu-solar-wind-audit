@@ -499,6 +499,20 @@ def test_extract_capacity_downloads_and_writes_the_tables_with_their_provenance(
     assert {"retrieved_at", "extracted_at"} <= metadata.keys()
 
 
+def test_write_capacity_reads_an_export_downloaded_by_hand(tmp_path: Path) -> None:
+    export = tmp_path / EXPORT.name
+    export.write_bytes(EXPORT.read_bytes())
+
+    path = mastr.write_capacity(export, tmp_path / "out")
+
+    metadata = json.loads(path.with_suffix(".json").read_text())
+    assert metadata["file"] == EXPORT.name
+    assert metadata["sha256"] == hashlib.sha256(export.read_bytes()).hexdigest()
+    assert metadata["url"] is None
+    assert metadata["retrieved_at"] is None
+    assert metadata["export_date"] == "2026-11-22"
+
+
 def test_export_date_comes_from_the_file_name() -> None:
     assert mastr.export_date_of(EXPORT) == pd.Timestamp("2026-11-22")
     with pytest.raises(ValueError, match="not a daily export"):

@@ -162,7 +162,7 @@ def download_export(client: httpx.Client, url: str, cache_dir: Path = CACHE_DIR)
     """Path of the export zip, downloaded unless already cached.
 
     An interrupted download is resumed from its .part file. Once complete, a JSON file next to the
-    zip records the URL, retrieval time, size and SHA-256.
+    zip records the URL, retrieval time, file name, size and SHA-256.
     """
     dest = cache_dir / url.rsplit("/", 1)[1]
     if dest.exists():
@@ -178,18 +178,15 @@ def download_export(client: httpx.Client, url: str, cache_dir: Path = CACHE_DIR)
                 raise
             time.sleep(delay)
 
-    with partial.open("rb") as file:
-        sha256 = hashlib.file_digest(file, "sha256").hexdigest()
+    # Renamed before hashing: a complete .part file left behind cannot be resumed, since the server
+    # rejects a range past the end of the file.
+    partial.replace(dest)
     metadata = {
         "url": url,
-        "file": dest.name,
         "retrieved_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
-        "size": partial.stat().st_size,
-        "sha256": sha256,
+        **_describe(dest),
     }
-    # Written before the zip gets its final name, so that a cached zip always has its metadata.
     _metadata_path(dest).write_text(json.dumps(metadata, indent=2) + "\n")
-    partial.replace(dest)
     return dest
 
 
@@ -334,8 +331,15 @@ def write_capacity(
         "mastr_offshore_wind": offshore_wind(units, end),
         "mastr_units": units,
     }
+    record = _metadata_path(export)
+    # An export downloaded by hand has no download record: its URL and retrieval time are unknown.
+    download = (
+        json.loads(record.read_text())
+        if record.exists()
+        else {"url": None, "retrieved_at": None, **_describe(export)}
+    )
     metadata = {
-        **json.loads(_metadata_path(export).read_text()),
+        **download,
         "export_date": export_date.date().isoformat(),
         "extracted_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
     }
@@ -371,6 +375,12 @@ def _resume(client: httpx.Client, url: str, partial: Path) -> None:
 
 def _metadata_path(path: Path) -> Path:
     return path.with_name(path.name + ".json")
+
+
+def _describe(path: Path) -> dict[str, str | int]:
+    with path.open("rb") as file:
+        sha256 = hashlib.file_digest(file, "sha256").hexdigest()
+    return {"file": path.name, "size": path.stat().st_size, "sha256": sha256}
 
 
 def _read_member(
