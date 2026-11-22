@@ -408,3 +408,16 @@ def test_empty_period_is_refused_before_any_download(
 
     with pytest.raises(ValueError, match="empty period"):
         physics.model_france("solar", day, day, COUNTRY, cache_dir=tmp_path)
+
+
+def test_hours_after_the_last_final_month_end_use_provisional_capacity(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(1.0))
+    monthly = panel("solar", {"01": {"2019-12-31": 10.0, "2020-01-31": 10.0, "2020-02-29": 20.0}})
+    monthly["provisional"] = monthly["month_end"] == pd.Timestamp("2020-02-29")
+
+    result = run("solar", monthly, tmp_path, "2020-01-31 22:00", "2020-02-01 02:00")
+
+    # The 31 January figure holds at 1 February 00:00; later hours lean on the February figure.
+    assert result["capacity_provisional"].tolist() == [False, False, False, True]
