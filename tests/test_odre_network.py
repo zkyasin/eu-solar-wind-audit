@@ -41,11 +41,12 @@ def test_one_month_of_hourly_series_adds_up(tmp_path: Path) -> None:
         regional = odre.regional_hourly(client, "solar", start, end, cache_dir=tmp_path)
 
     assert len(solar) == len(onshore) == 30 * 24
-    assert len(regional) == 12 * 30 * 24
+    assert list(regional) == list(odre.REGIONS)
+    assert all(frame.index.equals(solar.index) for frame in regional.values())
     assert solar["complete"].all()
     assert onshore["complete"].all()
     assert set(solar["status"]) == {"definitive"}
     # National minus the sum of the regions stayed within 3 MWh in every hour of 2019 to
     # August 2026 (ODRÉ exports read on 2026-11-22): rounding of the published MW values.
-    regions = regional.groupby(level="time")["energy_mwh"].sum()
+    regions = pd.concat(regional.values()).groupby(level="time")["energy_mwh"].sum()
     assert (solar["energy_mwh"] - regions).abs().max() <= 3

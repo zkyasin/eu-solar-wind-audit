@@ -142,18 +142,6 @@ class Hourly(grid.Hourly):
     status: Series[str] = pa.Field(isin=STATUS_ORDER, nullable=True)
 
 
-class RegionalHourly(pa.DataFrameModel):
-    time: Index[grid.UtcTime]
-    region_code: Series[str] = pa.Field(isin=list(REGIONS))
-    region: Series[str]
-    energy_mwh: Series[float] = pa.Field(nullable=True)
-    complete: Series[bool]
-    status: Series[str] = pa.Field(isin=STATUS_ORDER, nullable=True)
-
-    class Config:
-        strict = True
-
-
 @dataclass(frozen=True)
 class Snapshot:
     path: Path
@@ -286,21 +274,21 @@ def regional_hourly(
     end: pd.Timestamp,
     *,
     cache_dir: Path = CACHE_DIR,
-) -> DataFrame[RegionalHourly]:
+) -> dict[str, DataFrame[Hourly]]:
     """Every hour of [start, end), both hour starts in UTC, for each of the 12 regions, from
-    consolidated and definitive values only."""
+    consolidated and definitive values only. Keyed by region code, in `REGIONS` order."""
     first, last = _days(start, end)
     published = fetch_regional_consolidated(client, first, last, cache_dir=cache_dir)
-    frames = []
-    for code, name in REGIONS.items():
+    by_region: dict[str, DataFrame[Hourly]] = {}
+    for code in REGIONS:
         rows = published[published["region_code"] == code]
         hourly = _consolidated_hourly(rows[f"{series}_mw"], rows["status"], start, end)
         if series in ("wind_onshore", "wind_offshore"):
             unpublished = hourly.index < WIND_SPLIT_START
             hourly.loc[unpublished, "energy_mwh"] = np.nan
             hourly.loc[unpublished, "complete"] = False
-        frames.append(hourly.assign(region_code=code, region=name))
-    return RegionalHourly.validate(pd.concat(frames))
+        by_region[code] = Hourly.validate(hourly)
+    return by_region
 
 
 def snapshot_realtime(client: httpx.Client, directory: Path) -> Snapshot:
@@ -380,10 +368,11 @@ def _realtime_hourly(power_mw: pd.Series, start: pd.Timestamp, end: pd.Timestamp
     return grid.on_hours(hourly, start, end)
 
 
-def _sum_of_regions(regional: pd.DataFrame) -> pd.DataFrame:
-    by_hour = regional.groupby(level="time")
+def _sum_of_regions(regional: dict[str, DataFrame[Hourly]]) -> pd.DataFrame:
+    stacked = pd.concat(regional.values())
+    by_hour = stacked.groupby(level="time")
     complete = by_hour["complete"].all()
-    rank = regional["status"].map(STATUS_ORDER.index, na_action="ignore")
+    rank = stacked["status"].map(STATUS_ORDER.index, na_action="ignore")
     return pd.DataFrame(
         {
             "energy_mwh": by_hour["energy_mwh"].sum().where(complete),

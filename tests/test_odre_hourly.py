@@ -5,6 +5,7 @@ import httpx
 import numpy as np
 import pandas as pd
 import pytest
+from pandera.typing import DataFrame
 
 from eu_solar_wind_audit.sources import odre
 
@@ -46,7 +47,7 @@ def national(
 
 def regional(
     series: odre.RegionalSeries, start: str, end: str, content: bytes, tmp_path: Path
-) -> pd.DataFrame:
+) -> dict[str, DataFrame[odre.Hourly]]:
     with serving({odre.REGIONAL_CONSOLIDATED: content}, []) as client:
         return odre.regional_hourly(client, series, hour(start), hour(end), cache_dir=tmp_path)
 
@@ -226,27 +227,25 @@ def test_regional_split_is_missing_before_2024(tmp_path: Path) -> None:
     wind = regional("wind", "2023-12-31", "2024-01-01", content, tmp_path)
     offshore = regional("wind_offshore", "2023-12-31", "2024-01-01", content, tmp_path)
 
-    loire = offshore[offshore["region_code"] == "52"]
+    loire = offshore["52"]
     # The source fills the split with zeros until 31 December 2023 local time.
     assert loire.index[loire["complete"]].equals(utc("2023-12-31 23:00"))
     assert loire.loc[utc("2023-12-31 23:00"), "energy_mwh"].item() == 242.0
-    assert wind["complete"].all()
+    assert all(frame["complete"].all() for frame in wind.values())
 
 
-def test_regional_frame_has_every_region_and_hour(tmp_path: Path) -> None:
+def test_regional_series_have_every_region_and_hour(tmp_path: Path) -> None:
     solar = regional("solar", "2025-12-31", "2026-01-01", YEAR_END_REGIONAL.read_bytes(), tmp_path)
 
-    assert len(solar) == 12 * 24
-    assert solar.groupby("region_code").size().to_dict() == dict.fromkeys(odre.REGIONS, 24)
-    assert dict(zip(solar["region_code"], solar["region"], strict=True)) == odre.REGIONS
-    for _, frame in solar.groupby("region_code"):
+    assert list(solar) == list(odre.REGIONS)
+    for frame in solar.values():
         assert frame.index.equals(hours("2025-12-31", "2026-01-01"))
 
 
 def test_hour_status_is_the_least_final_of_its_half_hours(tmp_path: Path) -> None:
     wind = regional("wind", "2025-12-31", "2026-01-01", YEAR_END_REGIONAL.read_bytes(), tmp_path)
 
-    loire = wind[wind["region_code"] == "52"]
+    loire = wind["52"]
     # The half-hour ending 23:00 UTC is midnight in Paris: the first consolidated row.
     assert loire.loc[utc("2025-12-31 21:00"), "status"].item() == "definitive"
     assert loire.loc[utc("2025-12-31 22:00"), "status"].item() == "consolidated"
