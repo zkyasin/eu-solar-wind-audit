@@ -369,7 +369,9 @@ def _consolidated_hourly(
 
 
 def _realtime_hourly(power_mw: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    hourly = grid.hourly_from_instantaneous(power_mw).assign(status="realtime")
+    hourly = grid.hourly_from_instantaneous(power_mw)
+    published = hourly.index.isin(pd.DatetimeIndex(power_mw.index).floor("h"))
+    hourly["status"] = pd.Series("realtime", index=hourly.index).where(published)
     return grid.on_hours(hourly, start, end)
 
 

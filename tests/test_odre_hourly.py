@@ -112,7 +112,8 @@ def test_realtime_hours_are_trapezoids_and_the_autumn_hour_is_incomplete(
     assert wind.loc[utc("2026-10-25 01:00"), "energy_mwh"].item() == expected
     # The source has no points from 00:00 to 00:45 UTC on the day of the change.
     assert wind.index[~wind["complete"]].equals(utc("2026-10-24 23:00", "2026-10-25 00:00"))
-    assert set(wind["status"]) == {"realtime"}
+    assert wind.index[wind["status"].isna()].equals(utc("2026-10-25 00:00"))
+    assert set(wind["status"].dropna()) == {"realtime"}
 
 
 @pytest.mark.parametrize("series", ["load", "solar", "wind"])
@@ -275,17 +276,25 @@ def test_hour_status_is_the_least_final_of_its_half_hours(tmp_path: Path) -> Non
 
 def test_hours_without_published_values_have_no_status(tmp_path: Path) -> None:
     published = pd.read_parquet(SWITCH_REALTIME)
-    later = published[published["date_heure"] >= pd.Timestamp("2026-09-01", tz="UTC")]
+    stamps = published["date_heure"]
+    gaps = (stamps < hour("2026-09-01 00:00")) | stamps.between(
+        hour("2026-09-01 03:00"), hour("2026-09-01 04:45")
+    )
     path = tmp_path / "export.parquet"
-    later.to_parquet(path, index=False)
+    published[~gaps].to_parquet(path, index=False)
     exports = {odre.NATIONAL_CONSOLIDATED: SWITCH_CONSOLIDATED, odre.NATIONAL_REALTIME: path}
 
     solar = national("solar", "2026-08-31", "2026-09-02", exports, tmp_path / "cache")
 
-    gap = solar.loc[utc("2026-08-31 22:00", "2026-08-31 23:00")]
-    assert gap["status"].isna().all()
-    assert not gap["complete"].any()
-    assert solar.loc[utc("2026-09-01 00:00"), "status"].item() == "realtime"
+    unpublished = utc(
+        "2026-08-31 22:00", "2026-08-31 23:00", "2026-09-01 03:00", "2026-09-01 04:00"
+    )
+    assert solar.index[solar["status"].isna()].equals(unpublished)
+    assert not solar.loc[unpublished, "complete"].any()
+    # The hour before the gap has rows but misses its closing point.
+    before_gap = solar.loc[hour("2026-09-01 02:00")]
+    assert not before_gap["complete"]
+    assert before_gap["status"] == "realtime"
 
 
 @pytest.mark.parametrize(
