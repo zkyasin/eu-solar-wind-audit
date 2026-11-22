@@ -22,6 +22,13 @@ def recent() -> xr.Dataset:
     return era5.open_arco()
 
 
+def test_arco_names_and_radiation_units(final: xr.Dataset, recent: xr.Dataset) -> None:
+    for name in era5.VARIABLES:
+        assert recent[name].attrs["short_name"] == name
+    for name in era5.ACCUMULATED:
+        assert final[name].attrs["units"] == recent[name].attrs["units"] == "J m**-2"
+
+
 def test_icechunk_day_of_final_era5(final: xr.Dataset) -> None:
     start = pd.Timestamp("2025-06-21")
 
