@@ -1,7 +1,8 @@
 import hashlib
 import json
+import os
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -80,14 +81,14 @@ def test_fetch_requests_the_dataset_days_and_fields(
 ) -> None:
     requests: list[httpx.Request] = []
     with serving(fixture.read_bytes(), requests) as client:
-        fetch(client, date(2025, 3, 30), date(2025, 3, 31), cache_dir=tmp_path)
+        fetch(client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=tmp_path)
 
     (request,) = requests
     assert request.url.path == f"/api/explore/v2.1/catalog/datasets/{dataset}/exports/parquet"
     assert request.url.params["select"] == fields
     assert request.url.params["where"] == (
         "date_heure >= date'2025-03-30T00:00:00+00:00'"
-        " AND date_heure <= date'2025-04-01T00:00:00+00:00'"
+        " AND date_heure <= date'2025-03-31T00:00:00+00:00'"
     )
 
 
@@ -201,6 +202,17 @@ def test_timestamps_without_time_zone_fail_validation(tmp_path: Path) -> None:
         )
 
 
+def test_unknown_region_fails_validation(tmp_path: Path) -> None:
+    published = pd.read_parquet(REGIONAL_CONSOLIDATED)
+    published.loc[published["code_insee_region"] == "53", "code_insee_region"] = "94"
+    content = parquet_bytes(published, tmp_path)
+
+    with serving(content, []) as client, pytest.raises(pandera.errors.SchemaError):
+        odre.fetch_regional_consolidated(
+            client, date(2025, 12, 31), date(2025, 12, 31), cache_dir=tmp_path / "cache"
+        )
+
+
 def test_negative_load_fails_validation(tmp_path: Path) -> None:
     stamps = pd.date_range("2025-03-30", periods=2, freq="30min", tz="UTC")
     rows = published_rows("Données définitives", stamps).assign(consommation=[50000, -1])
@@ -283,6 +295,56 @@ def test_consolidated_fetch_is_cached_and_realtime_fetch_is_not(tmp_path: Path) 
 
     assert len(consolidated) == 1
     assert len(realtime) == 2
+
+
+# An export cut at 23:00 stops at 22:45 UTC, as the last consolidated month does when it ends at
+# midnight in Paris in winter: only the last hour of the day misses its rows.
+@pytest.mark.parametrize("cut", ["2025-03-30 12:00", "2025-03-30 23:00"])
+def test_a_short_consolidated_export_is_downloaded_again_once_12_hours_old(
+    cut: str, tmp_path: Path
+) -> None:
+    full = pd.read_parquet(NATIONAL_CONSOLIDATED)
+    short_path = tmp_path / "short.parquet"
+    full[full["date_heure"] < utc(cut)].to_parquet(short_path, index=False)
+    exports = [short_path.read_bytes(), NATIONAL_CONSOLIDATED.read_bytes()]
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, content=exports[len(requests) - 1])
+
+    cache_dir = tmp_path / "cache"
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+
+        def fetch() -> pd.DataFrame:
+            return odre.fetch_national_consolidated(
+                client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=cache_dir
+            )
+
+        downloaded, cached = fetch(), fetch()
+        (path,) = cache_dir.rglob("*.parquet")
+        retrieved = (datetime.now(UTC) - timedelta(hours=13)).timestamp()
+        os.utime(path, (retrieved, retrieved))
+        refreshed = fetch()
+
+    assert downloaded.index.max() < utc("2025-03-30 23:00")
+    assert cached.index.equals(downloaded.index)
+    assert refreshed.index.max() == utc("2025-03-31 00:00")
+    assert len(requests) == 2
+
+
+def test_a_full_consolidated_export_is_kept_however_old(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    cache_dir = tmp_path / "cache"
+    with serving(NATIONAL_CONSOLIDATED.read_bytes(), requests) as client:
+        for _ in range(2):
+            odre.fetch_national_consolidated(
+                client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=cache_dir
+            )
+            (path,) = cache_dir.rglob("*.parquet")
+            os.utime(path, (0, 0))
+
+    assert len(requests) == 1
 
 
 def test_failed_download_leaves_no_file(tmp_path: Path) -> None:

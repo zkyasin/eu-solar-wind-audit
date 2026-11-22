@@ -5,6 +5,9 @@ are 30-minute averages labelled at the end of the period: on a 15-minute grid wh
 is empty in the national dataset, on a 30-minute grid in the regional one. Real-time values are
 15-minute instantaneous values. On spring clock-change days the source repeats UTC stamps; on
 autumn days it has no rows for the repeated local hour.
+
+`national_hourly` and `regional_hourly` put these series on the common grid of `grid`, with the
+publication status of each hour.
 """
 
 import hashlib
@@ -12,13 +15,15 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
-from typing import Annotated
+from typing import Literal
 
 import httpx
 import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Index, Series
+
+from eu_solar_wind_audit import grid
 
 BASE_URL = "https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets"
 CACHE_DIR = Path("data/raw/odre")
@@ -32,6 +37,39 @@ STATUS = {
     "Données consolidées": "consolidated",
     "Données temps réel": "realtime",
 }
+
+# From the most to the least final.
+STATUS_ORDER = list(STATUS.values())
+
+# The 12 éCO2mix regions, as named in the regional dataset. Corsica is in neither the regional nor
+# the national data: hourly national solar equals the sum of these regions within 3 MWh (checked
+# in tests/test_odre_network.py).
+REGIONS = {
+    "11": "Île-de-France",
+    "24": "Centre-Val de Loire",
+    "27": "Bourgogne-Franche-Comté",
+    "28": "Normandie",
+    "32": "Hauts-de-France",
+    "44": "Grand Est",
+    "52": "Pays de la Loire",
+    "53": "Bretagne",
+    "75": "Nouvelle-Aquitaine",
+    "76": "Occitanie",
+    "84": "Auvergne-Rhône-Alpes",
+    "93": "Provence-Alpes-Côte d'Azur",
+}
+
+# Under a day, so that a daily run always downloads again an export that stopped early the day
+# before.
+SHORT_EXPORT_MAX_AGE = timedelta(hours=12)
+
+# The regional onshore and offshore fields are null before 2021, then zero while regional wind is
+# not, until 31 December 2023 (ODRÉ export read on 2026-11-22). The national consolidated dataset
+# has no split.
+WIND_SPLIT_START = pd.Timestamp("2024-01-01", tz="Europe/Paris").tz_convert("UTC")
+
+NationalSeries = Literal["load", "solar", "wind", "wind_onshore", "wind_offshore"]
+RegionalSeries = Literal["solar", "wind", "wind_onshore", "wind_offshore"]
 
 # ODRÉ field -> column name, in export order.
 NATIONAL_CONSOLIDATED_FIELDS = {
@@ -58,13 +96,11 @@ REGIONAL_CONSOLIDATED_FIELDS = {
     "eolien_offshore": "wind_offshore_mw",
 }
 
-UtcTime = Annotated[pd.DatetimeTZDtype, "ns", "UTC"]
-
 
 # Production is not checked for sign: the source publishes small negative values, which the
 # anomaly detectors must see.
 class NationalConsolidated(pa.DataFrameModel):
-    time: Index[UtcTime]
+    time: Index[grid.UtcTime]
     status: Series[str] = pa.Field(isin=["definitive", "consolidated"])
     load_mw: Series[float] = pa.Field(ge=0, nullable=True)
     solar_mw: Series[float] = pa.Field(nullable=True)
@@ -75,7 +111,7 @@ class NationalConsolidated(pa.DataFrameModel):
 
 
 class NationalRealtime(pa.DataFrameModel):
-    time: Index[UtcTime]
+    time: Index[grid.UtcTime]
     status: Series[str] = pa.Field(isin=["realtime"])
     load_mw: Series[float] = pa.Field(ge=0, nullable=True)
     solar_mw: Series[float] = pa.Field(nullable=True)
@@ -88,8 +124,8 @@ class NationalRealtime(pa.DataFrameModel):
 
 
 class RegionalConsolidated(pa.DataFrameModel):
-    time: Index[UtcTime]
-    region_code: Series[str]
+    time: Index[grid.UtcTime]
+    region_code: Series[str] = pa.Field(isin=list(REGIONS))
     region: Series[str]
     status: Series[str] = pa.Field(isin=["definitive", "consolidated"])
     load_mw: Series[float] = pa.Field(ge=0, nullable=True)
@@ -101,6 +137,13 @@ class RegionalConsolidated(pa.DataFrameModel):
 
     class Config:
         strict = True
+
+
+class Hourly(grid.Hourly):
+    """The status is the least final one among the published rows of the hour, null when the hour
+    has none."""
+
+    status: Series[str] = pa.Field(isin=STATUS_ORDER, nullable=True)
 
 
 @dataclass(frozen=True)
@@ -158,14 +201,15 @@ def download_export(
 def fetch_national_consolidated(
     client: httpx.Client, start: date, end: date, *, cache_dir: Path = CACHE_DIR
 ) -> DataFrame[NationalConsolidated]:
-    path = download_export(
+    return _consolidated_export(
         client,
         NATIONAL_CONSOLIDATED,
-        select=",".join(NATIONAL_CONSOLIDATED_FIELDS),
-        where=utc_days(start, end),
-        cache_dir=cache_dir,
+        NATIONAL_CONSOLIDATED_FIELDS,
+        NationalConsolidated,
+        start,
+        end,
+        cache_dir,
     )
-    return NationalConsolidated.validate(_tidy(path, NATIONAL_CONSOLIDATED_FIELDS))
 
 
 def fetch_national_realtime(
@@ -186,14 +230,69 @@ def fetch_national_realtime(
 def fetch_regional_consolidated(
     client: httpx.Client, start: date, end: date, *, cache_dir: Path = CACHE_DIR
 ) -> DataFrame[RegionalConsolidated]:
-    path = download_export(
+    return _consolidated_export(
         client,
         REGIONAL_CONSOLIDATED,
-        select=",".join(REGIONAL_CONSOLIDATED_FIELDS),
-        where=utc_days(start, end),
-        cache_dir=cache_dir,
+        REGIONAL_CONSOLIDATED_FIELDS,
+        RegionalConsolidated,
+        start,
+        end,
+        cache_dir,
     )
-    return RegionalConsolidated.validate(_tidy(path, REGIONAL_CONSOLIDATED_FIELDS))
+
+
+def national_hourly(
+    client: httpx.Client,
+    series: NationalSeries,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    cache_dir: Path = CACHE_DIR,
+) -> DataFrame[Hourly]:
+    """Every hour of [start, end), both hour starts in UTC. Consolidated and definitive values are
+    used up to the last hour they cover, real-time values after it.
+
+    Before real time, national onshore and offshore wind are the sums of the 12 regions.
+    """
+    first, last = _days(start, end)
+    if series in ("wind_onshore", "wind_offshore"):
+        regional = regional_hourly(client, series, start, end, cache_dir=cache_dir)
+        hourly = _sum_of_regions(regional)
+    else:
+        published = fetch_national_consolidated(client, first, last, cache_dir=cache_dir)
+        hourly = _consolidated_hourly(published[f"{series}_mw"], published["status"], start, end)
+
+    covered = hourly.index[hourly["status"].notna()]
+    if covered.empty or covered[-1] < end - grid.HOUR:
+        after = start if covered.empty else covered[-1] + grid.HOUR
+        realtime = fetch_national_realtime(client, after.date(), last, cache_dir=cache_dir)
+        later = _realtime_hourly(realtime[f"{series}_mw"], after, end)
+        hourly = pd.concat([hourly[hourly.index < after], later])
+    return Hourly.validate(hourly)
+
+
+def regional_hourly(
+    client: httpx.Client,
+    series: RegionalSeries,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    cache_dir: Path = CACHE_DIR,
+) -> dict[str, DataFrame[Hourly]]:
+    """Every hour of [start, end), both hour starts in UTC, for each of the 12 regions, from
+    consolidated and definitive values only. Keyed by region code, in `REGIONS` order."""
+    first, last = _days(start, end)
+    published = fetch_regional_consolidated(client, first, last, cache_dir=cache_dir)
+    by_region: dict[str, DataFrame[Hourly]] = {}
+    for code in REGIONS:
+        rows = published[published["region_code"] == code]
+        hourly = _consolidated_hourly(rows[f"{series}_mw"], rows["status"], start, end)
+        if series in ("wind_onshore", "wind_offshore"):
+            unpublished = hourly.index < WIND_SPLIT_START
+            hourly.loc[unpublished, "energy_mwh"] = np.nan
+            hourly.loc[unpublished, "complete"] = False
+        by_region[code] = Hourly.validate(hourly)
+    return by_region
 
 
 def snapshot_realtime(client: httpx.Client, directory: Path) -> Snapshot:
@@ -225,6 +324,69 @@ def _stream_to(client: httpx.Client, url: str, params: dict[str, str], dest: Pat
             for chunk in response.iter_bytes():
                 file.write(chunk)
     partial.replace(dest)
+
+
+def _consolidated_export[Schema: pa.DataFrameModel](
+    client: httpx.Client,
+    dataset: str,
+    fields: dict[str, str],
+    schema: type[Schema],
+    start: date,
+    end: date,
+    cache_dir: Path,
+) -> DataFrame[Schema]:
+    """Cached export, downloaded again when it stops before the last hour of `end` and was
+    retrieved more than 12 hours ago: consolidated months are added in the middle of the next
+    month (ODRÉ dataset description) and then leave the real-time dataset."""
+    select, where = ",".join(fields), utc_days(start, end)
+    path = download_export(client, dataset, select=select, where=where, cache_dir=cache_dir)
+    frame = schema.validate(_tidy(path, fields))
+    short = frame.empty or frame.index[-1] < pd.Timestamp(end, tz="UTC") + pd.Timedelta(hours=23)
+    age = datetime.now(UTC) - datetime.fromtimestamp(path.stat().st_mtime, UTC)
+    if short and age > SHORT_EXPORT_MAX_AGE:
+        path = download_export(
+            client, dataset, select=select, where=where, cache_dir=cache_dir, refresh=True
+        )
+        frame = schema.validate(_tidy(path, fields))
+    return frame
+
+
+def _days(start: pd.Timestamp, end: pd.Timestamp) -> tuple[date, date]:
+    """First and last UTC days of the hours [start, end), refusing a wrong period before any
+    download."""
+    grid.check_period(start, end)
+    return start.date(), (end - grid.HOUR).date()
+
+
+def _consolidated_hourly(
+    power_mw: pd.Series, status: pd.Series, start: pd.Timestamp, end: pd.Timestamp
+) -> pd.DataFrame:
+    hourly = grid.hourly_from_period_end_means(power_mw)
+    # Same shift as the values: a row labelled 00:00 belongs to the hour starting at 23:00.
+    rank = status.map(STATUS_ORDER.index).shift(-1, freq="30min").resample("h").max()
+    hourly["status"] = rank.reindex(hourly.index).map(dict(enumerate(STATUS_ORDER)))
+    return grid.on_hours(hourly, start, end)
+
+
+def _realtime_hourly(power_mw: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    hourly = grid.hourly_from_instantaneous(power_mw)
+    published = hourly.index.isin(pd.DatetimeIndex(power_mw.index).floor("h"))
+    hourly["status"] = pd.Series("realtime", index=hourly.index).where(published)
+    return grid.on_hours(hourly, start, end)
+
+
+def _sum_of_regions(regional: dict[str, DataFrame[Hourly]]) -> pd.DataFrame:
+    stacked = pd.concat(regional.values())
+    by_hour = stacked.groupby(level="time")
+    complete = by_hour["complete"].all()
+    rank = stacked["status"].map(STATUS_ORDER.index, na_action="ignore")
+    return pd.DataFrame(
+        {
+            "energy_mwh": by_hour["energy_mwh"].sum().where(complete),
+            "complete": complete,
+            "status": rank.groupby(level="time").max().map(dict(enumerate(STATUS_ORDER))),
+        }
+    )
 
 
 def _tidy(path: Path, fields: dict[str, str]) -> pd.DataFrame:

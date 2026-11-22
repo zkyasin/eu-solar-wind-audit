@@ -31,3 +31,22 @@ def test_one_day_of_each_dataset_matches_its_schema(tmp_path: Path) -> None:
     assert realtime["wind_offshore_mw"].count() > 0
     assert len(regional) == 12 * 49
     assert regional["wind_offshore_mw"].count() > 0
+
+
+def test_one_month_of_hourly_series_adds_up(tmp_path: Path) -> None:
+    start, end = pd.Timestamp("2025-06-01", tz="UTC"), pd.Timestamp("2025-07-01", tz="UTC")
+    with odre.make_client() as client:
+        solar = odre.national_hourly(client, "solar", start, end, cache_dir=tmp_path)
+        onshore = odre.national_hourly(client, "wind_onshore", start, end, cache_dir=tmp_path)
+        regional = odre.regional_hourly(client, "solar", start, end, cache_dir=tmp_path)
+
+    assert len(solar) == len(onshore) == 30 * 24
+    assert list(regional) == list(odre.REGIONS)
+    assert all(frame.index.equals(solar.index) for frame in regional.values())
+    assert solar["complete"].all()
+    assert onshore["complete"].all()
+    assert set(solar["status"]) == {"definitive"}
+    # National minus the sum of the regions stayed within 3 MWh in every hour of 2019 to
+    # August 2026 (ODRÉ exports read on 2026-11-22): rounding of the published MW values.
+    regions = pd.concat(regional.values()).groupby(level="time")["energy_mwh"].sum()
+    assert (solar["energy_mwh"] - regions).abs().max() <= 3
