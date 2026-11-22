@@ -1,5 +1,6 @@
 """Client for the chart data files of SMARD, the electricity market data portal of the
-Bundesnetzagentur (licence CC BY 4.0, attribution "Bundesnetzagentur | SMARD.de").
+Bundesnetzagentur (licence CC BY 4.0, attribution "Bundesnetzagentur | SMARD.de"; the licence of
+the price data is under review).
 
 Generation and load values are energy per interval in MWh, prices are in EUR/MWh. Timestamps are
 the start of the interval, in UTC.
