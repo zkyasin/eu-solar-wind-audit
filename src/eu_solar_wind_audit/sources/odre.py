@@ -367,19 +367,15 @@ def _hours(start: date, end: date) -> pd.DatetimeIndex:
 def _consolidated_hourly(
     power_mw: pd.Series, status: pd.Series, hours: pd.DatetimeIndex
 ) -> pd.DataFrame:
-    hourly = pd.DataFrame(columns=["energy_mwh", "complete", "status"])
-    if not power_mw.empty:
-        hourly = grid.hourly_from_period_end_means(power_mw)
-        # Same shift as the values: a row labelled 00:00 belongs to the hour starting at 23:00.
-        rank = status.map(STATUS_ORDER.index).shift(-1, freq="30min").resample("h").max()
-        hourly["status"] = rank.reindex(hourly.index).map(dict(enumerate(STATUS_ORDER)))
+    hourly = grid.hourly_from_period_end_means(power_mw)
+    # Same shift as the values: a row labelled 00:00 belongs to the hour starting at 23:00.
+    rank = status.map(STATUS_ORDER.index).shift(-1, freq="30min").resample("h").max()
+    hourly["status"] = rank.reindex(hourly.index).map(dict(enumerate(STATUS_ORDER)))
     return _on_hours(hourly, hours)
 
 
 def _realtime_hourly(power_mw: pd.Series, hours: pd.DatetimeIndex) -> pd.DataFrame:
-    hourly = pd.DataFrame(columns=["energy_mwh", "complete", "status"])
-    if not power_mw.empty:
-        hourly = grid.hourly_from_instantaneous(power_mw).assign(status="realtime")
+    hourly = grid.hourly_from_instantaneous(power_mw).assign(status="realtime")
     return _on_hours(hourly, hours)
 
 
