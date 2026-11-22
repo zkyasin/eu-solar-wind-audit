@@ -44,7 +44,7 @@ def _read_rte_modulation(path: Path, technology: str, label: str) -> pd.DataFram
         raise ValueError(f"{path.name}: expected columns {RTE_COLUMNS}, found {list(raw.columns)}")
     labels = set(raw["Filière"])
     if labels != {label}:
-        raise ValueError(f"{path.name}: expected only {label!r}, found {sorted(labels)}")
+        raise ValueError(f"{path.name}: expected only {label!r}, found {sorted(labels, key=str)}")
     shape = (len(RTE_BLOCKS), len(RTE_MONTHS))
     if len(raw) != shape[0] * shape[1]:
         raise ValueError(

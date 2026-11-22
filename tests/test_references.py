@@ -113,6 +113,14 @@ def test_swapped_files_are_rejected(rte_copy: Path) -> None:
         load_rte_modulation(rte_copy)
 
 
+def test_an_empty_label_is_rejected(rte_copy: Path) -> None:
+    label = b'"Volume de modulation de la production solaire"'
+    replace_once(rte_copy / SOLAR, SOLAR_LINE, SOLAR_LINE.replace(label, b""))
+
+    with pytest.raises(ValueError, match="expected only 'Volume de modulation de la production"):
+        load_rte_modulation(rte_copy)
+
+
 def test_a_changed_file_fails_the_manifest(rte_copy: Path) -> None:
     # Same size, one digit changed: only the checksum can tell.
     replace_once(rte_copy / SOLAR, SOLAR_LINE, SOLAR_LINE.replace(b"1286", b"1287"))
