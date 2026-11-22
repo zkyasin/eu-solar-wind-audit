@@ -17,7 +17,7 @@ from eu_solar_wind_audit.sources import mastr
 # 2026-11-22. The zip keeps the original UTF-16 LE records byte for byte: 25 units of
 # EinheitenWind.xml plus SEE973525112162 and SEE901254459012 (former district keys), 6 + 6 units of
 # EinheitenSolar_30.xml split into EinheitenSolar_1.xml and EinheitenSolar_2.xml, and the
-# Katalogwerte.xml values of categories 4, 39, 87, 107 and 108.
+# Katalogwerte.xml values of categories 4, 39, 87, 107 and 108. The page's form token is blanked.
 FIXTURES = Path(__file__).parent / "fixtures" / "mastr"
 EXPORT = FIXTURES / "Gesamtdatenexport_20261122_26.2.zip"
 PAGE = FIXTURES / "Datendownload_2026-11-22.html"
