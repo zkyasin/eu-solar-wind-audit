@@ -319,7 +319,9 @@ def test_metric_table_holds_one_value_per_metric() -> None:
         Metrics.validate(pd.concat([table, table.iloc[[0]]], ignore_index=True))
 
 
-def test_bias_by_season_and_sky_class() -> None:
+def two_seasons() -> pd.DataFrame:
+    """Two hours in January and two in July 2019, the first one clear; the model is 20 % high in
+    January and 10 % low in July."""
     frame = pd.concat(
         [
             predictions("2019-01-15 11:00", [100.0, 100.0], 200.0, model=[120.0, 120.0]),
@@ -327,8 +329,11 @@ def test_bias_by_season_and_sky_class() -> None:
         ]
     )
     frame["sky_class"] = ["clear", "overcast", "overcast", "overcast"]
+    return frame
 
-    table = metrics(frame, "solar")
+
+def test_bias_by_season_and_sky_class() -> None:
+    table = metrics(two_seasons(), "solar")
 
     assert value(table, "model", "bias", "DJF") == pytest.approx(0.2)
     assert value(table, "model", "bias", "JJA") == pytest.approx(-0.1)
@@ -338,3 +343,20 @@ def test_bias_by_season_and_sky_class() -> None:
     # Groups without eligible hours, such as spring here, get no row.
     hours = table[table["metric"] == "bias"].set_index("group")["hours"]
     assert hours.to_dict() == {"all": 4, "DJF": 2, "JJA": 2, "clear": 1, "overcast": 3}
+
+
+def test_group_biases_relative_to_the_bias_of_the_year() -> None:
+    frame = two_seasons()
+    frame["scaled_mwh"] = 1.25 * frame["published_mwh"]
+
+    table = metrics(frame, "solar")
+
+    # The model is 2.5 % low over the year: 780 MWh against 800.
+    assert value(table, "model", "bias_relative_to_year", "DJF") == pytest.approx(1.2 / 0.975 - 1)
+    assert value(table, "model", "bias_relative_to_year", "JJA") == pytest.approx(0.9 / 0.975 - 1)
+    overcast = (660 / 700) / 0.975 - 1
+    assert value(table, "model", "bias_relative_to_year", "overcast") == pytest.approx(overcast)
+    # A constant multiple has the bias of its year in every group.
+    relative = table[(table["model"] == "scaled") & (table["metric"] == "bias_relative_to_year")]
+    assert relative["value"].to_numpy() == pytest.approx(0.0)
+    assert sorted(relative["group"]) == ["DJF", "JJA", "clear", "overcast"]

@@ -22,7 +22,7 @@ SEASON_OF_MONTH = {month: season for season, months in SEASONS.items() for month
 SKY_CLASSES = ["clear", "mixed", "overcast"]
 # Every energy column other than the published one holds the prediction of a model.
 MODEL_COLUMNS = r"^(?!published_mwh$).+_mwh$"
-METRICS = ["correlation", "rmse_cf", "bias"]
+METRICS = ["correlation", "rmse_cf", "bias", "bias_relative_to_year"]
 
 
 class Predictions(pa.DataFrameModel):
@@ -116,7 +116,9 @@ def metrics(predictions: pd.DataFrame, technology: str) -> DataFrame[Metrics]:
       published series;
     - rmse_cf: root mean square of the hourly capacity factor error;
     - bias: energy of the model over the published energy, minus 1, over the year and over each
-      season and sky class that has eligible hours.
+      season and sky class that has eligible hours;
+    - bias_relative_to_year: bias of a season or sky class once the model is scaled to the
+      published energy of the year, (1 + bias of the group) / (1 + bias of the year) - 1.
     """
     Predictions.validate(predictions)
     eligible = predictions[predictions["eligible"]]
@@ -142,7 +144,11 @@ def metrics(predictions: pd.DataFrame, technology: str) -> DataFrame[Metrics]:
                 for group, group_ratio, group_hours in zip(
                     group_ratios.index, group_ratios, groups.size(), strict=True
                 ):
-                    rows.append((year, model, "bias", group, group_ratio - 1, group_hours))
+                    relative_bias = group_ratio / ratio - 1
+                    rows += [
+                        (year, model, "bias", group, group_ratio - 1, group_hours),
+                        (year, model, "bias_relative_to_year", group, relative_bias, group_hours),
+                    ]
     table = pd.DataFrame(
         rows, columns=["held_out_year", "model", "metric", "group", "value", "hours"]
     )
