@@ -137,3 +137,62 @@ def test_sun_is_placed_at_the_middle_of_the_hour() -> None:
     assert cf[10] == pytest.approx(cf[13], rel=1e-4)
     # With the sun at the start of each hour, hour 12 would be at noon and hour 11 an hour before.
     assert cf[12] != pytest.approx(cf[13], rel=1e-2)
+
+
+def test_zero_at_night() -> None:
+    ds = clear_weather(SUMMER)
+    night = (SITE.get_solarposition(mid_hours(SUMMER))["zenith"] > 90).to_numpy()
+
+    cf = run(ds, SOUTH_30, dc_ac_ratio=1.3)
+
+    assert night.sum() >= 6
+    assert (cf[night] == 0).all()
+    assert (cf[~night] >= 0).all()
+
+
+def test_output_clips_at_ac_capacity() -> None:
+    ds = clear_weather(SUMMER, temp_c=0.0)
+
+    cf = run(ds, TRACKER, dc_ac_ratio=2.0)
+
+    assert cf.max() == 1.0
+    assert (cf == 1.0).sum() >= 4
+    assert run(ds, TRACKER, dc_ac_ratio=1.0).max() < 1.0
+
+
+@pytest.mark.parametrize("name", ["ssrd", "fdir", "t2m", "u10", "v10"])
+def test_missing_input_gives_missing_output(name: str) -> None:
+    ds = clear_weather(SUMMER)
+    clean = run(ds, SOUTH_30)
+    gappy = ds.copy(deep=True)
+    gappy[name][[2, 12], 0, 0] = np.nan
+
+    cf = run(gappy, SOUTH_30)
+
+    assert np.isnan(cf[[2, 12]]).all()
+    others = np.ones(24, dtype=bool)
+    others[[2, 12]] = False
+    np.testing.assert_array_equal(cf[others], clean[others])
+
+
+def test_direct_above_global_counts_as_all_direct() -> None:
+    ssrd = clear_sky(SUMMER)["ghi"].to_numpy()
+
+    above = run(weather(SUMMER, ssrd, 1.02 * ssrd), SOUTH_30)
+    equal = run(weather(SUMMER, ssrd, ssrd), SOUTH_30)
+
+    assert np.isfinite(above).all()
+    np.testing.assert_array_equal(above, equal)
+
+
+def test_direct_light_at_very_low_sun_counts_as_diffuse() -> None:
+    zenith = SITE.get_solarposition(mid_hours(SUMMER))["zenith"].to_numpy()
+    low = np.flatnonzero((zenith > 88) & (zenith < 95))
+    ssrd = np.where(zenith < 95, 30.0, 0.0)
+
+    with_direct = run(weather(SUMMER, ssrd, 0.6 * ssrd), SOUTH_30)
+    diffuse_only = run(weather(SUMMER, ssrd, np.zeros(24)), SOUTH_30)
+
+    assert low.size >= 2
+    assert (with_direct[low] > 0).all()
+    np.testing.assert_array_equal(with_direct[low], diffuse_only[low])
