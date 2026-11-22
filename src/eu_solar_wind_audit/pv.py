@@ -1,4 +1,4 @@
-"""AC capacity factor of a PV fleet from hourly ERA5 fields, with pvlib.
+"""AC capacity factor of a PV fleet from hourly ERA5 fields, and clear-sky irradiance, with pvlib.
 
 Defaults come from the PVWatts V5 manual (A. P. Dobos, NREL/TP-6A20-62641, 2014), cited by section.
 """
@@ -76,6 +76,35 @@ def split_irradiance(ghi: Array, direct_horizontal: Array, zenith: Array) -> tup
     # pvlib sets DNI to NaN when the sun is too low to trust it; that light is kept as diffuse.
     rejected = np.isnan(dni) & ~np.isnan(dhi)
     return np.where(rejected, 0.0, dni), np.where(rejected, ghi, dhi)
+
+
+def clear_sky_ghi(
+    times: pd.DatetimeIndex,
+    latitude: Array,
+    longitude: Array,
+    apparent_zenith: Array,
+    dni_extra: Array,
+) -> Array:
+    """Clear-sky global horizontal irradiance in W m-2, shape (time, cell), from the Ineichen and
+    Perez (2002) model with the monthly Linke turbidity climatology of pvlib (Remund et al. 2003)
+    and the altitude of each cell.
+
+    `apparent_zenith` (degrees, shape (time, cell)) and `dni_extra` (W m-2) are those already
+    computed for `times`, so that the sun position is not computed again.
+    """
+    cells = list(zip(latitude, longitude, strict=True))
+    altitude = np.array([pvlib.location.lookup_altitude(lat, lon) for lat, lon in cells])
+    linke = np.column_stack(
+        [pvlib.clearsky.lookup_linke_turbidity(times, lat, lon).to_numpy() for lat, lon in cells]
+    )
+    airmass = pvlib.atmosphere.get_absolute_airmass(
+        pvlib.atmosphere.get_relative_airmass(apparent_zenith), pvlib.atmosphere.alt2pres(altitude)
+    )
+    # The direct part divides by the cosine of the zenith, which is zero at night.
+    with np.errstate(divide="ignore"):
+        sky = pvlib.clearsky.ineichen(apparent_zenith, airmass, linke, altitude, dni_extra)
+    ghi: Array = sky["ghi"]
+    return ghi
 
 
 def plane_of_array(

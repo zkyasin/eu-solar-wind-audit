@@ -213,6 +213,34 @@ def test_direct_light_at_very_low_sun_counts_as_diffuse() -> None:
     np.testing.assert_array_equal(with_direct[low], diffuse_only[low])
 
 
+def test_clear_sky_ghi_matches_pvlib_location() -> None:
+    # Lille, Clermont-Ferrand and Perpignan, on a summer and a winter day.
+    points = [(50.6, 3.1), (45.8, 3.1), (42.7, 2.9)]
+    sites = [pvlib.location.Location(lat, lon) for lat, lon in points]
+    times = pd.DatetimeIndex(mid_hours(SUMMER).append(mid_hours(WINTER)))
+    # The sun as Location.get_clearsky places it: pressure from the site's altitude.
+    positions = [
+        site.get_solarposition(times, pressure=pvlib.atmosphere.alt2pres(site.altitude))
+        for site in sites
+    ]
+    apparent_zenith = np.column_stack([p["apparent_zenith"].to_numpy() for p in positions])
+    dni_extra = pvlib.irradiance.get_extra_radiation(times).to_numpy()[:, np.newaxis]
+
+    ghi = pv.clear_sky_ghi(
+        times,
+        np.array([site.latitude for site in sites]),
+        np.array([site.longitude for site in sites]),
+        apparent_zenith,
+        dni_extra,
+    )
+
+    expected = np.column_stack(
+        [site.get_clearsky(times, model="ineichen")["ghi"].to_numpy() for site in sites]
+    )
+    np.testing.assert_allclose(ghi, expected, rtol=1e-12)
+    assert (ghi[apparent_zenith > 90] == 0).all()
+
+
 def test_fleet_is_the_share_weighted_mean_of_its_systems() -> None:
     ds = clear_weather(SUMMER)
     fixed = System(tilt=35, azimuth=200, share=0.3)
