@@ -155,7 +155,8 @@ def _monthly_one_technology(panel: pd.DataFrame, until: pd.Timestamp | None) -> 
     long = monthly.rename_axis("month_end").melt(ignore_index=False, value_name="capacity_mw")
     long = long.reset_index()
     long["technology"] = str(panel["technology"].iat[0])
-    long["provisional"] = long["month_end"] > final
+    # Written with <= so that a panel without any final quarter (final is NaT) is all provisional.
+    long["provisional"] = ~(long["month_end"] <= final)
     return long
 
 

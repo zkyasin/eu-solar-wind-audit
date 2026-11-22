@@ -225,6 +225,15 @@ def test_months_after_the_last_final_quarter_are_provisional() -> None:
     assert monthly.loc[pd.Timestamp("2026-01-31") :, "provisional"].all()
 
 
+def test_a_panel_without_final_quarters_is_all_provisional() -> None:
+    panel = quarterly({"2025-12-31": 100.0, "2026-03-31": 190.0})
+    panel["provisional"] = True
+
+    monthly = sdes.monthly_capacity(panel)
+
+    assert monthly["provisional"].all()
+
+
 def test_each_technology_ends_at_its_own_last_quarter() -> None:
     panel = pd.concat(
         [
