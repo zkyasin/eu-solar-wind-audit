@@ -38,6 +38,20 @@ def test_exports_fill_production_every_other_quarter_hour(path: Path) -> None:
     assert (minutes[~filled] % 30 == 15).all()
 
 
+@pytest.mark.parametrize(
+    ("path", "day", "quarter_hours"), [(SPRING, "2025-03-30", 92), (AUTUMN, "2025-10-26", 100)]
+)
+def test_clock_change_day_is_published_with_96_rows(
+    path: Path, day: str, quarter_hours: int
+) -> None:
+    stamps = pd.DatetimeIndex(read_export(path).index)
+    start = pd.Timestamp(day, tz="Europe/Paris")
+    end = start + pd.DateOffset(days=1)
+
+    assert (end - start) / pd.Timedelta("15min") == quarter_hours
+    assert ((stamps >= start) & (stamps < end)).sum() == 96
+
+
 def test_spring_export_repeats_utc_stamps() -> None:
     export = read_export(SPRING)
 
