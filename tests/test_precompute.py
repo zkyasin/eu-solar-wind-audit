@@ -20,6 +20,8 @@ STEP = 0.25
 BOX = era5.Box(west=2.0, south=45.0, east=2.75, north=45.5)
 # Every input is missing at this hour in the first cell of the box.
 GAP = pd.Timestamp("2020-06-03 12:00")
+# Hours from this stamp on are ERA5T in the synthetic store.
+ERA5T_FROM = pd.Timestamp("2020-12-01")
 
 COUNTRY = Country(
     country="FR",
@@ -80,7 +82,7 @@ class WeatherStore:
                 "time": time,
                 "latitude": latitude,
                 "longitude": longitude,
-                "source": ("time", np.full(time.size, "ERA5")),
+                "source": ("time", np.where(time < ERA5T_FROM, "ERA5", "ERA5T")),
             },
         )
 
@@ -174,6 +176,7 @@ def test_solar_equals_the_model_at_every_hour(
     pd.testing.assert_frame_equal(arrays.covariates[columns], modelled[columns])
     assert not arrays.covariates.loc[GAP.tz_localize("UTC"), "complete"]
     assert arrays.covariates["capacity_provisional"].any()
+    assert arrays.covariates["era5_source"].eq("ERA5T").any()
 
 
 def mid_hours(start: pd.Timestamp, end: pd.Timestamp) -> pd.DatetimeIndex:
