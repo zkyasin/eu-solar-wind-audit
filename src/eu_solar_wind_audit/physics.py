@@ -8,10 +8,11 @@ capacity factor times capacity in MW.
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Literal
+from typing import Literal, NamedTuple
 
 import geopandas as gpd
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import pandera.pandas as pa
 import xarray as xr
@@ -139,6 +140,55 @@ def generation_parameters(generation: WindGeneration) -> wind.WindParameters:
     return wind.WindParameters(fleet=(member,))
 
 
+class Fleet(NamedTuple):
+    """Weather on the cells that hold capacity at some month end of the panel, with dims (time,
+    cell), and the capacity in MW at the start of each hour on these cells for each part of the
+    fleet: the whole fleet for solar, one commissioning window per wind generation.
+    `capacity_provisional` tells, for each hour, whether that capacity uses provisional SDES
+    months."""
+
+    cells: xr.Dataset
+    capacities: list[xr.DataArray]
+    capacity_provisional: npt.NDArray[np.bool_]
+
+
+def fleet_cells(
+    technology: Technology,
+    weather: xr.Dataset,
+    parameters: Country,
+    monthly: pd.DataFrame,
+    regions: gpd.GeoDataFrame,
+) -> Fleet:
+    """Cells of `weather`, as read_weather gives it, where the mainland fleet of `technology`
+    stands, with its hourly capacity; `monthly` and `regions` as for `model`."""
+    # The only perimeter of Country so far.
+    mainland = sdes.metropolitan_without_corsica(monthly)
+    mainland = mainland[mainland["technology"] == technology]
+    capacity = mainland.pivot(index="month_end", columns="department_code", values="capacity_mw")
+    capacity = capacity.rename_axis(index="month_end", columns="region")
+    polygons = regions[regions["region"].isin(capacity.columns)]
+    fractions = spatial.region_fractions(polygons, weather["latitude"], weather["longitude"])
+
+    if technology == "solar":
+        parts = [capacity]
+    else:
+        last_years = [generation.last_commissioning_year for generation in parameters.wind_onshore]
+        parts = split_by_commissioning(capacity, last_years)
+    per_cell = [spatial.capacity_weights(fractions, xr.DataArray(part)) for part in parts]
+
+    # Capacity factors are computed only on cells that ever hold capacity.
+    occupied = (xr.concat(per_cell, dim="part") > 0).any(["part", "month_end"]).to_numpy()
+    rows, columns = (xr.DataArray(index, dims="cell") for index in np.nonzero(occupied))
+    hours = pd.DatetimeIndex(weather.indexes["time"])
+    capacities = [
+        hourly_capacity(part.isel(latitude=rows, longitude=columns), hours) for part in per_cell
+    ]
+    # Selecting cells on the lazy zarr store peaks at about four times the memory of loading first.
+    cells = weather.load().isel(latitude=rows, longitude=columns)
+    last_final = mainland.loc[~mainland["provisional"], "month_end"].max() + DAY
+    return Fleet(cells, capacities, ~(hours <= last_final))
+
+
 def model(
     technology: Technology,
     start: pd.Timestamp,
@@ -154,12 +204,6 @@ def model(
     department polygons of natural_earth.load_admin1.
     """
     grid.check_period(start, end)
-    # The only perimeter of Country so far.
-    mainland = sdes.metropolitan_without_corsica(monthly)
-    mainland = mainland[mainland["technology"] == technology]
-    capacity = mainland.pivot(index="month_end", columns="department_code", values="capacity_mw")
-    capacity = capacity.rename_axis(index="month_end", columns="region")
-
     # ERA5 times are naive UTC.
     weather = read_weather(
         parameters.country,
@@ -169,25 +213,9 @@ def model(
         end.tz_convert(None),
         cache_dir,
     )
-    hours = pd.DatetimeIndex(weather.indexes["time"])
-    polygons = regions[regions["region"].isin(capacity.columns)]
-    fractions = spatial.region_fractions(polygons, weather["latitude"], weather["longitude"])
-
-    if technology == "solar":
-        parts = [capacity]
-    else:
-        last_years = [generation.last_commissioning_year for generation in parameters.wind_onshore]
-        parts = split_by_commissioning(capacity, last_years)
-    per_cell = [spatial.capacity_weights(fractions, xr.DataArray(part)) for part in parts]
-
-    # Capacity factors are computed only on cells that ever hold capacity.
-    occupied = (xr.concat(per_cell, dim="part") > 0).any(["part", "month_end"]).to_numpy()
-    rows, columns = (xr.DataArray(index, dims="cell") for index in np.nonzero(occupied))
-    capacities = [
-        hourly_capacity(part.isel(latitude=rows, longitude=columns), hours) for part in per_cell
-    ]
-    # Selecting cells on the lazy zarr store peaks at about four times the memory of loading first.
-    cells = weather.load().isel(latitude=rows, longitude=columns)
+    cells, capacities, capacity_provisional = fleet_cells(
+        technology, weather, parameters, monthly, regions
+    )
 
     energy = xr.zeros_like(cells["time"], dtype=float)
     for index, capacity_mw in enumerate(capacities):
@@ -199,14 +227,14 @@ def model(
         energy = energy + (factor * capacity_mw).sum("cell", skipna=False)
     total_capacity = sum(capacity_mw.sum("cell").to_numpy() for capacity_mw in capacities)
 
-    last_final = mainland.loc[~mainland["provisional"], "month_end"].max() + DAY
+    hours = pd.DatetimeIndex(cells.indexes["time"])
     modelled = pd.DataFrame(
         {
             "energy_mwh": energy.to_numpy(),
             "complete": energy.notnull().to_numpy(),
             "capacity_mw": total_capacity,
-            "capacity_provisional": ~(hours <= last_final),
-            "era5_source": weather["source"].to_numpy().astype(str),
+            "capacity_provisional": capacity_provisional,
+            "era5_source": cells["source"].to_numpy().astype(str),
         },
         # ERA5 times read outside the zarr cache are not always in nanoseconds.
         index=hours.tz_localize("UTC").as_unit("ns").rename("time"),
