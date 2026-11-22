@@ -1,7 +1,8 @@
 import hashlib
 import json
+import os
 from collections.abc import Callable
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import httpx
@@ -299,7 +300,7 @@ def test_consolidated_fetch_is_cached_and_realtime_fetch_is_not(tmp_path: Path) 
 # An export cut at 23:00 stops at 22:45 UTC, as the last consolidated month does when it ends at
 # midnight in Paris in winter: only the last hour of the day misses its rows.
 @pytest.mark.parametrize("cut", ["2025-03-30 12:00", "2025-03-30 23:00"])
-def test_consolidated_export_cached_before_the_end_is_downloaded_again(
+def test_a_short_consolidated_export_is_downloaded_again_once_12_hours_old(
     cut: str, tmp_path: Path
 ) -> None:
     full = pd.read_parquet(NATIONAL_CONSOLIDATED)
@@ -310,18 +311,40 @@ def test_consolidated_export_cached_before_the_end_is_downloaded_again(
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
-        return httpx.Response(200, content=exports[min(len(requests), 2) - 1])
+        return httpx.Response(200, content=exports[len(requests) - 1])
 
+    cache_dir = tmp_path / "cache"
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        frames = [
-            odre.fetch_national_consolidated(
-                client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=tmp_path / "cache"
-            )
-            for _ in range(2)
-        ]
 
-    assert [frame.index.max() for frame in frames] == [utc("2025-03-31 00:00")] * 2
+        def fetch() -> pd.DataFrame:
+            return odre.fetch_national_consolidated(
+                client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=cache_dir
+            )
+
+        downloaded, cached = fetch(), fetch()
+        (path,) = cache_dir.rglob("*.parquet")
+        retrieved = (datetime.now(UTC) - timedelta(hours=13)).timestamp()
+        os.utime(path, (retrieved, retrieved))
+        refreshed = fetch()
+
+    assert downloaded.index.max() < utc("2025-03-30 23:00")
+    assert cached.index.equals(downloaded.index)
+    assert refreshed.index.max() == utc("2025-03-31 00:00")
     assert len(requests) == 2
+
+
+def test_a_full_consolidated_export_is_kept_however_old(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    cache_dir = tmp_path / "cache"
+    with serving(NATIONAL_CONSOLIDATED.read_bytes(), requests) as client:
+        for _ in range(2):
+            odre.fetch_national_consolidated(
+                client, date(2025, 3, 30), date(2025, 3, 30), cache_dir=cache_dir
+            )
+            (path,) = cache_dir.rglob("*.parquet")
+            os.utime(path, (0, 0))
+
+    assert len(requests) == 1
 
 
 def test_failed_download_leaves_no_file(tmp_path: Path) -> None:

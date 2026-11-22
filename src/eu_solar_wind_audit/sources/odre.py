@@ -59,6 +59,10 @@ REGIONS = {
     "93": "Provence-Alpes-Côte d'Azur",
 }
 
+# Under a day, so that a daily run always downloads again an export that stopped early the day
+# before.
+SHORT_EXPORT_MAX_AGE = timedelta(hours=12)
+
 # The regional onshore and offshore fields are null before 2021, then zero while regional wind is
 # not, until 31 December 2023 (ODRÉ export read on 2026-11-22). The national consolidated dataset
 # has no split.
@@ -331,13 +335,15 @@ def _consolidated_export[Schema: pa.DataFrameModel](
     end: date,
     cache_dir: Path,
 ) -> DataFrame[Schema]:
-    """Cached export, downloaded again when it stops before the last hour of `end`: consolidated
-    months are added in the middle of the next month (ODRÉ dataset description) and then leave
-    the real-time dataset."""
+    """Cached export, downloaded again when it stops before the last hour of `end` and was
+    retrieved more than 12 hours ago: consolidated months are added in the middle of the next
+    month (ODRÉ dataset description) and then leave the real-time dataset."""
     select, where = ",".join(fields), utc_days(start, end)
     path = download_export(client, dataset, select=select, where=where, cache_dir=cache_dir)
     frame = schema.validate(_tidy(path, fields))
-    if frame.empty or frame.index[-1] < pd.Timestamp(end, tz="UTC") + pd.Timedelta(hours=23):
+    short = frame.empty or frame.index[-1] < pd.Timestamp(end, tz="UTC") + pd.Timedelta(hours=23)
+    age = datetime.now(UTC) - datetime.fromtimestamp(path.stat().st_mtime, UTC)
+    if short and age > SHORT_EXPORT_MAX_AGE:
         path = download_export(
             client, dataset, select=select, where=where, cache_dir=cache_dir, refresh=True
         )
