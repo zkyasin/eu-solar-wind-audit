@@ -301,6 +301,18 @@ def test_a_unit_decommissioned_in_its_commissioning_month_never_counts(panel: pd
     assert panel[panel["district"].eq("08135")]["capacity_mw_ac"].eq(0).all()
 
 
+def test_a_unit_decommissioned_before_its_commissioning_never_counts(units: pd.DataFrame) -> None:
+    changed = units.copy()
+    # A 3.45 MW turbine commissioned on 2019-03-29, alone in its district.
+    changed.loc[changed["unit_id"].eq("SEE973525112162"), "decommissioned"] = pd.Timestamp(
+        "2019-01-15"
+    )
+
+    panel = mastr.monthly_capacity(changed, pd.Timestamp("2018-12-31"), pd.Timestamp("2026-10-31"))
+
+    assert panel[panel["district"].eq("03159")]["capacity_mw_ac"].eq(0).all()
+
+
 def test_temporarily_shut_down_units_keep_counting(panel: pd.DataFrame) -> None:
     assert capacity(panel, "2026-10-31", "07331", "wind_onshore") == 0.6
     assert capacity(panel, "2024-06-30", "13072", "wind_onshore") == 3.37

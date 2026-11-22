@@ -218,9 +218,10 @@ def monthly_capacity(
 
     A unit counts from the end of its commissioning month until its final decommissioning: it is
     counted at a month end on or after its commissioning date and before its decommissioning date.
-    Planned units have no commissioning date and never count. Temporarily shut down units keep
-    counting: the export holds only their latest shutdown, and they remain installed. Recent months
-    are incomplete, since units are registered up to a month after commissioning, often later.
+    Planned units have no commissioning date and never count, nor do units decommissioned before
+    their commissioning date. Temporarily shut down units keep counting: the export holds only
+    their latest shutdown, and they remain installed. Recent months are incomplete, since units are
+    registered up to a month after commissioning, often later.
     """
     counted = _countable(units)
     starts = _events(counted, "commissioned", sign=1.0)
@@ -455,6 +456,7 @@ def _countable(units: pd.DataFrame) -> pd.DataFrame:
         & units["status"].ne("planned")
         # The date is required once a unit is decommissioned; without it the end is unknown.
         & ~(units["status"].eq("decommissioned") & units["decommissioned"].isna())
+        & ~(units["decommissioned"] < units["commissioned"])
     ]
 
 
