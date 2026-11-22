@@ -2,7 +2,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from eu_solar_wind_audit.grid import hourly_from_period_end_means, hourly_from_period_start_energy
+from eu_solar_wind_audit.grid import (
+    hourly_from_instantaneous,
+    hourly_from_period_end_means,
+    hourly_from_period_start_energy,
+)
 
 
 def series(start: str, values: list[float], freq: str = "15min", tz: str = "UTC") -> pd.Series:
@@ -69,6 +73,68 @@ def test_end_labelled_input_must_be_in_utc() -> None:
 
     with pytest.raises(ValueError, match="UTC"):
         hourly_from_period_end_means(power)
+
+
+def test_five_points_span_exactly_one_hour() -> None:
+    power = series("2025-06-01 00:00", [80.0] * 5)
+
+    hourly = hourly_from_instantaneous(power)
+
+    assert hourly.index.equals(series("2025-06-01 00:00", [0.0], freq="h").index)
+    assert hourly["energy_mwh"].tolist() == [80.0]
+    assert hourly["complete"].tolist() == [True]
+
+
+def test_trapezoid_is_exact_for_a_linear_ramp() -> None:
+    hours = np.arange(9) * 0.25
+    power = series("2025-06-01 00:00", list(100.0 + 400.0 * hours))
+
+    hourly = hourly_from_instantaneous(power)
+
+    # Integral of 100 + 400 t over [0, 1] and [1, 2].
+    assert hourly["energy_mwh"].tolist() == pytest.approx([300.0, 700.0])
+
+
+def test_boundary_points_count_half_in_each_hour() -> None:
+    power = series("2025-06-01 00:00", [0.0, 0.0, 0.0, 0.0, 400.0, 0.0, 0.0, 0.0, 0.0])
+
+    hourly = hourly_from_instantaneous(power)
+
+    assert hourly["energy_mwh"].tolist() == [50.0, 50.0]
+
+
+def test_inner_points_count_one_quarter_hour() -> None:
+    power = series("2025-06-01 00:00", [0.0, 0.0, 400.0, 0.0, 0.0])
+
+    hourly = hourly_from_instantaneous(power)
+
+    assert hourly["energy_mwh"].tolist() == [100.0]
+
+
+@pytest.mark.parametrize("missing", range(5))
+def test_any_missing_point_leaves_the_hour_incomplete(missing: int) -> None:
+    power = series("2025-06-01 00:00", [80.0] * 9)
+    power.iloc[missing] = np.nan
+
+    hourly = hourly_from_instantaneous(power)
+
+    assert np.isnan(hourly["energy_mwh"].iloc[0])
+    assert not hourly["complete"].iloc[0]
+    # The point at 01:00 also bounds the second hour.
+    assert hourly["complete"].iloc[1] == (missing != 4)
+
+
+def test_a_dropped_stamp_leaves_the_hour_incomplete() -> None:
+    power = series("2025-06-01 00:00", [80.0] * 5).drop(pd.Timestamp("2025-06-01 00:30", tz="UTC"))
+
+    hourly = hourly_from_instantaneous(power)
+
+    assert hourly["complete"].tolist() == [False]
+
+
+def test_instantaneous_input_must_be_in_utc() -> None:
+    with pytest.raises(ValueError, match="UTC"):
+        hourly_from_instantaneous(series("2025-06-01", [1.0] * 5, tz="Europe/Paris"))
 
 
 def test_start_labelled_energy_is_summed_per_hour() -> None:

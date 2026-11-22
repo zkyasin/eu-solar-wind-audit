@@ -18,6 +18,15 @@ def hourly_from_period_end_means(power_mw: pd.Series, period: str = "30min") -> 
     return _hourly(energy.shift(-1, freq=length), length)
 
 
+def hourly_from_instantaneous(power_mw: pd.Series, step: str = "15min") -> pd.DataFrame:
+    """Instantaneous power in MW every `step` (éCO2mix real-time data). Each step contributes the
+    trapezoid between its end points, so an hour needs both its boundary points."""
+    length = pd.Timedelta(step)
+    power = _cleaned(power_mw, length).asfreq(step)
+    energy = (power + power.shift(-1)) / 2 * (length / HOUR)
+    return _hourly(energy.iloc[:-1], length)
+
+
 def hourly_from_period_start_energy(energy_mwh: pd.Series, step: str = "15min") -> pd.DataFrame:
     """Energy in MWh per period labelled at its start (SMARD generation)."""
     length = pd.Timedelta(step)
