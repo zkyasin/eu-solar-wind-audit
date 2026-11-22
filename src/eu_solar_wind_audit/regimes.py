@@ -27,9 +27,11 @@ def classify_hours(prices: pd.Series) -> pd.DataFrame:
     has_negative_quarter = hours.min() < 0
 
     negative = ~missing & (mean < 0)
-    next_to_negative = negative.shift(1, fill_value=False) | negative.shift(-1, fill_value=False)
+    # A missing hour may have been negative, so its neighbours are kept out of reference too.
+    unsure = negative | missing
+    next_to_unsure = unsure.shift(1, fill_value=False) | unsure.shift(-1, fill_value=False)
     regime = np.select(
-        [missing, negative, mean < REFERENCE_FROM, has_negative_quarter | next_to_negative],
+        [missing, negative, mean < REFERENCE_FROM, has_negative_quarter | next_to_unsure],
         ["missing", "negative", "near_zero", "buffer"],
         default="reference",
     )

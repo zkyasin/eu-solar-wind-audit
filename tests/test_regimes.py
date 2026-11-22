@@ -89,13 +89,19 @@ def test_near_zero_hours_do_not_create_a_buffer() -> None:
     assert hours["regime"].to_list() == ["reference", "near_zero", "reference"]
 
 
+def test_hours_next_to_a_missing_hour_are_buffer() -> None:
+    hours = classify_hours(hourly(50, 50, np.nan, 50, 50))
+
+    assert hours["regime"].to_list() == ["reference", "buffer", "missing", "buffer", "reference"]
+
+
 def test_an_hour_missing_a_quarter_is_missing() -> None:
     prices = quarter_hours([-10.0] * 4, [-10.0, np.nan, -10.0, -10.0], [50.0] * 4, [50.0] * 4)
     prices = prices.drop(prices.index[9])
 
     hours = classify_hours(prices)
 
-    assert hours["regime"].to_list() == ["negative", "missing", "missing", "reference"]
+    assert hours["regime"].to_list() == ["negative", "missing", "missing", "buffer"]
     assert hours["mean_price"].isna().to_list() == [False, True, True, False]
 
 
@@ -105,7 +111,7 @@ def test_hours_absent_from_the_index_are_missing() -> None:
     hours = classify_hours(prices.drop(prices.index[1:3]))
 
     assert hours.index.equals(prices.index)
-    assert hours["regime"].to_list() == ["reference", "missing", "missing", "reference"]
+    assert hours["regime"].to_list() == ["buffer", "missing", "missing", "buffer"]
 
 
 def test_hourly_and_quarter_hour_inputs_agree_on_hourly_prices() -> None:
