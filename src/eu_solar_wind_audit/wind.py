@@ -18,8 +18,9 @@ import xarray as xr
 
 FloatArray = npt.NDArray[np.float64]
 
-# Range of the Hellmann exponents tabulated by Kaltschmitt, Streicher and Wiese (2007, p. 55),
-# from unstable air over open water to stable air over inhabited areas.
+# Range of the Hellmann exponents from Kaltschmitt, Streicher and Wiese (2007, p. 55), as tabulated
+# in https://en.wikipedia.org/wiki/Wind_gradient: unstable air over open water to stable air over
+# inhabited areas.
 MIN_EXPONENT = 0.06
 MAX_EXPONENT = 0.60
 # Default minimum speed of the Windographer shear analysis
