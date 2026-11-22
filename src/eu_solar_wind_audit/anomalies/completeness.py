@@ -1,10 +1,14 @@
 """Completeness of the raw rows of a dataset against the layout its source documents (evaluation
-plan, axis 2): gaps and repeated stamps.
+plan, axis 2): gaps, repeated stamps and values off the grid.
 
 The detector reads the rows as fetched, before the hourly conversion of `grid`, which drops
-repeated stamps, so that their hours only look incomplete. Its findings are facts and use no
-threshold. Scores: `gap`, hours that lack a value; `duplicate`, stamps that come more than once;
-`clock_change_convention`, clock changes whose rows follow the convention of the dataset.
+repeated stamps, so that their hours only look incomplete, and refuses values off the grid. Its
+findings are facts and use no threshold. Scores: `gap`, hours that lack a value; `duplicate`,
+stamps that come more than once; `off_grid`, values off the grid; `clock_change_convention`,
+clock changes whose rows follow the convention of the dataset.
+
+Values off the grid are reported, then left out by `on_grid`: a detection run converts the rows
+that `on_grid` keeps, so that it goes on.
 """
 
 from collections.abc import Mapping
@@ -151,12 +155,25 @@ def completeness(
             records.append(
                 _record(series, provenance, run, "duplicate", len(run.stamps), rows=rows_at)
             )
+        off_grid = pd.DatetimeIndex(rows.index)[~on_step & rows.notna().to_numpy()]
+        for run in layout.runs(off_grid.unique()):
+            values_off = int(off_grid.isin(run.stamps).sum())
+            minutes = sorted({int(minute) for minute in run.stamps.minute})
+            records.append(
+                _record(series, provenance, run, "off_grid", values_off, minutes_past_hour=minutes)
+            )
 
     if conventional:
         records.append(
             _convention(dataset, provenance, local_days, conventional, layout, after_spring)
         )
     return findings.from_records(records)
+
+
+def on_grid(values: pd.Series, step: pd.Timedelta) -> pd.Series:
+    """The rows of `values` stamped on the `step` grid: the hourly conversions of `grid` refuse
+    the others, which `completeness` reports as `off_grid`."""
+    return values[_on_step(pd.DatetimeIndex(values.index), step)]
 
 
 def _on_step(stamps: pd.DatetimeIndex, step: pd.Timedelta) -> npt.NDArray[np.bool_]:
