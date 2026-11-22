@@ -8,9 +8,11 @@ from pandera.typing import Series
 
 from eu_solar_wind_audit.grid import (
     Hourly,
+    check_period,
     hourly_from_instantaneous,
     hourly_from_period_end_means,
     hourly_from_period_start_energy,
+    on_hours,
 )
 
 Conversion = Callable[[pd.Series], pd.DataFrame]
@@ -25,6 +27,10 @@ def hourly_frame(
 ) -> pd.DataFrame:
     time = pd.date_range(start, periods=len(complete), freq="h", tz="UTC", unit="ns", name="time")
     return pd.DataFrame({"energy_mwh": energy_mwh, "complete": complete}, index=time)
+
+
+def utc(stamp: str) -> pd.Timestamp:
+    return pd.Timestamp(stamp, tz="UTC")
 
 
 @pytest.mark.parametrize(("period", "per_hour"), [("30min", 2), ("15min", 4), ("1h", 1)])
@@ -315,3 +321,50 @@ def test_a_subclass_adds_its_columns() -> None:
 def test_a_subclass_keeps_the_hourly_checks(frame: pd.DataFrame, error: str) -> None:
     with pytest.raises(SchemaError, match=error):
         HourlyWithStatus.validate(frame.assign(status="realtime"))
+
+
+def test_on_hours_keeps_adds_and_drops_hours() -> None:
+    hourly = hourly_frame([1.0, np.nan, 2.0, 3.0, 4.0], [True, False, True, True, True])
+    hourly = hourly.drop(utc("2025-06-01 02:00"))
+    hourly["status"] = ["definitive", "consolidated", "realtime", "realtime"]
+
+    framed = on_hours(hourly, utc("2025-06-01 01:00"), utc("2025-06-01 04:00"))
+
+    expected = hourly_frame([np.nan, np.nan, 3.0], [False, False, True], "2025-06-01 01:00")
+    expected["status"] = ["consolidated", None, "realtime"]
+    pd.testing.assert_frame_equal(framed, expected)
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        pd.Timestamp("2025-06-01 02:00"),
+        pd.Timestamp("2025-06-01 02:00", tz="Europe/Paris"),
+        utc("2025-06-01 02:30"),
+    ],
+    ids=["naive", "not-in-utc", "off-hour"],
+)
+def test_a_period_needs_hour_starts_in_utc(stamp: pd.Timestamp) -> None:
+    with pytest.raises(ValueError, match="hour in UTC"):
+        check_period(stamp, utc("2025-06-02 00:00"))
+    with pytest.raises(ValueError, match="hour in UTC"):
+        check_period(utc("2025-05-31 00:00"), stamp)
+
+
+@pytest.mark.parametrize("end", ["2025-06-01 02:00", "2025-06-01 00:00"], ids=["empty", "reversed"])
+def test_a_period_needs_end_after_start(end: str) -> None:
+    with pytest.raises(ValueError, match="empty period"):
+        check_period(utc("2025-06-01 02:00"), utc(end))
+
+
+def test_on_hours_checks_its_period() -> None:
+    with pytest.raises(ValueError, match="empty period"):
+        on_hours(hourly_frame([1.0], [True]), utc("2025-06-01 02:00"), utc("2025-06-01 02:00"))
+
+
+@pytest.mark.parametrize("tz", [None, "Europe/Paris"])
+def test_on_hours_needs_an_index_in_utc(tz: str | None) -> None:
+    hourly = hourly_frame([1.0], [True]).tz_convert(tz)
+
+    with pytest.raises(ValueError, match="DatetimeIndex in UTC"):
+        on_hours(hourly, utc("2025-06-01 00:00"), utc("2025-06-01 01:00"))

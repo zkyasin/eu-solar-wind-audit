@@ -61,6 +61,30 @@ def hourly_from_period_start_energy(energy_mwh: pd.Series, step: str = "15min") 
     return _hourly(_cleaned(energy_mwh, length), length)
 
 
+def check_period(start: pd.Timestamp, end: pd.Timestamp) -> None:
+    """Raise ValueError unless [start, end) holds at least one hour and both are hour starts in
+    UTC, as every function that gives hourly series expects."""
+    for stamp in (start, end):
+        if str(stamp.tz) != "UTC" or stamp != stamp.floor("h"):
+            raise ValueError(f"{stamp} is not the start of an hour in UTC")
+    if end <= start:
+        raise ValueError(f"empty period from {start} to {end}")
+
+
+def on_hours(hourly: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    """`hourly` reindexed on every hour of [start, end), both hour starts in UTC. Added hours are
+    incomplete, with missing values in any other column. The result is not validated: callers
+    validate it with their own model."""
+    check_period(start, end)
+    # Reindexing a naive index on UTC hours would silently give only missing rows.
+    if not isinstance(hourly.index, pd.DatetimeIndex) or str(hourly.index.tz) != "UTC":
+        raise ValueError("expected a DatetimeIndex in UTC")
+    hours = pd.date_range(start, end, freq="h", inclusive="left", unit="ns", name="time")
+    framed = hourly.reindex(hours)
+    framed["complete"] = hourly["complete"].reindex(hours, fill_value=False)
+    return framed
+
+
 def _cleaned(series: pd.Series, step: pd.Timedelta) -> pd.Series:
     """Sorted float copy on the `step` grid, without the stamps that appear more than once."""
     index = series.index
