@@ -22,8 +22,6 @@ from eu_solar_wind_audit.sources import era5, natural_earth, odre, sdes
 Technology = Literal["solar", "wind_onshore"]
 
 ERA5_CACHE_DIR = Path("data/raw/era5")
-# ERA5T is released about six days after real time (evaluation plan, scope).
-ERA5T_LATENCY = pd.Timedelta(days=6)
 INPUTS = {
     "solar": ["ssrd", "fdir", "t2m", "u10", "v10"],
     "wind_onshore": ["u10", "v10", "u100", "v100"],
@@ -34,9 +32,11 @@ HOUR = pd.Timedelta(hours=1)
 DAY = pd.Timedelta(days=1)
 
 
-def era5_available_until() -> pd.Timestamp:
-    """First hour, in naive UTC, that ERA5T is not expected to hold yet."""
-    return pd.Timestamp.now(tz="UTC").tz_localize(None).floor("D") - ERA5T_LATENCY
+def era5_final_until(today: pd.Timestamp) -> pd.Timestamp:
+    """Start of the first month, in naive UTC, that final ERA5 may not cover yet on `today`."""
+    # Final ERA5 replaces ERA5T about two months after the month in question (ECMWF, "ERA5: data
+    # documentation", confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation).
+    return (today - pd.DateOffset(months=2)).to_period("M").to_timestamp()
 
 
 def read_weather(
@@ -50,16 +50,16 @@ def read_weather(
     """ERA5 `variables` (some of `WEATHER`) for hours [start, end) in naive UTC, as
     era5.read_era5 gives them.
 
-    A calendar year that ERA5T already covers is read once, with every field of `WEATHER`, and
-    kept in `cache_dir`/<country>/<year>.zarr. The last, incomplete year is read again on every
-    call.
+    A calendar year that final ERA5 already covers is read once, with every field of `WEATHER`,
+    and kept in `cache_dir`/<country>/<year>.zarr. A later year, which still holds or will hold
+    ERA5T hours, is read again on every call, so that the cache never freezes ERA5T values.
     """
-    available = era5_available_until()
+    final_until = era5_final_until(pd.Timestamp.now(tz="UTC").tz_localize(None))
     parts = []
     for year in range(start.year, (end - HOUR).year + 1):
         year_start, year_end = pd.Timestamp(year, 1, 1), pd.Timestamp(year + 1, 1, 1)
         first, stop = max(start, year_start), min(end, year_end)
-        if year_end <= available:
+        if year_end <= final_until:
             weather = _cached_year(cache_dir / country.lower() / f"{year}.zarr", box, year)
         else:
             weather = era5.read_era5(variables, box, first, stop)
@@ -73,6 +73,9 @@ def _cached_year(path: Path, box: era5.Box, year: int) -> xr.Dataset:
         downloaded = era5.read_era5(
             WEATHER, box, pd.Timestamp(year, 1, 1), pd.Timestamp(year + 1, 1, 1)
         )
+        # The final release can come later than usual.
+        if (downloaded["source"] != "ERA5").any():
+            return downloaded
         partial = path.with_name(path.name + ".part")
         shutil.rmtree(partial, ignore_errors=True)
         downloaded.assign_attrs(box=list(box)).to_zarr(partial, mode="w", consolidated=False)

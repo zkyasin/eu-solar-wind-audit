@@ -287,7 +287,7 @@ def test_era5_source_and_missing_hours_are_carried(
         return values.where((values["time"] > values["time"][0]) | (values["cell"] > 0))
 
     monkeypatch.setattr(pv, "capacity_factor", factor)
-    monkeypatch.setattr(physics, "era5_available_until", lambda: pd.Timestamp("2026-01-01"))
+    monkeypatch.setattr(physics, "era5_final_until", lambda today: pd.Timestamp("2026-01-01"))
     capacity = {"2020-11-30": 10.0, "2020-12-31": 10.0, "2021-01-31": 10.0}
 
     result = run("solar", panel("solar", {"02": capacity}), tmp_path, "2020-12-31", "2021-01-02")
@@ -316,7 +316,7 @@ def test_complete_year_is_read_once_and_kept(store: FakeStore, tmp_path: Path) -
 def test_last_incomplete_year_is_read_again(
     store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setattr(physics, "era5_available_until", lambda: pd.Timestamp("2020-06-01"))
+    monkeypatch.setattr(physics, "era5_final_until", lambda today: pd.Timestamp("2020-06-01"))
     start, end = pd.Timestamp("2020-03-01"), pd.Timestamp("2020-03-04")
 
     read_weather("FR", BOX, physics.WEATHER, start, end, tmp_path)
@@ -324,6 +324,33 @@ def test_last_incomplete_year_is_read_again(
 
     assert store.calls == [(start, end), (start, end)]
     assert not (tmp_path / "fr").exists()
+
+
+def test_year_holding_era5t_is_not_kept(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(physics, "era5_final_until", lambda today: pd.Timestamp("2026-01-01"))
+    start, end = pd.Timestamp("2021-03-01"), pd.Timestamp("2021-03-02")
+
+    read_weather("FR", BOX, physics.WEATHER, start, end, tmp_path)
+    weather = read_weather("FR", BOX, physics.WEATHER, start, end, tmp_path)
+
+    year = (pd.Timestamp("2021-01-01"), pd.Timestamp("2022-01-01"))
+    assert store.calls == [year, year]
+    assert not (tmp_path / "fr").exists()
+    assert weather["source"].to_numpy().tolist() == ["ERA5T"] * 24
+
+
+@pytest.mark.parametrize(
+    ("today", "final_until"),
+    [
+        ("2027-02-28 23:00", "2026-12-01"),
+        ("2027-03-01 00:00", "2027-01-01"),
+        ("2026-11-22 12:00", "2026-09-01"),
+    ],
+)
+def test_final_era5_is_expected_two_months_after_each_month(today: str, final_until: str) -> None:
+    assert physics.era5_final_until(pd.Timestamp(today)) == pd.Timestamp(final_until)
 
 
 def test_period_across_new_year_joins_both_years(store: FakeStore, tmp_path: Path) -> None:
