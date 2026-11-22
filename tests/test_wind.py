@@ -59,6 +59,16 @@ def test_hub_height_speed_extrapolates_from_100_m() -> None:
     np.testing.assert_allclose(hub, [8.0 * 1.5**0.2])
 
 
+def test_clipped_and_fallback_exponents_still_start_from_100_m() -> None:
+    # Where the exponent is not the measured one, 10 m and 100 m give different hub speeds.
+    speed_10m = speeds([2.0, 6.0])
+    speed_100m = speeds([6.0, 60.0])
+
+    hub = wind.hub_height_speed(speed_10m, speed_100m, hub_height_m=150.0)
+
+    np.testing.assert_allclose(hub, [6.0 * 1.5 ** (1 / 7), 60.0 * 1.5**0.60])
+
+
 def test_exponent_is_clipped_to_the_tabulated_range() -> None:
     speed_10m = speeds([6.0, 6.0, 6.0])
 
@@ -195,11 +205,12 @@ def test_smoothing_too_narrow_for_the_grid_is_rejected() -> None:
 
 
 def test_speed_correction_applies_at_hub_height() -> None:
-    hub_speeds = [5.0, 8.0, 11.0]
-    corrected = [1.1 * speed - 0.5 for speed in hub_speeds]
+    # A 150 m hub, so that correcting the 100 m speed before extrapolation would differ.
+    speeds_100m = [5.0, 8.0, 11.0]
+    corrected = [1.1 * speed * 1.5 ** (1 / 7) - 0.5 for speed in speeds_100m]
 
     cf = wind.capacity_factor(
-        weather(hub_speeds), single(V82, speed_scale=1.1, speed_offset_m_s=-0.5)
+        weather(speeds_100m), single(V82, 150.0, speed_scale=1.1, speed_offset_m_s=-0.5)
     )
 
     np.testing.assert_allclose(cf, wind.capacity_factor(weather(corrected), single(V82)))
