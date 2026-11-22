@@ -14,6 +14,8 @@ from eu_solar_wind_audit.sources import energy_charts
 # retrieved 2026-11-22.
 FIXTURE = Path(__file__).parent / "fixtures" / "energy_charts" / "installed_power_de_monthly.json"
 
+CC_BY = "CC BY 4.0 (creativecommons.org/licenses/by/4.0), attribution: energy-charts.info"
+
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
@@ -28,11 +30,13 @@ def payload(
     *,
     units: dict[str, str | None],
     generated_at: str = "2026-11-22T14:57:13+01:00",
+    licence: str = CC_BY,
 ) -> dict[str, Any]:
     """A /v2/installed_power response with the envelope unit set to GW."""
     return {
         "timezone": "Europe/Berlin",
         "unit": "GW",
+        "license": licence,
         "generated_at": generated_at,
         "series": [{"id": series, "unit": unit} for series, unit in units.items()],
         "data": data,
@@ -136,6 +140,14 @@ def test_null_and_absent_values_are_left_out_without_touching_the_others() -> No
         (1, "solar_ac"),
         (2, "solar_dc"),
     ]
+
+
+def test_response_under_another_licence_is_rejected() -> None:
+    data = [{"timestamp": "2025-01-01T00:00:00+01:00", "values": {"solar_ac": 2.5}}]
+    restricted = payload(data, units={"solar_ac": None}, licence="private and internal use only")
+
+    with pytest.raises(ValueError, match="licence"):
+        energy_charts.parse_installed_power(restricted)
 
 
 def test_negative_capacity_is_rejected() -> None:

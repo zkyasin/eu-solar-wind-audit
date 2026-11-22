@@ -77,6 +77,9 @@ def parse_installed_power(payload: dict[str, Any]) -> DataFrame[InstalledCapacit
     The month in progress at `generated_at` is dropped: its value is not yet an end-of-month
     capacity.
     """
+    # The API states the licence per response and some of its data is not open.
+    if not payload["license"].startswith("CC BY 4.0"):
+        raise ValueError(f"unexpected licence: {payload['license']}")
     units = {series["id"]: series.get("unit") or payload["unit"] for series in payload["series"]}
     technologies = [technology for technology in TECHNOLOGIES if technology in units]
     unknown = {units[technology] for technology in technologies} - MW_PER_UNIT.keys()
