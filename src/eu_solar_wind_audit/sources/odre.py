@@ -1,9 +1,10 @@
 """éCO2mix production and consumption from ODRÉ, the open data portal of the French networks.
 
 Values are in MW, as published, indexed by their UTC timestamp. Consolidated and definitive values
-are 30-minute averages labelled at the end of the period, on a 15-minute grid where every other row
-is empty. Real-time values are 15-minute instantaneous values. On spring clock-change days the
-source repeats UTC stamps; on autumn days it has no rows for the repeated local hour.
+are 30-minute averages labelled at the end of the period: on a 15-minute grid where every other row
+is empty in the national dataset, on a 30-minute grid in the regional one. Real-time values are
+15-minute instantaneous values. On spring clock-change days the source repeats UTC stamps; on
+autumn days it has no rows for the repeated local hour.
 """
 
 import hashlib
