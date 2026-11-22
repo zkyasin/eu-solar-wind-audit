@@ -219,7 +219,9 @@ def test_cached_response_is_read_without_a_request_unless_refreshed(tmp_path: Pa
     assert cached.equals(refreshed)
 
 
-def test_rate_limit_waits_as_long_as_the_server_asks(tmp_path: Path, sleeps: list[float]) -> None:
+def test_rate_limits_server_errors_and_timeouts_are_retried(
+    tmp_path: Path, sleeps: list[float]
+) -> None:
     requests: list[httpx.Request] = []
     responses: list[httpx.Response | Exception] = [
         httpx.Response(429, headers={"Retry-After": "7"}),
