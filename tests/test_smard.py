@@ -183,6 +183,28 @@ def test_the_open_week_is_not_cached(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []
 
 
+def test_a_recently_closed_week_is_not_cached(tmp_path: Path) -> None:
+    week_end = pd.Timestamp.now(tz="UTC").floor("h") - smard.SETTLED_AFTER + pd.Timedelta(hours=1)
+    week_start = week_end - pd.Timedelta(days=7)
+    start_ms, end_ms = (int(stamp.timestamp() * 1000) for stamp in (week_start, week_end))
+    files = {
+        "index_hour.json": json.dumps({"timestamps": [start_ms, end_ms]}).encode(),
+        f"410_DE_hour_{start_ms}.json": json.dumps({"series": [[start_ms, 51234.5]]}).encode(),
+    }
+    with serve(files, []) as client:
+        smard.fetch_series(
+            smard.LOAD,
+            "DE",
+            "hour",
+            week_start,
+            week_start + pd.Timedelta(hours=1),
+            client=client,
+            cache_dir=tmp_path,
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_a_settled_week_with_nulls_is_downloaded_again(tmp_path: Path) -> None:
     values: list[float | None] = [1.0] * 169
     values[100] = None
