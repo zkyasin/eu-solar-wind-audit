@@ -79,6 +79,9 @@ WIND_FIELDS = {
 DATES = ["commissioned", "decommissioned", "shutdown_start", "shutdown_end"]
 # Upper bounds of the field definitions: gross power for solar, net power for wind.
 MAX_KW = {"solar": 200_000.0, "wind_onshore": 20_000.0, "wind_offshore": 20_000.0}
+# Districts merged since: Göttingen into the new Göttingen district (2016-11-01), Eisenach into the
+# Wartburgkreis (2021-07-01). Some units still carry the former keys.
+FORMER_DISTRICTS = {"03152": "03159", "16056": "16063"}
 # The evaluation period starts in 2019.
 PANEL_START = pd.Timestamp("2019-01-31")
 # ERA5 grid spacing in degrees.
@@ -428,7 +431,9 @@ def _common(raw: pd.DataFrame) -> pd.DataFrame:
             "municipality_key": key,
             # The key is Land (2 digits), Regierungsbezirk (1), Kreis (2) and Gemeinde (3); some
             # units carry only the first five.
-            "district": key.where(key.str.fullmatch(r"\d{5}|\d{8}", na=False)).str[:5],
+            "district": key.where(key.str.fullmatch(r"\d{5}|\d{8}", na=False))
+            .str[:5]
+            .replace(FORMER_DISTRICTS),
             "longitude": raw["longitude"].astype("float64"),
             "latitude": raw["latitude"].astype("float64"),
         }

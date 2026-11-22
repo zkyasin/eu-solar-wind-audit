@@ -15,8 +15,9 @@ from eu_solar_wind_audit.sources import mastr
 # Fixtures: the page https://www.marktstammdatenregister.de/MaStR/Datendownload, and a zip cut from
 # https://download.marktstammdatenregister.de/Gesamtdatenexport_20261122_26.2.zip, both retrieved
 # 2026-11-22. The zip keeps the original UTF-16 LE records byte for byte: 25 units of
-# EinheitenWind.xml, 6 + 6 units of EinheitenSolar_30.xml split into EinheitenSolar_1.xml and
-# EinheitenSolar_2.xml, and the Katalogwerte.xml values of categories 4, 39, 87, 107 and 108.
+# EinheitenWind.xml plus SEE973525112162 and SEE901254459012 (former district keys), 6 + 6 units of
+# EinheitenSolar_30.xml split into EinheitenSolar_1.xml and EinheitenSolar_2.xml, and the
+# Katalogwerte.xml values of categories 4, 39, 87, 107 and 108.
 FIXTURES = Path(__file__).parent / "fixtures" / "mastr"
 EXPORT = FIXTURES / "Gesamtdatenexport_20261122_26.2.zip"
 PAGE = FIXTURES / "Datendownload_2026-11-22.html"
@@ -170,7 +171,7 @@ def test_solar_members_are_the_numbered_unit_tables(name: str, is_solar: bool) -
 
 def test_read_units_counts_each_technology(units: pd.DataFrame) -> None:
     assert units["technology"].value_counts().to_dict() == {
-        "wind_onshore": 13,
+        "wind_onshore": 15,
         "solar": 12,
         "wind_offshore": 12,
     }
@@ -224,6 +225,19 @@ def test_a_five_digit_municipality_key_is_a_district(units: pd.DataFrame) -> Non
 
     assert row["municipality_key"] == "05334"
     assert row["district"] == "05334"
+
+
+@pytest.mark.parametrize(
+    ("unit_id", "municipality_key", "district"),
+    [("SEE973525112162", "03152002", "03159"), ("SEE901254459012", "16056000", "16063")],
+)
+def test_former_district_keys_give_the_current_district(
+    units: pd.DataFrame, unit_id: str, municipality_key: str, district: str
+) -> None:
+    row = unit(units, unit_id)
+
+    assert row["municipality_key"] == municipality_key
+    assert row["district"] == district
 
 
 def test_offshore_units_have_a_sea_and_cluster_but_no_district(units: pd.DataFrame) -> None:
@@ -457,7 +471,7 @@ def test_extract_capacity_downloads_and_writes_the_tables_with_their_provenance(
     assert panel["month_end"].min() == pd.Timestamp("2019-01-31")
     # The export is dated 2026-11-22: November is not complete.
     assert panel["month_end"].max() == pd.Timestamp("2026-10-31")
-    assert len(pd.read_parquet(tmp_path / "out" / "mastr_units.parquet")) == 37
+    assert len(pd.read_parquet(tmp_path / "out" / "mastr_units.parquet")) == 39
     assert len(pd.read_parquet(tmp_path / "out" / "mastr_offshore_wind.parquet")) == 5
     metadata = json.loads(path.with_suffix(".json").read_text())
     assert metadata["file"] == EXPORT.name
