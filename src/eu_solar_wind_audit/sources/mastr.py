@@ -14,6 +14,7 @@ import time
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import ClassVar
 from xml.etree import ElementTree
 
 import httpx
@@ -75,6 +76,8 @@ WIND_FIELDS = {
     "NameWindpark": "wind_farm",
 }
 DATES = ["commissioned", "decommissioned", "shutdown_start", "shutdown_end"]
+# ERA5 grid spacing in degrees.
+CELL_DEGREES = 0.25
 
 
 class Units(pa.DataFrameModel):
@@ -95,6 +98,40 @@ class Units(pa.DataFrameModel):
     sea: Series[str] = pa.Field(nullable=True, isin=["north", "baltic"])
     cluster: Series[str] = pa.Field(nullable=True)
     wind_farm: Series[str] = pa.Field(nullable=True)
+
+    class Config:
+        strict = True
+
+
+class MonthlyCapacity(pa.DataFrameModel):
+    month_end: Series[pa.DateTime]
+    # Null for offshore wind and for units without a municipality key.
+    district: Series[str] = pa.Field(nullable=True, str_matches=r"^\d{5}$")
+    technology: Series[str] = pa.Field(isin=TECHNOLOGIES)
+    capacity_mw_ac: Series[float]
+    # Solar only.
+    capacity_mw_dc: Series[float] = pa.Field(nullable=True)
+
+    @pa.check("month_end")
+    @classmethod
+    def last_day_of_month(cls, month_end: "pd.Series[pd.Timestamp]") -> "pd.Series[bool]":
+        return month_end.dt.is_month_end & (month_end == month_end.dt.normalize())
+
+    class Config:
+        strict = True
+        unique: ClassVar[list[str]] = ["month_end", "district", "technology"]
+
+
+class OffshoreWind(pa.DataFrameModel):
+    sea: Series[str] = pa.Field(isin=["north", "baltic"])
+    cluster: Series[str] = pa.Field(nullable=True)
+    cell_latitude: Series[float] = pa.Field(nullable=True)
+    cell_longitude: Series[float] = pa.Field(nullable=True)
+    wind_farms: Series[str]
+    units: Series[int] = pa.Field(ge=1)
+    capacity_mw: Series[float]
+    first_commissioning_month: Series[pa.DateTime]
+    last_commissioning_month: Series[pa.DateTime]
 
     class Config:
         strict = True
@@ -164,6 +201,63 @@ def read_units(path: Path) -> DataFrame[Units]:
         {"sea": "str", "cluster": "str", "wind_farm": "str"}
     )
     return Units.validate(units[list(Units.to_schema().columns)])
+
+
+def monthly_capacity(
+    units: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp
+) -> DataFrame[MonthlyCapacity]:
+    """Capacity at each month end from `start` to `end`, by district and technology.
+
+    A unit counts from the end of its commissioning month until its final decommissioning: it is
+    counted at a month end on or after its commissioning date and before its decommissioning date.
+    Planned units have no commissioning date and never count. Temporarily shut down units keep
+    counting: the export holds only their latest shutdown, and they remain installed. Recent months
+    are incomplete, since units are registered up to a month after commissioning, often later.
+    """
+    counted = _countable(units)
+    starts = _events(counted, "commissioned", sign=1.0)
+    ends = _events(counted[counted["decommissioned"].notna()], "decommissioned", sign=-1.0)
+    events = pd.concat([starts, ends], ignore_index=True)
+    # Group keys cannot be null; "" stands for no district until the end.
+    events["district"] = events["district"].fillna("")
+    changes = events.groupby(["month_end", "district", "technology"])[
+        ["capacity_mw_ac", "capacity_mw_dc"]
+    ].sum()
+
+    first = min(changes.index.get_level_values("month_end").min(), start)
+    months = pd.date_range(first, end, freq="ME", name="month_end")
+    wide = changes.unstack(["district", "technology"], fill_value=0.0)
+    # Powers have at most 3 decimals in kW, so 6 in MW; rounding removes the residue of sums.
+    cumulative = wide.reindex(months, fill_value=0.0).cumsum().loc[start:].round(6)
+    panel = cumulative.stack(["district", "technology"], future_stack=True).reset_index()
+    panel["district"] = panel["district"].replace("", None)
+    panel.loc[panel["technology"].ne("solar"), "capacity_mw_dc"] = float("nan")
+    panel["month_end"] = panel["month_end"].astype("datetime64[ns]")
+    panel = panel.sort_values(["month_end", "technology", "district"], ignore_index=True)
+    return MonthlyCapacity.validate(panel)
+
+
+def offshore_wind(units: pd.DataFrame, as_of: pd.Timestamp) -> DataFrame[OffshoreWind]:
+    """Offshore wind units in operation at `as_of`, by sea, development plan cluster and ERA5 cell
+    (coordinates rounded to the nearest 0.25 degree)."""
+    offshore = _countable(units[units["technology"].eq("wind_offshore")])
+    active = offshore[
+        (offshore["commissioned"] <= as_of) & ~(offshore["decommissioned"] <= as_of)
+    ].assign(
+        cell_latitude=lambda frame: _to_cell(frame["latitude"]),
+        cell_longitude=lambda frame: _to_cell(frame["longitude"]),
+        commissioning_month=lambda frame: frame["commissioned"] + pd.offsets.MonthEnd(0),
+    )
+    groups = active.groupby(["sea", "cluster", "cell_latitude", "cell_longitude"], dropna=False)
+    table = groups.agg(
+        wind_farms=("wind_farm", lambda names: "; ".join(sorted(set(names.dropna())))),
+        units=("unit_id", "size"),
+        capacity_mw=("net_kw", "sum"),
+        first_commissioning_month=("commissioning_month", "min"),
+        last_commissioning_month=("commissioning_month", "max"),
+    ).reset_index()
+    table["capacity_mw"] = table["capacity_mw"] / 1000
+    return OffshoreWind.validate(table)
 
 
 def export_date_of(path: Path) -> pd.Timestamp:
@@ -270,3 +364,29 @@ def _decode(codes: "pd.Series[str]", table: dict[int, tuple[str, str]]) -> "pd.S
     if unknown:
         raise ValueError(f"unknown codes: {sorted(unknown)}")
     return codes.map(names)
+
+
+def _countable(units: pd.DataFrame) -> pd.DataFrame:
+    return units[
+        units["commissioned"].notna()
+        & units["status"].ne("planned")
+        # The date is required once a unit is decommissioned; without it the end is unknown.
+        & ~(units["status"].eq("decommissioned") & units["decommissioned"].isna())
+    ]
+
+
+def _events(units: pd.DataFrame, date: str, sign: float) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            # The first month end on or after the date.
+            "month_end": units[date] + pd.offsets.MonthEnd(0),
+            "district": units["district"],
+            "technology": units["technology"],
+            "capacity_mw_ac": sign * units["net_kw"] / 1000,
+            "capacity_mw_dc": sign * units["gross_kw"] / 1000,
+        }
+    )
+
+
+def _to_cell(degrees: "pd.Series[float]") -> "pd.Series[float]":
+    return (degrees / CELL_DEGREES).round() * CELL_DEGREES

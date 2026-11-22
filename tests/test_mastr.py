@@ -30,6 +30,11 @@ def units() -> pd.DataFrame:
     return mastr.read_units(EXPORT)
 
 
+@pytest.fixture(scope="module")
+def panel(units: pd.DataFrame) -> pd.DataFrame:
+    return mastr.monthly_capacity(units, pd.Timestamp("2000-01-31"), pd.Timestamp("2026-10-31"))
+
+
 @pytest.fixture(autouse=True)
 def no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("time.sleep", lambda seconds: None)
@@ -37,6 +42,16 @@ def no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def unit(units: pd.DataFrame, unit_id: str) -> dict[Hashable, Any]:
     return units.set_index("unit_id").loc[unit_id].to_dict()
+
+
+def capacity(panel: pd.DataFrame, month_end: str, district: str | None, technology: str) -> float:
+    rows = panel[
+        panel["month_end"].eq(pd.Timestamp(month_end))
+        & (panel["district"].isna() if district is None else panel["district"].eq(district))
+        & panel["technology"].eq(technology)
+    ]
+    assert len(rows) == 1
+    return float(rows["capacity_mw_ac"].iloc[0])
 
 
 def serving(handler: Handler) -> httpx.Client:
@@ -234,6 +249,158 @@ def test_a_changed_catalogue_is_refused(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="catalogue values changed"):
         mastr.read_units(changed)
+
+
+@pytest.mark.parametrize(
+    ("month_end", "expected_mw"),
+    [("2019-11-30", 0.0), ("2019-12-31", 8.4), ("2026-10-31", 8.4)],
+)
+def test_units_count_from_the_end_of_their_commissioning_month(
+    panel: pd.DataFrame, month_end: str, expected_mw: float
+) -> None:
+    # Two 4.2 MW turbines commissioned on 2019-12-23 and 2019-12-30.
+    assert capacity(panel, month_end, "07231", "wind_onshore") == expected_mw
+
+
+def test_a_unit_commissioned_on_a_month_end_counts_at_that_month_end(panel: pd.DataFrame) -> None:
+    assert capacity(panel, "2017-07-31", "05334", "wind_onshore") == 0.0
+    assert capacity(panel, "2017-08-31", "05334", "wind_onshore") == 3.2
+
+
+@pytest.mark.parametrize(
+    ("district", "last_counted", "first_dropped"),
+    [
+        # Decommissioned on 2021-03-01 and on 2023-06-30.
+        ("01055", "2021-02-28", "2021-03-31"),
+        ("03353", "2023-05-31", "2023-06-30"),
+    ],
+)
+def test_units_stop_counting_at_their_decommissioning(
+    panel: pd.DataFrame, district: str, last_counted: str, first_dropped: str
+) -> None:
+    assert capacity(panel, last_counted, district, "wind_onshore") > 0
+    assert capacity(panel, first_dropped, district, "wind_onshore") == 0.0
+
+
+def test_a_unit_decommissioned_in_its_commissioning_month_never_counts(panel: pd.DataFrame) -> None:
+    assert panel[panel["district"].eq("08135")]["capacity_mw_ac"].eq(0).all()
+
+
+def test_temporarily_shut_down_units_keep_counting(panel: pd.DataFrame) -> None:
+    assert capacity(panel, "2026-10-31", "07331", "wind_onshore") == 0.6
+    assert capacity(panel, "2024-06-30", "13072", "wind_onshore") == 3.37
+
+
+def test_planned_and_future_units_are_left_out(panel: pd.DataFrame) -> None:
+    assert "08326" not in set(panel["district"])
+    assert "05112" not in set(panel["district"])
+    # Commissioned on 2026-11-04, after the last month of the panel.
+    assert capacity(panel, "2026-10-31", "05762", "wind_onshore") == 0.0
+
+
+def test_a_planned_unit_never_counts_even_with_a_commissioning_date(units: pd.DataFrame) -> None:
+    changed = units.copy()
+    # A planned 5.7 MW turbine, alone in its district.
+    changed.loc[changed["unit_id"].eq("SEE950179793688"), "commissioned"] = pd.Timestamp(
+        "2020-05-01"
+    )
+
+    panel = mastr.monthly_capacity(changed, pd.Timestamp("2026-10-31"), pd.Timestamp("2026-10-31"))
+
+    assert "08326" not in set(panel["district"])
+
+
+def test_a_decommissioned_unit_without_a_date_never_counts(units: pd.DataFrame) -> None:
+    changed = units.copy()
+    changed.loc[changed["unit_id"].eq("SEE946913378938"), "decommissioned"] = pd.NaT
+
+    panel = mastr.monthly_capacity(changed, pd.Timestamp("2010-01-31"), pd.Timestamp("2026-10-31"))
+
+    assert "01055" not in set(panel["district"])
+
+
+def test_solar_capacity_is_given_in_ac_and_dc(panel: pd.DataFrame) -> None:
+    # Three units commissioned in December 2022: 7.2, 25 and 5 kW AC; 7.2, 25 and 6 kWp DC.
+    rows = panel[panel["district"].eq("03241") & panel["month_end"].eq(pd.Timestamp("2022-12-31"))]
+
+    assert rows[["capacity_mw_ac", "capacity_mw_dc"]].to_numpy().tolist() == [[0.0372, 0.0382]]
+
+
+def test_wind_has_no_dc_capacity(panel: pd.DataFrame) -> None:
+    assert panel.loc[panel["technology"].ne("solar"), "capacity_mw_dc"].isna().all()
+    assert panel.loc[panel["technology"].eq("solar"), "capacity_mw_dc"].notna().all()
+
+
+def test_offshore_wind_is_national_in_the_panel(panel: pd.DataFrame) -> None:
+    offshore = panel[panel["technology"].eq("wind_offshore")]
+
+    assert offshore["district"].isna().all()
+    # Five alpha ventus turbines of 5 MW, from August 2009 to April 2010.
+    assert capacity(panel, "2009-07-31", None, "wind_offshore") == 0.0
+    assert capacity(panel, "2009-08-31", None, "wind_offshore") == 10.0
+    assert capacity(panel, "2026-10-31", None, "wind_offshore") == 49.61
+
+
+def test_panel_covers_every_month_from_start_to_end(units: pd.DataFrame) -> None:
+    panel = mastr.monthly_capacity(units, pd.Timestamp("2019-01-31"), pd.Timestamp("2019-12-31"))
+    months = panel["month_end"].drop_duplicates()
+
+    assert months.tolist() == list(pd.date_range("2019-01-31", "2019-12-31", freq="ME"))
+    # Units commissioned before the start are counted.
+    assert capacity(panel, "2019-01-31", "16051", "solar") == 0.0
+    assert capacity(panel, "2019-01-31", "05374", "solar") == 0.07
+
+
+def test_national_totals_match_the_units_in_operation(
+    units: pd.DataFrame, panel: pd.DataFrame
+) -> None:
+    month_end = pd.Timestamp("2026-10-31")
+    active = units[
+        units["commissioned"].le(month_end)
+        & ~units["decommissioned"].le(month_end)
+        & units["status"].ne("planned")
+    ]
+    expected = active.groupby("technology")["net_kw"].sum() / 1000
+    totals = panel[panel["month_end"].eq(month_end)].groupby("technology")["capacity_mw_ac"].sum()
+
+    pd.testing.assert_series_equal(totals, expected, check_names=False)
+
+
+def test_offshore_wind_is_grouped_by_cluster_and_era5_cell(units: pd.DataFrame) -> None:
+    table = mastr.offshore_wind(units, pd.Timestamp("2026-10-31")).set_index("wind_farms")
+
+    alpha_ventus = unit(table.rename_axis("unit_id").reset_index(), "alpha ventus")
+    assert (alpha_ventus["sea"], alpha_ventus["cluster"]) == ("north", "N-2")
+    assert (alpha_ventus["cell_latitude"], alpha_ventus["cell_longitude"]) == (54.0, 6.5)
+    assert alpha_ventus["units"] == 5
+    assert alpha_ventus["capacity_mw"] == 25.0
+    assert alpha_ventus["first_commissioning_month"] == pd.Timestamp("2009-08-31")
+    assert alpha_ventus["last_commissioning_month"] == pd.Timestamp("2010-04-30")
+    assert table.loc["Baltic 2", "cell_latitude"] == 55.0
+    assert table.loc["Baltic 2", "cell_longitude"] == 13.0
+    # Planned units are left out.
+    assert "NC 2" not in table.index
+    assert table["capacity_mw"].sum() == pytest.approx(49.61)
+
+
+def test_offshore_wind_leaves_out_units_commissioned_after_the_date(units: pd.DataFrame) -> None:
+    table = mastr.offshore_wind(units, pd.Timestamp("2009-12-31"))
+
+    assert table[["wind_farms", "units", "capacity_mw"]].to_numpy().tolist() == [
+        ["alpha ventus", 2, 10.0]
+    ]
+
+
+def test_offshore_wind_leaves_out_decommissioned_units(units: pd.DataFrame) -> None:
+    changed = units.copy()
+    veja_mate = changed["unit_id"].eq("SEE991181426935")
+    changed.loc[veja_mate, "status"] = "decommissioned"
+    changed.loc[veja_mate, "decommissioned"] = pd.Timestamp("2026-10-31")
+
+    table = mastr.offshore_wind(changed, pd.Timestamp("2026-10-31"))
+
+    assert "OWP Veja Mate" not in set(table["wind_farms"])
+    assert table["capacity_mw"].sum() == pytest.approx(49.61 - 6.3)
 
 
 def test_export_date_comes_from_the_file_name() -> None:
