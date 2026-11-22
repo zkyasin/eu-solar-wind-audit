@@ -1,10 +1,11 @@
+import json
 import shutil
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from eu_solar_wind_audit.references import load_rte_modulation, verify_manifest
+from eu_solar_wind_audit.references import RTE_FILES, load_rte_modulation, verify_manifest
 
 RTE = Path(__file__).parents[1] / "references" / "rte"
 SOLAR = "RTE_PAD_solaire_modulation.csv"
@@ -28,6 +29,12 @@ def replace_once(path: Path, old: bytes, new: bytes) -> None:
 
 def test_committed_files_match_the_manifest() -> None:
     verify_manifest(RTE)
+
+
+def test_manifest_lists_every_file_the_loader_reads() -> None:
+    manifest = json.loads((RTE / "manifest.json").read_text(encoding="utf-8"))
+
+    assert set(manifest["files"]) == {name for name, _ in RTE_FILES.values()}
 
 
 def test_load_gives_one_row_per_month_technology_and_block() -> None:
