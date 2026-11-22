@@ -155,7 +155,8 @@ def fetch_hourly_power(
 def fetch_power_month(
     endpoint: str, month: pd.Period, client: httpx.Client, cache_dir: Path
 ) -> pd.DataFrame:
-    """Solar and wind power of one local month, from the cache once the month is settled."""
+    """Solar and wind power of one local month, from the cache once the month is settled and
+    complete."""
     path = cache_dir / f"{endpoint}_de_{month}.json"
     if path.exists():
         return parse_power(json.loads(path.read_bytes()))
@@ -168,9 +169,10 @@ def fetch_power_month(
     content = _get(client, POWER_URL.format(endpoint=endpoint), params)
     # Parsed before caching, so that a response that does not parse is never kept.
     power = parse_power(json.loads(content))
-    # Values of the current and previous month can still be filled in or revised.
+    # Values of the current and previous month can still be filled in or revised, and the API
+    # documentation reads null as "not (yet) available", so a month with nulls is not kept either.
     this_month = _local(pd.Timestamp.now(tz="UTC")).to_period("M")
-    if month < this_month - 1:
+    if month < this_month - 1 and power.notna().to_numpy().all():
         path.parent.mkdir(parents=True, exist_ok=True)
         partial = path.with_name(path.name + ".part")
         partial.write_bytes(content)

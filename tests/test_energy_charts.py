@@ -446,6 +446,20 @@ def test_settled_months_are_cached_and_the_last_two_are_downloaded_again(tmp_pat
     assert [path.name for path in tmp_path.iterdir()] == [f"public_power_de_{months[0]}.json"]
 
 
+def test_a_settled_month_with_a_missing_value_is_downloaded_again(tmp_path: Path) -> None:
+    payload = json.loads(power_content("public_power", "2025-06-21"))
+    payload["data"][48]["values"]["solar"] = None
+    contents = {("public_power", "2020-01-01"): json.dumps(payload).encode()}
+    requests: list[httpx.Request] = []
+
+    with power_server(contents, requests) as client:
+        for _ in range(2):
+            energy_charts.fetch_power_month("public_power", pd.Period("2020-01"), client, tmp_path)
+
+    assert len(requests) == 2
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_power_under_another_licence_is_rejected_and_not_cached(tmp_path: Path) -> None:
     payload = json.loads(power_content("public_power", "2025-06-21"))
     payload["license"] = "private and internal use only"
