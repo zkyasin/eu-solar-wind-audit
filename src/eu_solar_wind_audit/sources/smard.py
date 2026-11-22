@@ -40,6 +40,12 @@ FEED_IN: dict[Technology, int] = {
 Region = Literal["DE", "50Hertz", "Amprion", "TenneT", "TransnetBW"]
 OFFSHORE_REGIONS: tuple[Region, ...] = ("DE", "50Hertz", "TenneT")
 
+# Generation is energy per quarter-hour, stamped at the start of the quarter-hour: SMARD user
+# guide of April 2026, sections B 2, C 1 and D 1.1,
+# https://www.smard.de/resource/blob/220052/9d526adf4b948599da4a956dfae6dab9/smard-benutzerhandbuch-04-2026-data.pdf
+FEED_IN_STEP = pd.Timedelta(minutes=15)
+FEED_IN_LABEL: grid.Label = "start"
+
 # Day-ahead price filter and region by bidding zone. Foreign zones are served under region DE.
 PRICES = {
     "DE-LU": (4169, "DE-LU"),

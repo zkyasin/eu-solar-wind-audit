@@ -32,6 +32,19 @@ NATIONAL_CONSOLIDATED = "eco2mix-national-cons-def"
 NATIONAL_REALTIME = "eco2mix-national-tr"
 REGIONAL_CONSOLIDATED = "eco2mix-regional-cons-def"
 
+# Layout of the rows. RTE's "Spécification des fichiers de données en puissance pour éCO2mix"
+# (2025, linked from https://www.rte-france.com/en/data-publications/eco2mix/download-indicators)
+# gives consolidated and definitive values as mean power every 30 minutes and real-time values as
+# instantaneous power every 15 minutes (sections 1.1 and 3). It does not say where a mean is
+# stamped: the end of its period is the convention of docs/evaluation-plan.md.
+CONSOLIDATED_STEP = pd.Timedelta(minutes=30)
+CONSOLIDATED_LABEL: grid.Label = "end"
+REALTIME_STEP = pd.Timedelta(minutes=15)
+REALTIME_LABEL: grid.Label = "instant"
+# The specification gives 96 rows for every day in Paris time (section 3.1): in UTC, a
+# clock-change day repeats or lacks the stamps of one hour.
+TIME_ZONE = "Europe/Paris"
+
 STATUS = {
     "Données définitives": "definitive",
     "Données consolidées": "consolidated",

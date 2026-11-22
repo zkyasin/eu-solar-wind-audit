@@ -35,7 +35,11 @@ MW_PER_UNIT = {"MW": 1.0, "GW": 1000.0}
 PERIMETERS = {"public_power": "public", "total_power": "total"}
 POWER_SERIES = ("solar", "wind_onshore", "wind_offshore")
 TIMEZONE = "Europe/Berlin"
+# Power is the mean over a quarter-hour stamped at its start: each response states its interval,
+# and the API documentation of /v2/public_power says that timestamps mark the interval start
+# (https://api.energy-charts.info/, read 2026-11-22).
 QUARTER_HOUR = pd.Timedelta(minutes=15)
+POWER_LABEL: grid.Label = "start"
 
 
 class InstalledCapacity(pa.DataFrameModel):
