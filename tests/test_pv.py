@@ -224,6 +224,31 @@ def test_fleet_is_the_share_weighted_mean_of_its_systems() -> None:
     np.testing.assert_allclose(fleet, expected, rtol=1e-12, atol=1e-15)
 
 
+@pytest.mark.parametrize("dc_ac_ratio", [0.9, 1.2, 1.8])
+def test_dc_stage_and_inverter_reproduce_the_pvwatts_chain(dc_ac_ratio: float) -> None:
+    rng = np.random.default_rng(0)
+    poa = rng.uniform(0.0, 1200.0, (48, 3))
+    temp_air = rng.uniform(-10.0, 40.0, poa.shape)
+    wind_speed = rng.uniform(0.0, 15.0, poa.shape)
+    params = PVParameters((SOUTH_30,), dc_ac_ratio=dc_ac_ratio)
+    temp_cell = pvlib.temperature.faiman(poa, temp_air, wind_speed)
+    dc = pvlib.pvsystem.pvwatts_dc(poa, temp_cell, dc_ac_ratio, params.gamma_pdc)
+    chain = pvlib.inverter.pvwatts(
+        dc * (1 - params.dc_losses),
+        1 / pv.INVERTER_EFFICIENCY,
+        eta_inv_nom=pv.INVERTER_EFFICIENCY,
+    )
+
+    per_unit = pv.dc_per_unit(poa, temp_air, wind_speed, params.gamma_pdc)
+    ac = pv.ac_from_dc(per_unit, dc_ac_ratio, params.dc_losses)
+
+    # Only the order of the multiplications differs from the chain.
+    np.testing.assert_allclose(ac, chain, rtol=0, atol=1e-15)
+    np.testing.assert_array_equal(pv.ac_capacity_factor(poa, temp_air, wind_speed, params), ac)
+    # The inputs reach the clipped part of the inverter curve above a ratio of 1.
+    assert (ac == 1.0).any() == (dc_ac_ratio > 1.0)
+
+
 def test_tracker_beats_horizontal_on_a_clear_summer_day() -> None:
     ds = clear_weather(SUMMER)
 

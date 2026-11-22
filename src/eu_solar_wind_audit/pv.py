@@ -122,16 +122,32 @@ def plane_of_array(
     return poa
 
 
+def dc_per_unit(poa: Array, temp_air: Array, wind_speed: Array, gamma_pdc: float) -> Array:
+    """DC output per unit of DC capacity before system losses, with temperatures in degC and wind
+    speed in m/s."""
+    temp_cell = pvlib.temperature.faiman(poa, temp_air, wind_speed)
+    dc: Array = pvlib.pvsystem.pvwatts_dc(poa, temp_cell, 1.0, gamma_pdc)
+    return dc
+
+
+def ac_from_dc(dc: Array, dc_ac_ratio: float, dc_losses: float) -> Array:
+    """AC output per unit of AC capacity from the DC output per unit of DC capacity of
+    `dc_per_unit`."""
+    # An inverter DC rating of 1 / efficiency gives an AC nameplate of 1, where pvwatts clips.
+    ac: Array = pvlib.inverter.pvwatts(
+        dc * dc_ac_ratio * (1 - dc_losses),
+        1 / INVERTER_EFFICIENCY,
+        eta_inv_nom=INVERTER_EFFICIENCY,
+    )
+    return ac
+
+
 def ac_capacity_factor(
     poa: Array, temp_air: Array, wind_speed: Array, params: PVParameters
 ) -> Array:
     """AC output per unit of AC capacity, with temperatures in degC and wind speed in m/s."""
-    temp_cell = pvlib.temperature.faiman(poa, temp_air, wind_speed)
-    dc = pvlib.pvsystem.pvwatts_dc(poa, temp_cell, params.dc_ac_ratio, params.gamma_pdc)
-    dc = dc * (1 - params.dc_losses)
-    # An inverter DC rating of 1 / efficiency gives an AC nameplate of 1, where pvwatts clips.
-    ac: Array = pvlib.inverter.pvwatts(dc, 1 / INVERTER_EFFICIENCY, eta_inv_nom=INVERTER_EFFICIENCY)
-    return ac
+    dc = dc_per_unit(poa, temp_air, wind_speed, params.gamma_pdc)
+    return ac_from_dc(dc, params.dc_ac_ratio, params.dc_losses)
 
 
 def fleet_capacity_factor(
