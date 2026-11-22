@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import xarray as xr
+from pandera.errors import SchemaError
 from shapely.geometry import box
 
 from eu_solar_wind_audit import physics, pv, wind
@@ -142,6 +143,45 @@ def run(
     )
 
 
+def modelled_frame() -> pd.DataFrame:
+    time = pd.date_range("2025-06-01", periods=2, freq="h", tz="UTC", unit="ns", name="time")
+    return pd.DataFrame(
+        {
+            "energy_mwh": [1.0, np.nan],
+            "complete": [True, False],
+            "capacity_mw": [10.0, 10.0],
+            "capacity_provisional": [False, True],
+            "era5_source": ["ERA5", "ERA5T"],
+        },
+        index=time,
+    )
+
+
+def test_modelled_accepts_a_valid_frame() -> None:
+    physics.Modelled.validate(modelled_frame())
+
+
+@pytest.mark.parametrize(
+    ("frame", "error"),
+    [
+        pytest.param(
+            modelled_frame().assign(capacity_mw=[10.0, -1.0]),
+            "greater_than_or_equal_to",
+            id="negative-capacity",
+        ),
+        pytest.param(
+            modelled_frame().assign(capacity_mw=[10.0, np.nan]), "non-nullable", id="no-capacity"
+        ),
+        pytest.param(
+            modelled_frame().assign(era5_source=["ERA5", "ERA6"]), "isin", id="unknown-era5-source"
+        ),
+    ],
+)
+def test_modelled_rejects(frame: pd.DataFrame, error: str) -> None:
+    with pytest.raises(SchemaError, match=error):
+        physics.Modelled.validate(frame)
+
+
 @pytest.mark.parametrize(("technology", "module"), [("solar", pv), ("wind_onshore", wind)])
 def test_half_capacity_factor_on_100_mw_gives_50_mwh_per_hour(
     store: FakeStore,
@@ -160,6 +200,20 @@ def test_half_capacity_factor_on_100_mw_gives_50_mwh_per_hour(
     assert result["capacity_mw"].to_numpy() == pytest.approx(100.0)
     assert result["complete"].all()
     assert result.index[0] == pd.Timestamp("2020-06-01", tz="UTC")
+
+
+@pytest.mark.parametrize("final_until", ["2026-01-01", "2020-01-01"], ids=["cached", "not-cached"])
+def test_hours_are_labelled_by_their_utc_start_in_nanoseconds(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, final_until: str
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monkeypatch.setattr(physics, "era5_final_until", lambda today: pd.Timestamp(final_until))
+
+    result = run("solar", panel("solar", {"01": constant(100.0)}), tmp_path)
+
+    assert result.index.equals(pd.date_range("2020-06-01", periods=24, freq="h", tz="UTC"))
+    assert result.index.dtype == "datetime64[ns, UTC]"
+    assert result.index.name == "time"
 
 
 def test_capacity_factors_are_computed_on_cells_with_capacity_only(

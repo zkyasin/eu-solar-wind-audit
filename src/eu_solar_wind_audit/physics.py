@@ -13,7 +13,9 @@ from typing import Literal
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pandera.pandas as pa
 import xarray as xr
+from pandera.typing import DataFrame, Series
 
 from eu_solar_wind_audit import grid, pv, spatial, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
@@ -30,6 +32,15 @@ WEATHER = ("ssrd", "fdir", "t2m", "u10", "v10", "u100", "v100")
 SDES_MEDIA = {"solar": sdes.SOLAR_2026_Q2, "wind_onshore": sdes.WIND_2026_Q2}
 HOUR = pd.Timedelta(hours=1)
 DAY = pd.Timedelta(days=1)
+
+
+class Modelled(grid.Hourly):
+    """Modelled hour, with the capacity in MW at its start, whether that capacity uses provisional
+    SDES months, and the ERA5 release its weather comes from."""
+
+    capacity_mw: Series[float] = pa.Field(ge=0)
+    capacity_provisional: Series[bool]
+    era5_source: Series[str] = pa.Field(isin=["ERA5", "ERA5T"])
 
 
 def era5_final_until(today: pd.Timestamp) -> pd.Timestamp:
@@ -137,13 +148,11 @@ def model(
     monthly: pd.DataFrame,
     regions: gpd.GeoDataFrame,
     cache_dir: Path = ERA5_CACHE_DIR,
-) -> pd.DataFrame:
+) -> DataFrame[Modelled]:
     """Hourly modelled output for hours [start, end), both hour starts in UTC.
 
     `monthly` is a month-end capacity panel as sdes.monthly_capacity returns it and `regions` the
-    department polygons of natural_earth.load_admin1. The result, indexed by UTC hour start, has
-    the energy in MWh, whether the hour is complete, the modelled capacity in MW, whether that
-    capacity uses provisional SDES months, and the ERA5 source of the hour.
+    department polygons of natural_earth.load_admin1.
     """
     grid.check_period(start, end)
     # The only perimeter of Country so far.
@@ -192,7 +201,7 @@ def model(
     total_capacity = sum(capacity_mw.sum("cell").to_numpy() for capacity_mw in capacities)
 
     last_final = mainland.loc[~mainland["provisional"], "month_end"].max() + DAY
-    return pd.DataFrame(
+    modelled = pd.DataFrame(
         {
             "energy_mwh": energy.to_numpy(),
             "complete": energy.notnull().to_numpy(),
@@ -200,8 +209,10 @@ def model(
             "capacity_provisional": ~(hours <= last_final),
             "era5_source": weather["source"].to_numpy().astype(str),
         },
-        index=hours.tz_localize("UTC").rename("time"),
+        # ERA5 times read outside the zarr cache are not always in nanoseconds.
+        index=hours.tz_localize("UTC").as_unit("ns").rename("time"),
     )
+    return Modelled.validate(modelled)
 
 
 def load_monthly_capacity(technology: Technology, until: pd.Timestamp) -> pd.DataFrame:
@@ -219,7 +230,7 @@ def model_france(
     end: pd.Timestamp,
     parameters: Country,
     cache_dir: Path = ERA5_CACHE_DIR,
-) -> pd.DataFrame:
+) -> DataFrame[Modelled]:
     """Hourly modelled output of mainland France without Corsica for hours [start, end), both
     hour starts in UTC, computed one calendar year at a time; see `model`."""
     grid.check_period(start, end)
@@ -230,4 +241,4 @@ def model_france(
         first = max(start, pd.Timestamp(year, 1, 1, tz="UTC"))
         stop = min(end, pd.Timestamp(year + 1, 1, 1, tz="UTC"))
         years.append(model(technology, first, stop, parameters, monthly, regions, cache_dir))
-    return pd.concat(years)
+    return Modelled.validate(pd.concat(years))
