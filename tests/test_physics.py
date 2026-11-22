@@ -182,6 +182,17 @@ def test_modelled_rejects(frame: pd.DataFrame, error: str) -> None:
         physics.Modelled.validate(frame)
 
 
+def test_model_output_is_validated(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    # Linear from 10 MW on 1 June to -10 MW on 1 July, so below zero after 16 June.
+    capacity = {"2020-05-31": 10.0, "2020-06-30": -10.0}
+
+    with pytest.raises(SchemaError, match="greater_than_or_equal_to"):
+        run("solar", panel("solar", {"01": capacity}), tmp_path, "2020-06-20", "2020-06-21")
+
+
 @pytest.mark.parametrize(("technology", "module"), [("solar", pv), ("wind_onshore", wind)])
 def test_half_capacity_factor_on_100_mw_gives_50_mwh_per_hour(
     store: FakeStore,
