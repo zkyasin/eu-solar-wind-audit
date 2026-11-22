@@ -124,3 +124,16 @@ def test_matches_pvlib_modelchain(day: str, temp_c: float, system: System) -> No
     assert trusted.sum() >= 8
     np.testing.assert_allclose(cf[trusted], chain.results.ac.to_numpy()[trusted], atol=1e-12)
     assert cf.max() > 0.3
+
+
+def test_sun_is_placed_at_the_middle_of_the_hour() -> None:
+    # At longitude 0 on 13 June solar noon is 12:00 UTC to within 10 s. The hours from 11:00 and
+    # from 12:00 then mirror each other, and a south-facing panel sees both alike.
+    ds = weather("2025-06-13", np.full(24, 700.0), np.full(24, 500.0), longitude=0.0)
+
+    cf = run(ds, SOUTH_30)
+
+    assert cf[11] == pytest.approx(cf[12], rel=1e-4)
+    assert cf[10] == pytest.approx(cf[13], rel=1e-4)
+    # With the sun at the start of each hour, hour 12 would be at noon and hour 11 an hour before.
+    assert cf[12] != pytest.approx(cf[13], rel=1e-2)
