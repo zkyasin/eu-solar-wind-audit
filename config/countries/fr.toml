@@ -37,12 +37,13 @@ tilt = 27.0
 azimuth = 180.0
 share = 0.4426
 
-# Hub heights are the means of RTE (2024, "Évolution du facteur de charge éolien", figure 3) over
-# the installation years of each window, weighted by the mainland capacity added each year (SDES).
-# Turbines are the curves of wind.turbines() closest in specific power to the models most
-# installed in each window (France Renouvelables, Observatoire de l'éolien 2024, pages 76 and 78):
-# about 300 to 600 W m-2 up to 2012 (E-82, V90, E-70, MM-92, N90), 220 to 270 W m-2 from 2013
-# (V100, V110, N117), about 270 W m-2 for the 2023 installations.
+# Hub heights are the means of RTE (2024, "Évolution du facteur de charge éolien", figure 3, read
+# from the bars) over the installation years of each window, weighted by the mainland capacity
+# added each year (SDES). Turbines are the curves of wind.turbines() closest in specific power.
+# A 2011 turbine has an 80 to 82 m rotor and 1.5 to 3 MW (France Renouvelables, Observatoire de
+# l'éolien 2024, page 76): V82, 312 W m-2. The ten models most installed in 2023 (same report,
+# page 78) average 238 to 294 W m-2 weighted by capacity, over their power ranges: IEA 3.4 MW,
+# 254 W m-2. No source gives the 2013-2020 models; the same curve is a default.
 [[wind_onshore.generations]]
 turbine = "VestasV82_1.65MW_82"
 hub_height_m = 79.0
