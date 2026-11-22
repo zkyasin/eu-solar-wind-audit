@@ -10,8 +10,9 @@ import pytest
 import xarray as xr
 from shapely.geometry import box
 
-from eu_solar_wind_audit import physics, precompute, pv
+from eu_solar_wind_audit import physics, precompute, pv, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
+from eu_solar_wind_audit.precompute import FloatArray
 from eu_solar_wind_audit.pv import PVParameters, System
 from eu_solar_wind_audit.sources import era5
 
@@ -174,6 +175,28 @@ def test_solar_equals_the_model_at_every_hour(
     assert arrays.covariates["capacity_provisional"].any()
 
 
+def mid_hours(start: pd.Timestamp, end: pd.Timestamp) -> pd.DatetimeIndex:
+    return pd.date_range(start, end, freq="h", inclusive="left") + pd.Timedelta(minutes=30)
+
+
+def sky_of_cells(cells: xr.Dataset, times: pd.DatetimeIndex) -> tuple[FloatArray, FloatArray]:
+    """Apparent sun elevation and clear-sky irradiance of each cell at `times`, shape (time, cell),
+    from pvlib with the air temperature of the cell and the sun at sea level, as
+    pv.solar_position places it."""
+    elevation, clear = [], []
+    for index in range(cells.sizes["cell"]):
+        site = pvlib.location.Location(
+            float(cells["latitude"][index]), float(cells["longitude"][index])
+        )
+        temp_air = cells["t2m"].isel(cell=index).to_numpy().astype(float) - pv.KELVIN
+        position = pvlib.solarposition.get_solarposition(
+            times, site.latitude, site.longitude, temperature=temp_air
+        )
+        elevation.append(position["apparent_elevation"].to_numpy())
+        clear.append(site.get_clearsky(times, solar_position=position)["ghi"].to_numpy())
+    return np.column_stack(elevation), np.column_stack(clear)
+
+
 def test_solar_covariates_are_capacity_weighted_means_at_mid_hour(
     store: WeatherStore, tmp_path: Path
 ) -> None:
@@ -186,25 +209,13 @@ def test_solar_covariates_are_capacity_weighted_means_at_mid_hour(
     )
     cells, (capacity,), _ = physics.fleet_cells("solar", weather, COUNTRY, SOLAR_PANEL, REGIONS)
     weights = capacity.transpose("time", "cell").to_numpy()
-    times = pd.date_range(start, end, freq="h", inclusive="left") + pd.Timedelta(minutes=30)
-    elevation, clear = [], []
-    for index in range(cells.sizes["cell"]):
-        site = pvlib.location.Location(
-            float(cells["latitude"][index]), float(cells["longitude"][index])
-        )
-        temp_air = cells["t2m"].isel(cell=index).to_numpy().astype(float) - pv.KELVIN
-        # At sea level, as pv.solar_position places the sun.
-        position = pvlib.solarposition.get_solarposition(
-            times, site.latitude, site.longitude, temperature=temp_air
-        )
-        elevation.append(position["apparent_elevation"].to_numpy())
-        clear.append(site.get_clearsky(times, solar_position=position)["ghi"].to_numpy())
+    elevation, clear = sky_of_cells(cells, mid_hours(start, end))
     ghi = cells["ssrd"].transpose("time", "cell").to_numpy()
 
     for column, values in [
-        ("sun_elevation_deg", np.column_stack(elevation)),
+        ("sun_elevation_deg", elevation),
         ("ghi_w_m2", ghi),
-        ("clear_sky_ghi_w_m2", np.column_stack(clear)),
+        ("clear_sky_ghi_w_m2", clear),
     ]:
         expected = np.average(values, axis=1, weights=weights)
         np.testing.assert_allclose(covariates[column], expected, rtol=1e-12, atol=1e-12)
@@ -264,3 +275,129 @@ def test_solar_ratio_must_be_on_the_grid() -> None:
 
 def test_dc_ac_grid_spans_0_90_to_1_80_in_steps_of_0_01() -> None:
     assert precompute.DC_AC_GRID.tolist() == [round(0.9 + 0.01 * step, 2) for step in range(91)]
+
+
+# 40 by 25 cells, all in one region, so that binning errors average out over the cells as they do
+# over the mainland fleet.
+WIDE_BOX = era5.Box(west=0.0, south=45.0, east=9.75, north=51.0)
+WIDE_REGIONS = gpd.GeoDataFrame(
+    {"region": ["01"]},
+    geometry=[box(*cell(45.0, 0.0)[:2], *cell(51.0, 9.75)[2:])],
+    crs="EPSG:4326",
+)
+# Windows that end in 2012 and 2018, so that all three hold capacity in 2020.
+WIND_COUNTRY = dataclasses.replace(
+    COUNTRY,
+    era5_box=WIDE_BOX,
+    wind_onshore=(
+        WindGeneration("VestasV82_1.65MW_82", 80.0, 2012),
+        WindGeneration("IEA_Reference_3.4MW_130", 90.0, 2018),
+        WindGeneration("IEA_Reference_3.4MW_130", 100.0),
+    ),
+)
+WIND_PANEL = panel(
+    "wind_onshore", {"01": {"2012-12-31": 1000.0, "2018-12-31": 2500.0, "2020-12-31": 3500.0}}
+)
+TWO_WEEKS = (utc("2020-06-01"), utc("2020-06-15"))
+
+
+@pytest.fixture
+def uncached(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Years are not final yet, so read_weather reads each period without writing a cache.
+    monkeypatch.setattr(physics, "era5_final_until", lambda today: pd.Timestamp("2019-01-01"))
+
+
+def per_cell_wind(speed_scale: float, tmp_path: Path) -> FloatArray:
+    """Onshore wind output of WIND_COUNTRY over TWO_WEEKS computed cell by cell, as in
+    physics.model, with hub-height speeds multiplied by `speed_scale`."""
+    start, end = (stamp.tz_localize(None) for stamp in TWO_WEEKS)
+    weather = physics.read_weather(
+        "FR", WIDE_BOX, physics.INPUTS["wind_onshore"], start, end, tmp_path
+    )
+    cells, capacities, _ = physics.fleet_cells(
+        "wind_onshore", weather, WIND_COUNTRY, WIND_PANEL, WIDE_REGIONS
+    )
+    energy = np.zeros(cells.sizes["time"])
+    for generation, capacity in zip(WIND_COUNTRY.wind_onshore, capacities, strict=True):
+        parameters = dataclasses.replace(
+            physics.generation_parameters(generation), speed_scale=speed_scale
+        )
+        factor = wind.capacity_factor(cells, parameters)
+        energy += (factor * capacity).sum("cell", skipna=False).to_numpy()
+    return energy
+
+
+def test_wind_matches_the_model_within_the_binning_error(
+    store: WeatherStore, uncached: None, tmp_path: Path
+) -> None:
+    modelled = physics.model(
+        "wind_onshore", *TWO_WEEKS, WIND_COUNTRY, WIND_PANEL, WIDE_REGIONS, tmp_path
+    )
+
+    arrays = precompute.wind_onshore(*TWO_WEEKS, WIND_COUNTRY, WIND_PANEL, WIDE_REGIONS, tmp_path)
+
+    energy = precompute.wind_energy(arrays)
+    assert energy.index.equals(modelled.index)
+    np.testing.assert_array_equal(energy.isna(), modelled["energy_mwh"].isna())
+    columns = ["complete", "capacity_mw", "capacity_provisional", "era5_source"]
+    pd.testing.assert_frame_equal(arrays.covariates[columns], modelled[columns])
+    assert not arrays.covariates.loc[GAP.tz_localize("UTC"), "complete"]
+    # Bounds of the binning error measured on the mainland fleet over 2019-2022, at the model's
+    # speeds and with the speeds scaled at hub height.
+    for speed_scale in [1.0, 0.8, 1.2]:
+        scaled = precompute.wind_energy(arrays, speed_scale).to_numpy()
+        expected = per_cell_wind(speed_scale, tmp_path)
+        if speed_scale == 1.0:
+            np.testing.assert_array_equal(expected, modelled["energy_mwh"])
+        assert np.nanmax(np.abs(scaled - expected)) <= 7e-4 * np.nanmax(expected)
+        assert np.nansum(scaled) == pytest.approx(np.nansum(expected), rel=1e-5)
+
+
+def test_wind_covariates_refer_to_the_wind_fleet(store: WeatherStore, tmp_path: Path) -> None:
+    start, end = utc("2020-06-01"), utc("2020-06-03")
+    monthly = panel(
+        "wind_onshore",
+        {
+            "01": {"2012-12-31": 100.0, "2020-12-31": 100.0},
+            "02": {"2012-12-31": 300.0, "2020-12-31": 300.0},
+        },
+    )
+
+    covariates = precompute.wind_onshore(start, end, COUNTRY, monthly, REGIONS, tmp_path).covariates
+
+    weather = physics.read_weather(
+        "FR", BOX, physics.WEATHER, start.tz_localize(None), end.tz_localize(None), tmp_path
+    )
+    cells, capacities, _ = physics.fleet_cells("wind_onshore", weather, COUNTRY, monthly, REGIONS)
+    weights = np.sum([capacity.transpose("time", "cell") for capacity in capacities], axis=0)
+    latitude = float(np.average(cells["latitude"], weights=weights.sum(axis=0)))
+    longitude = float(np.average(cells["longitude"], weights=weights.sum(axis=0)))
+    times = mid_hours(start, end)
+    centroid = pvlib.solarposition.get_solarposition(times, latitude, longitude)
+    _, clear = sky_of_cells(cells, times)
+    ghi = cells["ssrd"].transpose("time", "cell").to_numpy()
+
+    np.testing.assert_allclose(
+        covariates["sun_elevation_deg"], centroid["apparent_elevation"], rtol=1e-12, atol=1e-12
+    )
+    for column, values in [("ghi_w_m2", ghi), ("clear_sky_ghi_w_m2", clear)]:
+        expected = np.average(values, axis=1, weights=weights)
+        np.testing.assert_allclose(covariates[column], expected, rtol=1e-12, atol=1e-12)
+    # Weighted by capacity: the plain mean latitude of the three cells is 45.25.
+    assert 45.25 < latitude < 45.5
+
+
+def test_wind_speeds_beyond_the_power_curves_are_refused(
+    store: WeatherStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def storm(
+        variables: Sequence[str], bounds: era5.Box, start: pd.Timestamp, end: pd.Timestamp
+    ) -> xr.Dataset:
+        weather = store(variables, bounds, start, end)
+        return weather.assign(u100=10 * weather["u100"], u10=10 * weather["u10"])
+
+    monkeypatch.setattr(era5, "read_era5", storm)
+    monthly = panel("wind_onshore", {"01": {"2012-12-31": 100.0, "2020-12-31": 100.0}})
+
+    with pytest.raises(ValueError, match="m/s or more"):
+        precompute.wind_onshore(*TWO_WEEKS, COUNTRY, monthly, REGIONS, tmp_path)
