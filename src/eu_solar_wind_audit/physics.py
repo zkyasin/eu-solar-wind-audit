@@ -16,7 +16,7 @@ import pandas as pd
 import xarray as xr
 
 from eu_solar_wind_audit import pv, spatial, wind
-from eu_solar_wind_audit.config import Country
+from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.sources import era5, natural_earth, odre, sdes
 
 Technology = Literal["solar", "wind_onshore"]
@@ -119,6 +119,12 @@ def hourly_capacity(per_cell: xr.DataArray, hours: pd.DatetimeIndex) -> xr.DataA
     return capacity
 
 
+def generation_parameters(generation: WindGeneration) -> wind.WindParameters:
+    """Wind model of one generation, with the uncalibrated defaults of wind.WindParameters."""
+    member = wind.FleetTurbine(generation.turbine, generation.hub_height_m, 1.0)
+    return wind.WindParameters(fleet=(member,))
+
+
 def model(
     technology: Technology,
     start: pd.Timestamp,
@@ -167,9 +173,8 @@ def model(
         if technology == "solar":
             factor = pv.capacity_factor(cells, parameters.solar)
         else:
-            generation = parameters.wind_onshore[index]
-            member = wind.FleetTurbine(generation.turbine, generation.hub_height_m, 1.0)
-            factor = wind.capacity_factor(cells, wind.WindParameters(fleet=(member,)))
+            turbine = generation_parameters(parameters.wind_onshore[index])
+            factor = wind.capacity_factor(cells, turbine)
         energy = energy + (factor * capacity_mw).sum("cell", skipna=False)
     total_capacity = sum(capacity_mw.sum("cell").to_numpy() for capacity_mw in capacities)
 
