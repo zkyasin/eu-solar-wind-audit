@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from eu_solar_wind_audit import physics
+from eu_solar_wind_audit import cli, physics
 from eu_solar_wind_audit.anomalies import breaks, inputs, thresholds
 from eu_solar_wind_audit.anomalies.inputs import DetectionInputs, Published, SeriesInputs
 from eu_solar_wind_audit.config import CONFIG_DIR, load_country
@@ -138,3 +138,22 @@ def test_inputs_without_margin_cover_the_years_of_the_thresholds() -> None:
     assert pd.Timedelta(0) < inputs.MARGIN
     assert pd.Timestamp("2019-01-01", tz="UTC") == thresholds.FIX_START
     assert pd.Timestamp("2023-01-01", tz="UTC") == thresholds.FIX_END
+
+
+def test_the_command_fixes_the_thresholds_of_2019_2022_without_margins(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[tuple[pd.Timestamp, pd.Timestamp, pd.Timedelta]] = []
+
+    def france_inputs(
+        client: object, start: pd.Timestamp, end: pd.Timestamp, *_: object, margin: pd.Timedelta
+    ) -> DetectionInputs:
+        calls.append((start, end, margin))
+        return detection_inputs()
+
+    monkeypatch.setattr(inputs, "france_inputs", france_inputs)
+
+    cli.main(["fix-anomaly-thresholds", "--output", str(tmp_path / "FR.json")])
+
+    assert calls == [(thresholds.FIX_START, thresholds.FIX_END, pd.Timedelta(0))]
+    assert thresholds.read(tmp_path / "FR.json").country == "FR"
