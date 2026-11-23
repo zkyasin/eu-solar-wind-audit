@@ -1,10 +1,12 @@
 """Uncalibrated physics model of the solar and onshore wind output of mainland France and of its
-12 éCO2mix regions, from ERA5, the SDES capacity per department and the PV and wind modules.
+12 éCO2mix regions, and of Germany, from ERA5, the PV and wind modules and the capacity of each
+area: the SDES capacity per department in France, the MaStR capacity per district in Germany.
 
 Output is energy in MWh for each hour [t, t + 1 h), labelled t in UTC: the sum over ERA5 cells of
 capacity factor times capacity in MW.
 """
 
+import json
 import shutil
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
@@ -20,7 +22,7 @@ from pandera.typing import DataFrame, Series
 
 from eu_solar_wind_audit import grid, pv, spatial, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
-from eu_solar_wind_audit.sources import era5, natural_earth, odre, sdes
+from eu_solar_wind_audit.sources import bkg, era5, mastr, natural_earth, odre, sdes
 
 Technology = Literal["solar", "wind_onshore"]
 
@@ -32,6 +34,11 @@ INPUTS = {
 WEATHER = ("ssrd", "fdir", "t2m", "u10", "v10", "u100", "v100")
 SDES_MEDIA = {"solar": sdes.SOLAR_2026_Q2, "wind_onshore": sdes.WIND_2026_Q2}
 DAY = pd.Timedelta(days=1)
+# Units must be registered in MaStR within a month of their commissioning (MaStRV section 5(5)),
+# and some are registered later, so the last months of an export are provisional.
+MASTR_PROVISIONAL_MONTHS = 3
+# The German panel starts a year before the evaluation period, for the margins of its runs.
+MASTR_PANEL_START = pd.Timestamp("2018-01-31")
 
 
 class Modelled(grid.Hourly):
@@ -159,18 +166,27 @@ def fleet_cells(
     monthly: pd.DataFrame,
     regions: gpd.GeoDataFrame,
 ) -> Fleet:
-    """Cells of `weather`, as read_weather gives it, where the mainland fleet of `technology`
-    stands, with its hourly capacity; `monthly` and `regions` as for `model`."""
-    # The only perimeter of Country so far.
-    mainland = sdes.metropolitan_without_corsica(monthly)
+    """Cells of `weather`, as read_weather gives it, where the fleet of `technology` in the
+    perimeter of `parameters` stands, with its hourly capacity; `monthly` and `regions` as for
+    `model`."""
+    mainland = _in_perimeter(monthly, parameters)
     mainland = mainland[mainland["technology"] == technology]
-    capacity = mainland.pivot(index="month_end", columns="department_code", values="capacity_mw")
-    capacity = capacity.rename_axis(index="month_end", columns="region")
+    by_area = mainland.groupby(["month_end", "department_code"])["capacity_mw"].sum()
+    capacity = by_area.unstack().rename_axis(index="month_end", columns="region")
     polygons = regions[regions["region"].isin(capacity.columns)]
     fractions = spatial.region_fractions(polygons, weather["latitude"], weather["longitude"])
 
     if technology == "solar":
         parts = [capacity]
+    elif "generation" in mainland.columns:
+        # Units of known commissioning dates give the capacity of each generation.
+        parts = [
+            mainland[mainland["generation"] == generation]
+            .pivot(index="month_end", columns="department_code", values="capacity_mw")
+            .reindex(index=capacity.index, columns=capacity.columns, fill_value=0.0)
+            .rename_axis(index="month_end", columns="region")
+            for generation in range(len(parameters.wind_onshore))
+        ]
     else:
         last_years = [generation.last_commissioning_year for generation in parameters.wind_onshore]
         parts = split_by_commissioning(capacity, last_years)
@@ -200,8 +216,9 @@ def model(
 ) -> DataFrame[Modelled]:
     """Hourly modelled output for hours [start, end), both hour starts in UTC.
 
-    `monthly` is a month-end capacity panel as sdes.monthly_capacity returns it and `regions` the
-    department polygons of natural_earth.load_admin1.
+    `monthly` is a month-end capacity panel as sdes.monthly_capacity returns it, or as
+    load_germany_capacity gives it, and `regions` the polygons of its areas: the departments of
+    natural_earth.load_admin1 or the districts of bkg.load_districts.
     """
     grid.check_period(start, end)
     # ERA5 times are naive UTC.
@@ -315,6 +332,73 @@ def load_monthly_capacity(technology: Technology, until: pd.Timestamp) -> pd.Dat
     return sdes.monthly_capacity(sdes.read_capacity(workbook), until=month_end)
 
 
+def load_germany_capacity(
+    technology: Technology, parameters: Country, units_path: Path | None = None
+) -> pd.DataFrame:
+    """Month-end MaStR capacity per district in the columns of sdes.monthly_capacity, the district
+    code standing for the department code and the code of its Land for the region, with the
+    `generation` of the capacity: for onshore wind, the window of parameters.wind_onshore in which
+    its units were commissioned, 0 for solar. The capacity is the net power, limited by the
+    inverters, as SDES gives AC capacity. The last MASTR_PROVISIONAL_MONTHS months before the
+    export are provisional.
+
+    `units_path` is the unit table that mastr.write_capacity writes, extracted from the pinned
+    export when it is missing.
+    """
+    path = units_path or mastr.OUTPUT_DIR / "mastr_units.parquet"
+    if not path.exists():
+        mastr.extract_capacity(output_dir=path.parent)
+    export_date = pd.Timestamp(json.loads(path.with_suffix(".json").read_text())["export_date"])
+    last = export_date - pd.offsets.MonthEnd(1)
+    units = pd.read_parquet(path)
+    units = units[units["technology"].eq(technology)]
+    year = units["commissioned"].dt.year.to_numpy()
+    windows = (
+        [None]
+        if technology == "solar"
+        else [generation.last_commissioning_year for generation in parameters.wind_onshore]
+    )
+    ends = [np.inf if window is None else float(window) for window in windows]
+    frames = []
+    for generation, (low, high) in enumerate(zip([-np.inf, *ends], ends, strict=False)):
+        window = units[(year > low) & (year <= high)]
+        panel = mastr.monthly_capacity(window, MASTR_PANEL_START, last)
+        frames.append(panel[panel["district"].notna()].assign(generation=generation))
+    rows = pd.concat(frames, ignore_index=True)
+    return pd.DataFrame(
+        {
+            "department_code": rows["district"],
+            "department": rows["district"],
+            "region": rows["district"].str[:2],
+            "technology": technology,
+            "month_end": rows["month_end"],
+            "capacity_mw": rows["capacity_mw_ac"],
+            "provisional": rows["month_end"] > last - pd.offsets.MonthEnd(MASTR_PROVISIONAL_MONTHS),
+            "generation": rows["generation"],
+        }
+    )
+
+
+def model_germany(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    cache_dir: Path = ERA5_CACHE_DIR,
+    units_path: Path | None = None,
+) -> DataFrame[Modelled]:
+    """Hourly modelled output of the onshore fleet of Germany for hours [start, end), both hour
+    starts in UTC, computed one calendar year at a time; see `model`."""
+    grid.check_period(start, end)
+    monthly = load_germany_capacity(technology, parameters, units_path)
+    districts = bkg.load_districts()
+    years = [
+        model(technology, first, stop, parameters, monthly, districts, cache_dir)
+        for first, stop in _calendar_years(start, end)
+    ]
+    return Modelled.validate(pd.concat(years))
+
+
 def model_france(
     technology: Technology,
     start: pd.Timestamp,
@@ -354,6 +438,14 @@ def model_france_regions(
     return {
         code: Modelled.validate(pd.concat(year[code] for year in years)) for code in odre.REGIONS
     }
+
+
+def _in_perimeter(monthly: pd.DataFrame, parameters: Country) -> pd.DataFrame:
+    """Rows of `monthly` in the perimeter of `parameters`: mainland France without Corsica, or
+    every district of Germany."""
+    if parameters.perimeter == "metropolitan_without_corsica":
+        return sdes.metropolitan_without_corsica(monthly)
+    return monthly
 
 
 def _calendar_years(

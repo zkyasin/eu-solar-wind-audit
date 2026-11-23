@@ -1,3 +1,4 @@
+import dataclasses
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ from eu_solar_wind_audit import physics, pv, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.physics import read_weather, split_by_commissioning
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import era5, natural_earth, odre, sdes
+from eu_solar_wind_audit.sources import bkg, era5, natural_earth, odre, sdes
 
 SDES_SOLAR = Path(__file__).parent / "fixtures" / "sdes" / "solaire-pv-2026-t2.xlsx"
 STEP = 0.25
@@ -790,3 +791,92 @@ def test_model_france_regions_runs_one_calendar_year_at_a_time(
     assert all(frame.index.equals(expected) for frame in regional.values())
     assert regional["84"]["energy_mwh"].to_numpy() == pytest.approx(50.0)
     assert regional["32"]["energy_mwh"].to_numpy() == pytest.approx(20.0)
+
+
+GERMANY = dataclasses.replace(COUNTRY, country="DE", time_zone="Europe/Berlin", perimeter="germany")
+# Districts take five digits; "09162" covers one cell.
+DISTRICTS = gpd.GeoDataFrame(
+    {"region": ["09162"]}, geometry=[box(*cell(45.0, 2.0))], crs="EPSG:4326"
+)
+
+
+def test_the_german_perimeter_keeps_every_district(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monthly = panel("solar", {"09162": constant(100.0)})
+
+    german = physics.model(
+        "solar", utc("2020-06-01"), utc("2020-06-02"), GERMANY, monthly, DISTRICTS, tmp_path
+    )
+
+    # Under the French perimeter, a five-digit code is no department of the mainland.
+    assert german["energy_mwh"].to_numpy() == pytest.approx(50.0)
+
+
+def mastr_units(path: Path) -> Path:
+    """A unit table as mastr.write_capacity writes it, for an export of 2025-07-01: two solar
+    units in one district, and three wind turbines of three windows."""
+    units = pd.DataFrame(
+        {
+            "technology": ["solar", "solar", "wind_onshore", "wind_onshore", "wind_onshore"],
+            "status": ["operating", "operating", "operating", "operating", "decommissioned"],
+            "net_kw": [1000.0, 2000.0, 2000.0, 3000.0, 4000.0],
+            "gross_kw": [1120.0, 2200.0, 2000.0, 3000.0, 4000.0],
+            "commissioned": pd.to_datetime(
+                ["2024-12-15", "2025-02-10", "2010-05-01", "2015-05-01", "2022-05-01"]
+            ),
+            "decommissioned": pd.DatetimeIndex([pd.NaT, pd.NaT, pd.NaT, pd.NaT, "2025-03-15"]),
+            "district": "09162",
+        }
+    )
+    units.to_parquet(path / "mastr_units.parquet", index=False)
+    (path / "mastr_units.json").write_text('{"export_date": "2025-07-01"}')
+    return path / "mastr_units.parquet"
+
+
+def capacity_at(found: pd.DataFrame, month_end: str, generation: int = 0) -> float:
+    rows = found[
+        found["month_end"].eq(pd.Timestamp(month_end)) & found["generation"].eq(generation)
+    ]
+    return float(rows["capacity_mw"].sum())
+
+
+def test_german_capacity_is_the_inverter_power_per_district(tmp_path: Path) -> None:
+    found = physics.load_germany_capacity("solar", GERMANY, mastr_units(tmp_path))
+
+    assert found["department_code"].unique().tolist() == ["09162"]
+    assert found["region"].unique().tolist() == ["09"]
+    assert capacity_at(found, "2025-01-31") == pytest.approx(1.0)
+    assert capacity_at(found, "2025-02-28") == pytest.approx(3.0)
+    # The export of 2025-07-01 ends with June; its last three months are provisional.
+    provisional = found.set_index("month_end")["provisional"]
+    assert not provisional[pd.Timestamp("2025-03-31")]
+    assert provisional[pd.Timestamp("2025-04-30")]
+
+
+def test_german_wind_is_split_by_the_commissioning_of_its_units(tmp_path: Path) -> None:
+    found = physics.load_germany_capacity("wind_onshore", GERMANY, mastr_units(tmp_path))
+
+    # The windows of GERMANY end in 2012 and 2020.
+    assert capacity_at(found, "2025-02-28", 0) == pytest.approx(2.0)
+    assert capacity_at(found, "2025-02-28", 1) == pytest.approx(3.0)
+    assert capacity_at(found, "2025-02-28", 2) == pytest.approx(4.0)
+    # The turbine of 2022 is decommissioned in March 2025.
+    assert capacity_at(found, "2025-03-31", 2) == pytest.approx(0.0)
+
+
+def test_model_germany_reads_the_mastr_units_and_the_districts(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monkeypatch.setattr(bkg, "load_districts", lambda: DISTRICTS)
+
+    found = physics.model_germany(
+        "solar", utc("2025-03-01"), utc("2025-03-02"), GERMANY, tmp_path, mastr_units(tmp_path)
+    )
+
+    # 3 MW from the end of February.
+    assert found["capacity_mw"].iloc[0] == pytest.approx(3.0)
+    assert found["energy_mwh"].iloc[0] == pytest.approx(1.5)
+    assert not found["capacity_provisional"].any()
