@@ -366,10 +366,12 @@ def clear_day_course(hours: pd.DatetimeIndex) -> FloatArray:
     return course
 
 
-def shared_course_arrays(covariates: DataFrame[precompute.Covariates]) -> precompute.SolarArrays:
+def shared_course_arrays(
+    covariates: DataFrame[precompute.Covariates], dc_scale: float = 1.0
+) -> precompute.SolarArrays:
     """Arrays on the hours of `covariates` whose systems and horizontal modules all follow
-    clear_day_course, so that the clipping of one day tells its ratio."""
-    dc = clear_day_course(pd.DatetimeIndex(covariates.index))
+    clear_day_course times `dc_scale`, so that the clipping of one day tells its ratio."""
+    dc = dc_scale * clear_day_course(pd.DatetimeIndex(covariates.index))
     on_grid = np.stack([ac_output(dc, float(ratio)) for ratio in DC_AC_GRID], axis=-1)
     return precompute.SolarArrays(
         fleet_mwh=CAPACITY_MW * np.stack([on_grid, on_grid], axis=1),
@@ -380,10 +382,12 @@ def shared_course_arrays(covariates: DataFrame[precompute.Covariates]) -> precom
     )
 
 
-def published_at(hours: pd.DatetimeIndex, ratio: float, seed: int) -> FloatArray:
-    """Published output of shared_course_arrays at `ratio`, with the level of TRUTH and a noise
-    of 0.002 in capacity factor."""
-    output = TRUTH[0] * ac_output(clear_day_course(hours), ratio)
+def published_at(
+    hours: pd.DatetimeIndex, ratio: float, seed: int, dc_scale: float = 1.0
+) -> FloatArray:
+    """Published output of shared_course_arrays with `dc_scale` at `ratio`, with the level of
+    TRUTH and a noise of 0.002 in capacity factor."""
+    output = TRUTH[0] * ac_output(dc_scale * clear_day_course(hours), ratio)
     noise = np.random.default_rng(seed).normal(0.0, 0.002, hours.size)
     published: FloatArray = CAPACITY_MW * (output + noise)
     return published
@@ -480,3 +484,38 @@ def test_the_report_states_each_minimum_at_0_05_with_the_sample_size() -> None:
         steps = minima[column] / dc_ac.REPORT_STEP
         np.testing.assert_allclose(steps, steps.round(), atol=1e-9)
         assert ((minima[column] - ratio).abs() <= dc_ac.REPORT_STEP / 2).all()
+
+
+def test_the_report_flags_minima_at_either_end_of_the_grid() -> None:
+    # In 2019, air at 25 degC and output published at a ratio of 0.8, with a DC output 1.6 times
+    # larger that clips below the grid; in 2020, air at 18 degC and output published at 2.2.
+    arrays, published = [], []
+    for year, temperature, ratio, dc_scale in [(2019, 25.0, 0.8, 1.6), (2020, 18.0, 2.2, 1.0)]:
+        hours = paris_hours(f"{year}-06-14", f"{year}-06-15")
+        covariates = sky_arrays(hours, 0.95, air_temperature_c=temperature).covariates
+        arrays.append(shared_course_arrays(covariates, dc_scale))
+        published.append(pd.Series(published_at(hours, ratio, year, dc_scale), index=hours))
+    published_mwh = pd.concat(published)
+    classes = pd.DataFrame({"regime": "reference"}, index=published_mwh.index)
+    eligible = pd.Series(True, index=published_mwh.index)
+
+    found = dc_ac.report(arrays, published_mwh, eligible, classes, PV, replicates=3)
+
+    minima: pd.DataFrame = found.minima
+    # 0.9 (1 - 0.1408) is 0.773 and 1.8 (1 - 0.1408) is 1.547.
+    assert minima.loc["air_from_22_c"].to_dict() == {
+        "hours": 9,
+        "days": 1,
+        "dc_ac_ratio": 0.9,
+        "at_grid_end": True,
+        "stated_ratio": 0.9,
+        "stated_ratio_after_losses": 0.75,
+    }
+    assert minima.loc["air_15_to_22_c"].to_dict() == {
+        "hours": 9,
+        "days": 1,
+        "dc_ac_ratio": 1.8,
+        "at_grid_end": True,
+        "stated_ratio": 1.8,
+        "stated_ratio_after_losses": 1.55,
+    }
