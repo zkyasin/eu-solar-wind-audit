@@ -12,6 +12,10 @@ Profile: with c the scale of calibration.fit_solar on the sample hours, at the c
 x_r minimises the cost F(x; c) of calibration at each ratio r of precompute.DC_AC_GRID, in one
 pass of calibration.huber_pass from calibration.SOLAR_START, and cost(r) = F(x_r; c). The minimum
 is the smallest ratio with the lowest cost, flagged when it is an end of the grid.
+
+Subsets: the profile, each with its own scale, of the sample hours in each band of
+capacity-weighted air temperature, where warm modules lose output at peak hours as clipping does,
+and in each season of the UTC month.
 """
 
 from collections.abc import Callable, Sequence
@@ -23,7 +27,7 @@ import numpy.typing as npt
 import pandas as pd
 import pvlib
 
-from eu_solar_wind_audit import calibration, days, precompute, pv
+from eu_solar_wind_audit import calibration, days, evaluation, precompute, pv
 from eu_solar_wind_audit.precompute import DC_AC_GRID, BoolArray, FloatArray
 from eu_solar_wind_audit.pv import PVParameters
 
@@ -33,6 +37,12 @@ IntArray = npt.NDArray[np.intp]
 # 3 h of solar noon all have the reference price (evaluation plan, Deviations).
 SAMPLE_ELEVATION_DEG = 20.0
 TRANSIT_WINDOW = pd.Timedelta(hours=3)
+# Bands [low, high) of capacity-weighted air temperature in degC (calibration critique).
+AIR_TEMPERATURE_BANDS = {
+    "air_below_15_c": (-np.inf, 15.0),
+    "air_15_to_22_c": (15.0, 22.0),
+    "air_from_22_c": (22.0, np.inf),
+}
 
 
 @dataclass(frozen=True)
@@ -88,6 +98,26 @@ def sample_hours(
         & ~day.isin(day[near_transit & off_reference])
     )
     return pd.Series(in_sample, index=hours, name="sample")
+
+
+def subsets(arrays: Sequence[precompute.SolarArrays], sample: pd.Series) -> dict[str, pd.Series]:
+    """The hours of `arrays` where the boolean `sample` is true, split by the capacity-weighted air
+    temperature of the hour into AIR_TEMPERATURE_BANDS, then by the season of its UTC month into
+    evaluation.SEASONS, as boolean Series on the hours of the arrays. A subset without sample
+    hours, such as winter can be, is left out."""
+    covariates = pd.concat([part.covariates for part in arrays])
+    if not sample.index.equals(covariates.index):
+        raise ValueError("the sample must be on the hours of the arrays")
+    temperature = covariates["air_temperature_c"]
+    month = pd.Series(pd.DatetimeIndex(covariates.index).month, index=covariates.index)
+    season = month.map(evaluation.SEASON_OF_MONTH)
+    bands = {
+        name: (temperature >= low) & (temperature < high)
+        for name, (low, high) in AIR_TEMPERATURE_BANDS.items()
+    }
+    seasons = {name: season == name for name in evaluation.SEASONS}
+    split = {name: sample & hours for name, hours in (bands | seasons).items()}
+    return {name: hours for name, hours in split.items() if hours.any()}
 
 
 def _near_transit(arrays: precompute.SolarArrays) -> BoolArray:

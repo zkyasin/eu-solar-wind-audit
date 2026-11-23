@@ -34,11 +34,14 @@ def paris_hours(first_day: str, end_day: str) -> pd.DatetimeIndex:
 
 
 def sky_arrays(
-    hours: pd.DatetimeIndex, clear_sky_index: ArrayLike, centroid: tuple[float, float] = CENTROID
+    hours: pd.DatetimeIndex,
+    clear_sky_index: ArrayLike,
+    centroid: tuple[float, float] = CENTROID,
+    air_temperature_c: ArrayLike = 20.0,
 ) -> precompute.SolarArrays:
     """Arrays on `hours` with the sun at 60 degrees at 12:00 UTC and 10 degrees lower for each
-    hour away from it, and the given clear-sky index in each hour. Their output is zero, which the
-    sample does not read."""
+    hour away from it, and the given clear-sky index and air temperature in each hour. Their
+    output is zero, which the sample and its subsets do not read."""
     covariates = pd.DataFrame(
         {
             "complete": True,
@@ -48,7 +51,7 @@ def sky_arrays(
             "sun_elevation_deg": 60.0 - 10.0 * np.abs(hours.hour.to_numpy() - 12),
             "ghi_w_m2": 100.0 * np.asarray(clear_sky_index, dtype=float),
             "clear_sky_ghi_w_m2": 100.0,
-            "air_temperature_c": 20.0,
+            "air_temperature_c": air_temperature_c,
         },
         index=hours,
     )
@@ -118,6 +121,51 @@ def test_the_sample_needs_inputs_on_the_hours_of_the_arrays() -> None:
         dc_ac.sample_hours([arrays], eligible.iloc[1:], classes)
     with pytest.raises(ValueError, match="on the hours of the arrays"):
         dc_ac.sample_hours([arrays], eligible, classes.iloc[1:])
+
+
+def noon_hours(days: list[str]) -> pd.DatetimeIndex:
+    return pd.DatetimeIndex([utc(f"{day} 12:00") for day in days], name="time").as_unit("ns")
+
+
+def selected_days(sample: pd.Series) -> list[str]:
+    return list(pd.DatetimeIndex(sample.index)[sample.to_numpy()].strftime("%m-%d"))
+
+
+def test_subsets_split_the_sample_by_air_temperature_and_season() -> None:
+    hours = noon_hours(
+        ["2022-02-15", "2022-03-15", "2022-04-15", "2022-07-15", "2022-07-16", "2022-10-15"]
+    )
+    arrays = sky_arrays(hours, 0.95, air_temperature_c=[5.0, 14.9, 15.0, 21.9, 22.0, np.nan])
+    sample = pd.Series([True, True, True, True, False, True], index=hours)
+
+    found = dc_ac.subsets([arrays], sample)
+
+    assert {name: selected_days(hours) for name, hours in found.items()} == {
+        "air_below_15_c": ["02-15", "03-15"],
+        "air_15_to_22_c": ["04-15", "07-15"],
+        "DJF": ["02-15"],
+        "MAM": ["03-15", "04-15"],
+        "JJA": ["07-15"],
+        "SON": ["10-15"],
+    }
+
+
+def test_subsets_without_sample_hours_are_left_out() -> None:
+    hours = noon_hours(["2022-01-15", "2022-06-15", "2022-06-16"])
+    arrays = sky_arrays(hours, 0.95, air_temperature_c=[2.0, 25.0, 26.0])
+    sample = pd.Series([False, True, True], index=hours)
+
+    found = dc_ac.subsets([arrays], sample)
+
+    assert list(found) == ["air_from_22_c", "JJA"]
+
+
+def test_subsets_need_a_sample_on_the_hours_of_the_arrays() -> None:
+    hours = noon_hours(["2022-06-15", "2022-06-16"])
+    sample = pd.Series(True, index=hours[1:])
+
+    with pytest.raises(ValueError, match="on the hours of the arrays"):
+        dc_ac.subsets([sky_arrays(hours, 0.95)], sample)
 
 
 def ac_output(dc: FloatArray, ratio: float) -> FloatArray:
