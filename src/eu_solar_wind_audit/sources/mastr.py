@@ -17,12 +17,14 @@ import json
 import re
 import time
 import zipfile
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 from xml.etree import ElementTree
 
 import httpx
+import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Series
@@ -59,6 +61,42 @@ WIND_LOCATION_CODES = {
     889: ("Windkraft auf See", "wind_offshore"),
 }
 SEA_CODES = {639: ("Ostsee", "baltic"), 640: ("Nordsee", "north")}
+# Main orientation and tilt of the modules of a solar unit, whether a unit feeds all its output
+# or only what its owner does not consume, and the limit on its feed-in (EEG 2012 to 2021: 70 %
+# of the module power for small units without remote control).
+ORIENTATION_CODES = {
+    695: ("Nord", "north"),
+    696: ("Nord-Ost", "north_east"),
+    697: ("Ost", "east"),
+    698: ("Süd-Ost", "south_east"),
+    699: ("Süd", "south"),
+    700: ("Süd-West", "south_west"),
+    701: ("West", "west"),
+    702: ("Nord-West", "north_west"),
+    703: ("nachgeführt", "tracked"),
+    704: ("Ost-West", "east_west"),
+}
+TILT_CODES = {
+    3179: ("unter 5 Grad (horizontal)", "below_5"),
+    810: ("5 - 20 Grad", "5_to_20"),
+    809: ("21 - 40 Grad", "21_to_40"),
+    808: ("41 - 60 Grad", "41_to_60"),
+    807: ("61 - 89 Grad", "61_to_89"),
+    # The catalogue value ends with a space.
+    806: ("90 Grad (vertikal) ", "vertical"),
+    811: ("Nachgeführt", "tracked"),
+}
+FEED_IN_CODES = {
+    688: ("Volleinspeisung", "full"),
+    689: ("Teileinspeisung (einschließlich Eigenverbrauch)", "partial"),
+}
+FEED_IN_LIMIT_CODES = {
+    802: ("Nein", "none"),
+    803: ("Ja, auf 70%", "70_percent"),
+    804: ("Ja, auf 60%", "60_percent"),
+    805: ("Ja, auf 50%", "50_percent"),
+    1535: ("Ja, sonstige", "other"),
+}
 
 COMMON_FIELDS = {
     "EinheitMastrNummer": "unit_id",
@@ -72,9 +110,18 @@ COMMON_FIELDS = {
     "Gemeindeschluessel": "municipality_key",
     "Laengengrad": "longitude",
     "Breitengrad": "latitude",
+    "Einspeisungsart": "feed_in",
+}
+SOLAR_FIELDS = {
+    **COMMON_FIELDS,
+    "Hauptausrichtung": "orientation",
+    "HauptausrichtungNeigungswinkel": "tilt",
+    "Leistungsbegrenzung": "feed_in_limit",
 }
 WIND_FIELDS = {
     **COMMON_FIELDS,
+    "Nabenhoehe": "hub_height_m",
+    "Rotordurchmesser": "rotor_diameter_m",
     "WindAnLandOderAufSee": "location",
     "Seelage": "sea",
     "GebietNachDemFlaechenentwicklungsplanNordsee": "cluster_north",
@@ -96,6 +143,10 @@ PANEL_START = pd.Timestamp("2019-01-31")
 CELL_DEGREES = 0.25
 
 
+def _names(codes: dict[int, tuple[str, str]]) -> list[str]:
+    return [name for _, name in codes.values()]
+
+
 class Units(pa.DataFrameModel):
     unit_id: Series[str] = pa.Field(unique=True, str_matches=r"^SEE\d{12}$")
     technology: Series[str] = pa.Field(isin=TECHNOLOGIES)
@@ -114,6 +165,12 @@ class Units(pa.DataFrameModel):
     sea: Series[str] = pa.Field(nullable=True, isin=["north", "baltic"])
     cluster: Series[str] = pa.Field(nullable=True)
     wind_farm: Series[str] = pa.Field(nullable=True)
+    feed_in: Series[str] = pa.Field(nullable=True, isin=_names(FEED_IN_CODES))
+    orientation: Series[str] = pa.Field(nullable=True, isin=_names(ORIENTATION_CODES))
+    tilt: Series[str] = pa.Field(nullable=True, isin=_names(TILT_CODES))
+    feed_in_limit: Series[str] = pa.Field(nullable=True, isin=_names(FEED_IN_LIMIT_CODES))
+    hub_height_m: Series[float] = pa.Field(nullable=True)
+    rotor_diameter_m: Series[float] = pa.Field(nullable=True)
 
     class Config:
         strict = True
@@ -151,6 +208,78 @@ class OffshoreWind(pa.DataFrameModel):
 
     class Config:
         strict = True
+
+
+class SolarFleet(pa.DataFrameModel):
+    """DC capacity in MW of solar units by main orientation and tilt class of their modules, and
+    its share of the total; units without an orientation or a tilt are in null groups."""
+
+    orientation: Series[str] = pa.Field(nullable=True)
+    tilt: Series[str] = pa.Field(nullable=True)
+    capacity_mw_dc: Series[float] = pa.Field(ge=0)
+    share: Series[float] = pa.Field(ge=0, le=1)
+
+    class Config:
+        strict = True
+
+
+class WindGenerations(pa.DataFrameModel):
+    """Onshore wind units commissioned up to the end of `last_commissioning_year`, after the
+    previous row, null in the last row: their capacity in MW, their hub height in m weighted by
+    capacity, and their specific power, the capacity over the area swept by their rotors."""
+
+    last_commissioning_year: Series[pd.Int64Dtype] = pa.Field(nullable=True)
+    capacity_mw: Series[float] = pa.Field(ge=0)
+    hub_height_m: Series[float]
+    specific_power_w_m2: Series[float]
+
+    class Config:
+        strict = True
+
+
+def solar_fleet(units: pd.DataFrame, as_of: pd.Timestamp) -> DataFrame[SolarFleet]:
+    """`SolarFleet` of the solar units in operation at `as_of`, by their gross power."""
+    active = _active(units, "solar", as_of)
+    capacity = active.groupby(["orientation", "tilt"], dropna=False)["gross_kw"].sum() / 1000
+    table = capacity.rename("capacity_mw_dc").reset_index()
+    table["share"] = table["capacity_mw_dc"] / table["capacity_mw_dc"].sum()
+    table = table.sort_values("capacity_mw_dc", ascending=False, ignore_index=True)
+    return SolarFleet.validate(table.astype({"orientation": "str", "tilt": "str"}))
+
+
+def dc_ac_ratio(units: pd.DataFrame, as_of: pd.Timestamp) -> float:
+    """Gross over net power of the solar units in operation at `as_of` that have both: their
+    module power over their inverter-limited power."""
+    active = _active(units, "solar", as_of).dropna(subset=["gross_kw", "net_kw"])
+    return float(active["gross_kw"].sum() / active["net_kw"].sum())
+
+
+def wind_generations(
+    units: pd.DataFrame, as_of: pd.Timestamp, last_years: Sequence[int | None]
+) -> DataFrame[WindGenerations]:
+    """`WindGenerations` of the onshore wind units in operation at `as_of`, one row per window of
+    `last_years`, the last of which is None. Hub heights and rotor diameters count where given."""
+    active = _active(units, "wind_onshore", as_of)
+    year = active["commissioned"].dt.year.to_numpy()
+    ends = [np.inf if last is None else float(last) for last in last_years]
+    rows = []
+    for last, low, high in zip(last_years, [-np.inf, *ends], ends, strict=False):
+        window = active[(year > low) & (year <= high)]
+        with_hub = window.dropna(subset=["hub_height_m"])
+        with_rotor = window.dropna(subset=["rotor_diameter_m"])
+        swept_m2 = np.pi * (with_rotor["rotor_diameter_m"] / 2) ** 2
+        rows.append(
+            {
+                "last_commissioning_year": last,
+                "capacity_mw": window["net_kw"].sum() / 1000,
+                "hub_height_m": float(
+                    np.average(with_hub["hub_height_m"], weights=with_hub["net_kw"])
+                ),
+                "specific_power_w_m2": float(with_rotor["net_kw"].sum() * 1000 / swept_m2.sum()),
+            }
+        )
+    table = pd.DataFrame(rows).astype({"last_commissioning_year": "Int64"})
+    return WindGenerations.validate(table)
 
 
 def download_export(client: httpx.Client, cache_dir: Path = CACHE_DIR) -> Path:
@@ -201,15 +330,14 @@ def read_units(path: Path) -> DataFrame[Units]:
             raise ValueError(f"{path}: missing solar, wind or catalogue members")
         catalogue = _read_catalogue(archive)
         frames = [
-            _solar_units(_read_member(archive, name, "EinheitSolar", COMMON_FIELDS))
+            _solar_units(_read_member(archive, name, "EinheitSolar", SOLAR_FIELDS))
             for name in solar
         ]
         frames.append(
             _wind_units(_read_member(archive, WIND_MEMBER, "EinheitWind", WIND_FIELDS), catalogue)
         )
-    units = pd.concat(frames, ignore_index=True).astype(
-        {"sea": "str", "cluster": "str", "wind_farm": "str"}
-    )
+    text = ["sea", "cluster", "wind_farm", "feed_in", "orientation", "tilt", "feed_in_limit"]
+    units = pd.concat(frames, ignore_index=True).astype(dict.fromkeys(text, "str"))
     return Units.validate(units[list(Units.to_schema().columns)])
 
 
@@ -251,10 +379,7 @@ def monthly_capacity(
 def offshore_wind(units: pd.DataFrame, as_of: pd.Timestamp) -> DataFrame[OffshoreWind]:
     """Offshore wind units in operation at `as_of`, by sea, development plan cluster and ERA5 cell
     (coordinates rounded to the nearest 0.25 degree)."""
-    offshore = _countable(units[units["technology"].eq("wind_offshore")])
-    active = offshore[
-        (offshore["commissioned"] <= as_of) & ~(offshore["decommissioned"] <= as_of)
-    ].assign(
+    active = _active(units, "wind_offshore", as_of).assign(
         cell_latitude=lambda frame: _to_cell(frame["latitude"]),
         cell_longitude=lambda frame: _to_cell(frame["longitude"]),
         commissioning_month=lambda frame: frame["commissioned"] + pd.offsets.MonthEnd(0),
@@ -406,11 +531,16 @@ def _read_member(
 def _read_catalogue(archive: zipfile.ZipFile) -> dict[int, str]:
     values = _read_member(archive, CATALOGUE_MEMBER, "Katalogwert", {"Id": "id", "Wert": "value"})
     catalogue = dict(zip(values["id"].astype(int), values["value"], strict=True))
-    expected = {
-        code: name
-        for codes in (STATUS_CODES, WIND_LOCATION_CODES, SEA_CODES)
-        for code, (name, _) in codes.items()
-    }
+    tables = (
+        STATUS_CODES,
+        WIND_LOCATION_CODES,
+        SEA_CODES,
+        ORIENTATION_CODES,
+        TILT_CODES,
+        FEED_IN_CODES,
+        FEED_IN_LIMIT_CODES,
+    )
+    expected = {code: name for codes in tables for code, (name, _) in codes.items()}
     changed = {
         code: catalogue.get(code) for code, name in expected.items() if catalogue.get(code) != name
     }
@@ -420,7 +550,17 @@ def _read_catalogue(archive: zipfile.ZipFile) -> dict[int, str]:
 
 
 def _solar_units(raw: pd.DataFrame) -> pd.DataFrame:
-    return _common(raw).assign(technology="solar", sea=None, cluster=None, wind_farm=None)
+    return _common(raw).assign(
+        technology="solar",
+        sea=None,
+        cluster=None,
+        wind_farm=None,
+        orientation=_decode(raw["orientation"], ORIENTATION_CODES),
+        tilt=_decode(raw["tilt"], TILT_CODES),
+        feed_in_limit=_decode(raw["feed_in_limit"], FEED_IN_LIMIT_CODES),
+        hub_height_m=float("nan"),
+        rotor_diameter_m=float("nan"),
+    )
 
 
 def _wind_units(raw: pd.DataFrame, catalogue: dict[int, str]) -> pd.DataFrame:
@@ -430,6 +570,11 @@ def _wind_units(raw: pd.DataFrame, catalogue: dict[int, str]) -> pd.DataFrame:
         sea=_decode(raw["sea"], SEA_CODES),
         cluster=cluster.map(lambda code: catalogue[int(code)], na_action="ignore"),
         wind_farm=raw["wind_farm"],
+        orientation=None,
+        tilt=None,
+        feed_in_limit=None,
+        hub_height_m=raw["hub_height_m"].astype("float64"),
+        rotor_diameter_m=raw["rotor_diameter_m"].astype("float64"),
     )
 
 
@@ -453,6 +598,7 @@ def _common(raw: pd.DataFrame) -> pd.DataFrame:
             .replace(FORMER_DISTRICTS),
             "longitude": raw["longitude"].astype("float64"),
             "latitude": raw["latitude"].astype("float64"),
+            "feed_in": _decode(raw["feed_in"], FEED_IN_CODES),
         }
     )
     return frame
@@ -464,6 +610,13 @@ def _decode(codes: "pd.Series[str]", table: dict[int, tuple[str, str]]) -> "pd.S
     if unknown:
         raise ValueError(f"unknown codes: {sorted(unknown)}")
     return codes.map(names)
+
+
+def _active(units: pd.DataFrame, technology: str, as_of: pd.Timestamp) -> pd.DataFrame:
+    """Units of `technology` in operation at `as_of`: commissioned, and not decommissioned, by
+    then."""
+    counted = _countable(units[units["technology"].eq(technology)])
+    return counted[(counted["commissioned"] <= as_of) & ~(counted["decommissioned"] <= as_of)]
 
 
 def _countable(units: pd.DataFrame) -> pd.DataFrame:

@@ -7,6 +7,7 @@ from eu_solar_wind_audit.pv import PVParameters, System
 from eu_solar_wind_audit.sources.era5 import Box
 
 FRANCE = Path(__file__).parents[1] / "config" / "countries" / "fr.toml"
+GERMANY = Path(__file__).parents[1] / "config" / "countries" / "de.toml"
 
 MINIMAL = """
 country = "XX"
@@ -120,3 +121,18 @@ def test_france_file_is_valid() -> None:
     assert france.perimeter == "metropolitan_without_corsica"
     years = [generation.last_commissioning_year for generation in france.wind_onshore]
     assert years == [2012, 2020, None]
+
+
+def test_germany_file_is_valid() -> None:
+    germany = load_country(GERMANY)
+
+    assert germany.perimeter == "germany"
+    assert len(germany.solar.fleet) == 7
+    assert sum(system.share for system in germany.solar.fleet) == pytest.approx(1.0)
+    assert [generation.last_commissioning_year for generation in germany.wind_onshore] == [
+        2005,
+        2012,
+        2016,
+        2020,
+        None,
+    ]
