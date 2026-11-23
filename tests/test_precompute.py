@@ -228,6 +228,26 @@ def test_solar_covariates_are_capacity_weighted_means_at_mid_hour(
     assert covariates["clear_sky_ghi_w_m2"].max() > 500
 
 
+def test_the_solar_centroid_weights_the_cells_by_their_capacity(
+    store: WeatherStore, tmp_path: Path
+) -> None:
+    start, end = utc("2020-06-01"), utc("2020-06-03")
+
+    centroid = precompute.solar(start, end, COUNTRY, SOLAR_PANEL, REGIONS, tmp_path).centroid
+
+    weather = physics.read_weather(
+        "FR", BOX, physics.INPUTS["solar"], start.tz_localize(None), end.tz_localize(None), tmp_path
+    )
+    cells, (capacity,), _ = physics.fleet_cells("solar", weather, COUNTRY, SOLAR_PANEL, REGIONS)
+    per_cell = capacity.sum("time").to_numpy()
+    expected = [np.average(cells[name], weights=per_cell) for name in ("latitude", "longitude")]
+    assert centroid == pytest.approx(expected, rel=1e-12)
+    # "02", with most of the capacity on its two cells, pulls the centroid north and east of the
+    # plain mean of the three cells, 45.25 N and 2.17 E.
+    assert centroid[0] > 45.25
+    assert centroid[1] > 2.17
+
+
 def solar_arrays(hours: pd.DatetimeIndex) -> precompute.SolarArrays:
     rng = np.random.default_rng(0)
     covariates = pd.DataFrame(
@@ -248,6 +268,7 @@ def solar_arrays(hours: pd.DatetimeIndex) -> precompute.SolarArrays:
         horizontal_mwh=rng.uniform(0.0, 100.0, (hours.size, precompute.DC_AC_GRID.size)),
         shares=np.array([0.25, 0.75]),
         covariates=precompute.Covariates.validate(covariates),
+        centroid=(46.0, 2.0),
     )
 
 

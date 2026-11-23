@@ -64,12 +64,15 @@ class SolarArrays:
     """National AC energy in MWh over each hour of `covariates`, for each DC/AC ratio of
     DC_AC_GRID: `fleet_mwh`, shape (time, system, ratio), of the whole fleet mounted as each
     configured system, whose shares are `shares`; `horizontal_mwh`, shape (time, ratio), of the
-    whole fleet as horizontal modules."""
+    whole fleet as horizontal modules. `centroid` is the latitude and longitude in degrees of the
+    cells weighted by their capacity summed over the hours: the capacity centroid of the fleet over
+    the period."""
 
     fleet_mwh: FloatArray
     horizontal_mwh: FloatArray
     shares: FloatArray
     covariates: DataFrame[Covariates]
+    centroid: tuple[float, float]
 
 
 @dataclass(frozen=True)
@@ -156,6 +159,7 @@ def solar(
         horizontal_mwh=energy[:, -1],
         shares=np.array([system.share for system in params.fleet]),
         covariates=_covariates(fleet, complete, elevation, mean_ghi, mean_clear, mean_temperature),
+        centroid=_capacity_centroid(latitude, longitude, capacity_mw),
     )
 
 
@@ -295,8 +299,7 @@ def wind_onshore(
             weighted[row] += np.vecdot(values, weights)
 
     mean_ghi, mean_clear, mean_temperature = weighted / total.sum(axis=1)
-    per_cell = total.sum(axis=0)
-    centroid = np.average(latitude, weights=per_cell), np.average(longitude, weights=per_cell)
+    centroid = _capacity_centroid(latitude, longitude, total)
     sun = pvlib.solarposition.get_solarposition(times, *centroid)
     return WindArrays(
         capacity_mw=histograms,
@@ -327,6 +330,18 @@ def wind_energy(arrays: WindArrays, speed_scale: float = 1.0) -> "pd.Series[floa
     complete = arrays.covariates["complete"].to_numpy()
     return pd.Series(
         np.where(complete, energy, np.nan), index=arrays.covariates.index, name="energy_mwh"
+    )
+
+
+def _capacity_centroid(
+    latitude: FloatArray, longitude: FloatArray, capacity_mw: FloatArray
+) -> tuple[float, float]:
+    """Latitude and longitude of the cells weighted by their capacity, shape (time, cell), summed
+    over the hours."""
+    per_cell = capacity_mw.sum(axis=0)
+    return (
+        float(np.average(latitude, weights=per_cell)),
+        float(np.average(longitude, weights=per_cell)),
     )
 
 

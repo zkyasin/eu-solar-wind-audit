@@ -56,6 +56,7 @@ def solar_year(year: int, rng: np.random.Generator) -> precompute.SolarArrays:
         horizontal_mwh=rng.uniform(0.0, 80.0, (len(hours), precompute.DC_AC_GRID.size)),
         shares=np.array([system.share for system in PV.fleet]),
         covariates=hours,
+        centroid=(46.0, 2.0),
     )
 
 
