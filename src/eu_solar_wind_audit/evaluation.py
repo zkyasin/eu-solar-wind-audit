@@ -35,9 +35,10 @@ class Predictions(pa.DataFrameModel):
 
     A model column is the model name followed by `_mwh`; there is at least one. `held_out_year` is
     the UTC year of the hour, the fold that predicted it. `capacity_mw` is the AC capacity at the
-    start of the hour, `season` that of the UTC month and `sky_class` that of the hour's day. Only
-    eligible hours are evaluated: they have their published energy, every model energy and a sky
-    class.
+    start of the hour, `season` that of the UTC month and `sky_class` that of the hour's day, null
+    when the day has none, such as a day cut by the end of the weather inputs. Only eligible hours
+    are evaluated: they have their published energy and every model energy, and count in the
+    metrics of their sky class only when they have one.
     """
 
     time: Index[grid.UtcTime] = pa.Field(unique=True, check_name=True)
@@ -67,8 +68,7 @@ class Predictions(pa.DataFrameModel):
     @pa.dataframe_check
     @classmethod
     def eligible_hours_have_every_value(cls, frame: pd.DataFrame) -> "pd.Series[bool]":
-        values = frame.filter(regex="_mwh$").assign(sky_class=frame["sky_class"])
-        return ~frame["eligible"] | values.notna().all(axis="columns")
+        return ~frame["eligible"] | frame.filter(regex="_mwh$").notna().all(axis="columns")
 
     class Config:
         strict = True
@@ -123,7 +123,8 @@ def metrics(predictions: pd.DataFrame, technology: str) -> DataFrame[Metrics]:
       published series;
     - rmse_cf: root mean square of the hourly capacity factor error;
     - bias: energy of the model over the published energy, minus 1, over the year and over each
-      season and sky class that has eligible hours;
+      season and sky class that has eligible hours; hours without a sky class count in the year
+      only;
     - bias_relative_to_year: bias of a season or sky class once the model is scaled to the
       published energy of the year, (1 + bias of the group) / (1 + bias of the year) - 1.
     """
