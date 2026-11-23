@@ -19,7 +19,8 @@ import pandas as pd
 
 from eu_solar_wind_audit import calibration, folds, physics, strata
 
-FITS_DIR = Path("fits/FR")
+FITS_ROOT = Path("fits")
+FITS_DIR = FITS_ROOT / "FR"
 
 
 @dataclass(frozen=True)

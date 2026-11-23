@@ -1,5 +1,5 @@
 """The calibration never reads the reference series it is judged against (evaluation plan, "Two
-model objects"): the calibrate-france command runs end to end in a separate process, from a
+model objects"): the calibrate command runs end to end in a separate process, from a
 directory without references/, where importing the reference module fails."""
 
 import subprocess
@@ -31,7 +31,7 @@ from eu_solar_wind_audit import cli, eligibility
 
 eligibility.year_inputs = lambda client, technology, year, parameters: wind_year(year)
 cli.main(
-    ["calibrate-france", "wind_onshore", "out", "--fits-dir", "fits", "--config", sys.argv[2]]
+    ["calibrate", "FR", "wind_onshore", "out", "--fits-dir", "fits", "--config", sys.argv[2]]
 )
 assert "eu_solar_wind_audit.references" not in sys.modules
 print("isolated")

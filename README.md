@@ -142,8 +142,8 @@ anonymous cloud copies, the other sources from their public interfaces. Download
 ```sh
 uv sync
 # Model quality, leaving one year out; --fits-dir keeps the frozen fits of fits/FR unchanged.
-uv run eu-solar-wind-audit calibrate-france solar data/processed/calibration-fr --fits-dir data/processed/fits
-uv run eu-solar-wind-audit calibrate-france wind_onshore data/processed/calibration-fr --fits-dir data/processed/fits
+uv run eu-solar-wind-audit calibrate FR solar data/processed/calibration-fr --fits-dir data/processed/fits
+uv run eu-solar-wind-audit calibrate FR wind_onshore data/processed/calibration-fr --fits-dir data/processed/fits
 # Modulation, with the frozen fits and the RTE files of references/rte.
 uv run eu-solar-wind-audit estimate-modulation solar data/processed/modulation-fr
 uv run eu-solar-wind-audit estimate-modulation wind_onshore data/processed/modulation-fr
