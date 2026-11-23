@@ -10,6 +10,7 @@ from pandera.errors import SchemaError
 from eu_solar_wind_audit import grid
 from eu_solar_wind_audit.anomalies.cross_source import proportional, sum_of_parts
 from eu_solar_wind_audit.anomalies.findings import Findings
+from eu_solar_wind_audit.sources import odre
 
 SERIES = "test.DE.solar"
 PROVENANCE = "Producer, test datasets"
@@ -29,6 +30,13 @@ def hourly(energy_mwh: npt.ArrayLike, first_hour: pd.Timestamp = FIRST_HOUR) -> 
     time = pd.date_range(first_hour, periods=len(energy), freq="h", unit="ns", name="time")
     frame = pd.DataFrame({"energy_mwh": energy, "complete": ~np.isnan(energy)}, index=time)
     return grid.Hourly.validate(frame)
+
+
+def with_status(frame: pd.DataFrame, status: npt.ArrayLike) -> pd.DataFrame:
+    """`frame` as odre.Hourly gives it, with `status` in its complete hours and none in hours
+    without rows, which are incomplete."""
+    by_hour = pd.Series(status, index=frame.index).where(frame["complete"])
+    return odre.Hourly.validate(frame.assign(status=by_hour))
 
 
 def split(total_mwh: npt.ArrayLike, gaps: Mapping[int, float]) -> list[FloatArray]:
@@ -175,6 +183,35 @@ def test_findings_name_the_total_with_the_provenance_given() -> None:
     assert found["series"].tolist() == [SERIES]
     assert found["provenance"].tolist() == [PROVENANCE]
     assert found["provisional"].tolist() == [True]
+
+
+@pytest.mark.parametrize(("status", "provisional"), [("definitive", False), ("realtime", True)])
+def test_frames_with_the_status_of_each_hour_are_compared(status: str, provisional: bool) -> None:
+    total, first, second = split(np.full(HOURS, 1000.0), {10: 50.0})
+    total[20] = np.nan
+
+    found = check_parts(
+        *[with_status(hourly(energy), status) for energy in (total, first, second)],
+        provisional=provisional,
+    )
+
+    assert spans(found) == [(hour(10), hour(11))]
+    assert found["provisional"].tolist() == [provisional]
+
+
+@pytest.mark.parametrize("provisional", [False, True])
+def test_a_frame_that_mixes_real_time_and_other_hours_is_refused(provisional: bool) -> None:
+    # A national total whose last day is real-time, as odre.national_hourly gives it.
+    total, first, second = split(np.full(HOURS, 1000.0), {})
+    status = np.where(np.arange(HOURS) < 48, "consolidated", "realtime")
+
+    with pytest.raises(ValueError, match="real-time hours"):
+        check_parts(
+            with_status(hourly(total), status),
+            hourly(first),
+            hourly(second),
+            provisional=provisional,
+        )
 
 
 def test_every_part_is_added() -> None:

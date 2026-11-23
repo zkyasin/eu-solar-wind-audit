@@ -60,14 +60,17 @@ def sum_of_parts(
 
     `total` and the values of `parts` are hourly frames of `grid.Hourly` or of a model derived from
     it, such as `odre.Hourly`. `provenance` cites the producer and the datasets of the series, and
-    `provisional` tells whether their rows are real-time values. The evidence gives the number of
-    `parts`, the `hours` of the finding beyond the tolerance, the `largest_gap_mwh`, and the
-    `largest_relative_gap`, a share of the absolute total, null when a total of zero leaves it
-    unbounded.
+    `provisional` tells whether their rows are real-time values. A frame with the status of each
+    hour must agree with `provisional` in all its complete hours, so that no finding mixes
+    real-time and other hours. The evidence gives the number of `parts`, the `hours` of the
+    finding beyond the tolerance, the `largest_gap_mwh`, and the `largest_relative_gap`, a share of
+    the absolute total, null when a total of zero leaves it unbounded.
     """
-    total_mwh = _energy(total)
+    total_mwh = _energy(total, provisional)
     parts_mwh = pd.concat(
-        {name: _energy(part) for name, part in parts.items()}, axis="columns", sort=False
+        {name: _energy(part, provisional) for name, part in parts.items()},
+        axis="columns",
+        sort=False,
     )
     # NaN in every hour that some part lacks, so that the hour is not compared.
     sum_mwh = parts_mwh.reindex(total_mwh.index).sum(axis="columns", min_count=len(parts))
@@ -119,7 +122,9 @@ def proportional(
     `largest_departure`.
     """
     compared = pd.concat(
-        {"rescaled": _energy(rescaled), "original": _energy(original)}, axis="columns", sort=False
+        {"rescaled": _energy(rescaled, provisional), "original": _energy(original, provisional)},
+        axis="columns",
+        sort=False,
     ).dropna()
     compared = compared[compared["original"] >= ORIGINAL_FLOOR_MWH]
     ratio = compared["rescaled"] / compared["original"]
@@ -151,10 +156,18 @@ def proportional(
     return findings.from_records(records)
 
 
-def _energy(hourly: pd.DataFrame) -> pd.Series:
+def _energy(hourly: pd.DataFrame, provisional: bool) -> pd.Series:
     """Energy in MWh of a frame of `grid.Hourly` or of a model derived from it, checked against
-    `grid.Hourly`: NaN exactly in the incomplete hours."""
-    return grid.Hourly.validate(hourly[["energy_mwh", "complete"]])["energy_mwh"]
+    `grid.Hourly`: NaN exactly in the incomplete hours. The `status` of a frame such as
+    `odre.Hourly` must be real-time in every complete hour or in none, as `provisional` says."""
+    energy = grid.Hourly.validate(hourly[["energy_mwh", "complete"]])["energy_mwh"]
+    if "status" in hourly.columns:
+        realtime = hourly["status"].eq("realtime")[energy.notna()]
+        if realtime.ne(provisional).any():
+            raise ValueError(
+                "expected only real-time hours" if provisional else "expected no real-time hours"
+            )
+    return energy
 
 
 def _runs(beyond: pd.Series) -> list[tuple[pd.Timestamp, pd.Timestamp, pd.Series]]:
