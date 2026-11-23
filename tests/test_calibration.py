@@ -183,6 +183,36 @@ def test_each_pass_takes_its_scale_from_the_residuals_at_its_start(
     )
 
 
+def with_hourly_capacity(case: SolarCase) -> SolarCase:
+    """`case` with an AC capacity that changes from hour to hour, the energies unchanged."""
+    arrays, published_mwh, eligible = case
+    rng = np.random.default_rng(1)
+    changed = [
+        dataclasses.replace(
+            part,
+            covariates=precompute.Covariates.validate(
+                part.covariates.assign(capacity_mw=rng.uniform(50.0, 150.0, len(part.covariates)))
+            ),
+        )
+        for part in arrays
+    ]
+    return changed, published_mwh, eligible
+
+
+def test_the_cost_is_the_huber_cost_of_the_capacity_factor_errors() -> None:
+    arrays, published_mwh, eligible = with_hourly_capacity(solar_case())
+
+    fitted = calibration.fit_solar(arrays, published_mwh, eligible, PV)
+
+    values = (fitted.level, fitted.horizontal_share, fitted.seasonal_amplitude)
+    potential = pd.concat([precompute.solar_energy(part, 1.2, *values) for part in arrays])
+    capacity_mw = pd.concat([part.covariates["capacity_mw"] for part in arrays])
+    errors = ((potential - published_mwh) / capacity_mw).abs().to_numpy()
+    scale = fitted.fit.f_scale
+    huber = np.where(errors <= scale, errors**2, 2 * scale * errors - scale**2)
+    assert fitted.fit.cost == pytest.approx(huber.sum() / 2, rel=1e-12)
+
+
 def test_a_level_beyond_its_bounds_is_flagged() -> None:
     arrays, published_mwh, eligible = solar_case(truth=(0.25, 0.55, 0.04))
 
