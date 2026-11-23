@@ -224,6 +224,18 @@ def test_a_level_beyond_its_bounds_is_flagged() -> None:
     assert not fitted.seasonal_amplitude_at_bound
 
 
+def test_a_seasonal_amplitude_beyond_its_bounds_is_flagged() -> None:
+    arrays, published_mwh, eligible = solar_case(truth=(0.85, 0.55, 0.4))
+
+    fitted = calibration.fit_solar(arrays, published_mwh, eligible, PV)
+
+    upper = calibration.SOLAR_UPPER[2]
+    assert fitted.seasonal_amplitude == pytest.approx(upper, abs=calibration.AT_BOUND)
+    assert fitted.seasonal_amplitude_at_bound
+    assert not fitted.level_at_bound
+    assert not fitted.horizontal_share_at_bound
+
+
 def test_a_speed_scale_beyond_its_bounds_is_flagged() -> None:
     arrays, published_mwh, eligible = wind_case(truth=0.45)
 
