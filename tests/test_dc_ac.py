@@ -393,14 +393,16 @@ def test_the_bootstrap_draws_whole_days() -> None:
     arrays, published_mwh, sample = two_clear_days(1.3, 1.7)
     both = dc_ac.profile(arrays, published_mwh, sample, PV).minimum
 
-    found = dc_ac.bootstrap(arrays, published_mwh, sample, PV, replicates=6, seed=1)
+    found = dc_ac.bootstrap(arrays, published_mwh, sample, PV, replicates=4, seed=1)
 
     # A replicate that draws one day twice finds the ratio of that day: drawn hours would mix the
     # two days.
     assert set(found.minima.tolist()) == {1.3, 1.7, both}
     ordered = np.sort(found.minima)
-    # The 1st, 3rd and 6th smallest of 6 minima.
-    assert found.quantiles == (ordered[0], ordered[2], ordered[5])
+    # The 1st, 2nd and 4th smallest of 4 minima. The 2nd and 3rd differ, so that an interpolated
+    # median would not be a minimum.
+    assert ordered[1] != ordered[2]
+    assert found.quantiles == (ordered[0], ordered[1], ordered[3])
 
 
 def test_the_bootstrap_is_reproducible_with_its_seed() -> None:
