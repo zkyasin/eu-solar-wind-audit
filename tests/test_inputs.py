@@ -185,11 +185,12 @@ def test_france_inputs_give_each_series_its_datasets_model_and_offshore_hours(
     assert "mean_price" not in found.price_classes.columns
 
 
+@pytest.mark.parametrize("margin", [inputs.MARGIN, pd.Timedelta(0)], ids=["margin", "none"])
 def test_germany_inputs_give_smard_and_energy_charts_series_without_a_model(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, margin: pd.Timedelta
 ) -> None:
     start, end = utc("2025-06-01 00:00"), utc("2025-06-02 00:00")
-    first, last = start - inputs.MARGIN, end + inputs.MARGIN
+    first, last = start - margin, end + margin
     quarter_hours = pd.date_range(first, last, freq="15min", inclusive="left")
 
     def feed_in(request: httpx.Request) -> httpx.Response:
@@ -216,7 +217,12 @@ def test_germany_inputs_give_smard_and_energy_charts_series_without_a_model(
 
     with httpx.Client(transport=httpx.MockTransport(feed_in)) as client:
         found = inputs.germany_inputs(
-            client, start, end, smard_cache_dir=tmp_path / "smard", energy_charts_cache_dir=cache
+            client,
+            start,
+            end,
+            smard_cache_dir=tmp_path / "smard",
+            energy_charts_cache_dir=cache,
+            margin=margin,
         )
 
     smard_series = {
@@ -230,6 +236,7 @@ def test_germany_inputs_give_smard_and_energy_charts_series_without_a_model(
         for technology in energy_charts.POWER_SERIES
     }
     assert set(found.series) == smard_series | energy_charts_series
+    assert found.hours.equals(hours_of(first, last))
     assert all(item.modelled is None and item.offshore is None for item in found.series.values())
     # Capacity is published for Germany as a whole only.
     assert found.series["smard.DE.solar"].capacity_mw is not None
