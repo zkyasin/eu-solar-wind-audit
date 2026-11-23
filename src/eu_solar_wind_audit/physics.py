@@ -1,12 +1,12 @@
-"""Uncalibrated physics model of the solar and onshore wind output of mainland France, from ERA5,
-the SDES capacity per department and the PV and wind modules.
+"""Uncalibrated physics model of the solar and onshore wind output of mainland France and of its
+12 éCO2mix regions, from ERA5, the SDES capacity per department and the PV and wind modules.
 
 Output is energy in MWh for each hour [t, t + 1 h), labelled t in UTC: the sum over ERA5 cells of
 capacity factor times capacity in MW.
 """
 
 import shutil
-from collections.abc import Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Literal, NamedTuple
 
@@ -213,28 +213,92 @@ def model(
         end.tz_convert(None),
         cache_dir,
     )
-    cells, capacities, capacity_provisional = fleet_cells(
-        technology, weather, parameters, monthly, regions
-    )
+    fleet = fleet_cells(technology, weather, parameters, monthly, regions)
+    return _modelled(fleet, _capacity_factors(technology, fleet.cells, parameters))
 
-    energy = xr.zeros_like(cells["time"], dtype=float)
-    for index, capacity_mw in enumerate(capacities):
-        if technology == "solar":
-            factor = pv.capacity_factor(cells, parameters.solar)
-        else:
-            turbine = generation_parameters(parameters.wind_onshore[index])
-            factor = wind.capacity_factor(cells, turbine)
+
+def model_regions(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    monthly: pd.DataFrame,
+    regions: gpd.GeoDataFrame,
+    cache_dir: Path = ERA5_CACHE_DIR,
+) -> dict[str, DataFrame[Modelled]]:
+    """Hourly modelled output of each éCO2mix region for hours [start, end), both hour starts in
+    UTC, keyed by the codes of odre.REGIONS in its order: the output of `model` for the capacity
+    of the departments of the region. `monthly` and `regions` are as for `model`; the regions of
+    `monthly` are named as in odre.REGIONS.
+
+    The weather is read and the capacity factors of the mainland cells are computed once: regions
+    differ only in their capacity, and they add up to the output of `model`. A region without
+    capacity has zero output at every hour.
+    """
+    grid.check_period(start, end)
+    unknown = set(sdes.metropolitan_without_corsica(monthly)["region"]) - set(odre.REGIONS.values())
+    if unknown:
+        # Their capacity would be in the mainland and in no region.
+        raise ValueError(f"mainland regions not in odre.REGIONS: {sorted(unknown)}")
+    # ERA5 times are naive UTC. Loaded once, as every region selects its cells from it.
+    weather = read_weather(
+        parameters.country,
+        parameters.era5_box,
+        INPUTS[technology],
+        start.tz_convert(None),
+        end.tz_convert(None),
+        cache_dir,
+    ).load()
+    cells = fleet_cells(technology, weather, parameters, monthly, regions).cells
+    factors = list(_capacity_factors(technology, cells, parameters))
+    mainland = _cell_index(cells)
+    by_region = {}
+    for code, name in odre.REGIONS.items():
+        # Other regions keep their rows at zero capacity, so that a region needs no rows of its
+        # own to get a fleet.
+        capacity_mw = monthly["capacity_mw"].where(monthly["region"] == name, 0.0)
+        fleet = fleet_cells(
+            technology, weather, parameters, monthly.assign(capacity_mw=capacity_mw), regions
+        )
+        # A cell with capacity in the region has capacity in the mainland too.
+        positions = mainland.get_indexer(_cell_index(fleet.cells))
+        by_region[code] = _modelled(fleet, [factor.isel(cell=positions) for factor in factors])
+    return by_region
+
+
+def _cell_index(cells: xr.Dataset) -> pd.MultiIndex:
+    """Latitude and longitude of each cell of a Fleet."""
+    return pd.MultiIndex.from_arrays([cells["latitude"].to_numpy(), cells["longitude"].to_numpy()])
+
+
+def _capacity_factors(
+    technology: Technology, cells: xr.Dataset, parameters: Country
+) -> Iterator[xr.DataArray]:
+    """Capacity factor on `cells` of each part of the fleet, in the order of Fleet.capacities."""
+    # Yielded one by one, so that `model` never holds the three wind generations at once, which
+    # raises its peak memory over a year by about 70 MB.
+    if technology == "solar":
+        yield pv.capacity_factor(cells, parameters.solar)
+    else:
+        for generation in parameters.wind_onshore:
+            yield wind.capacity_factor(cells, generation_parameters(generation))
+
+
+def _modelled(fleet: Fleet, factors: Iterable[xr.DataArray]) -> DataFrame[Modelled]:
+    """Output of `fleet`, given the capacity factor of each of its parts on its cells."""
+    energy = xr.zeros_like(fleet.cells["time"], dtype=float)
+    for factor, capacity_mw in zip(factors, fleet.capacities, strict=True):
         energy = energy + (factor * capacity_mw).sum("cell", skipna=False)
-    total_capacity = sum(capacity_mw.sum("cell").to_numpy() for capacity_mw in capacities)
+    total_capacity = sum(capacity_mw.sum("cell").to_numpy() for capacity_mw in fleet.capacities)
 
-    hours = pd.DatetimeIndex(cells.indexes["time"])
+    hours = pd.DatetimeIndex(fleet.cells.indexes["time"])
     modelled = pd.DataFrame(
         {
             "energy_mwh": energy.to_numpy(),
             "complete": energy.notnull().to_numpy(),
             "capacity_mw": total_capacity,
-            "capacity_provisional": capacity_provisional,
-            "era5_source": cells["source"].to_numpy().astype(str),
+            "capacity_provisional": fleet.capacity_provisional,
+            "era5_source": fleet.cells["source"].to_numpy().astype(str),
         },
         # ERA5 times read outside the zarr cache are not always in nanoseconds.
         index=hours.tz_localize("UTC").as_unit("ns").rename("time"),
@@ -263,9 +327,41 @@ def model_france(
     grid.check_period(start, end)
     monthly = load_monthly_capacity(technology, end - grid.HOUR)
     regions = natural_earth.load_admin1("FR")
-    years = []
+    years = [
+        model(technology, first, stop, parameters, monthly, regions, cache_dir)
+        for first, stop in _calendar_years(start, end)
+    ]
+    return Modelled.validate(pd.concat(years))
+
+
+def model_france_regions(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    cache_dir: Path = ERA5_CACHE_DIR,
+) -> dict[str, DataFrame[Modelled]]:
+    """Hourly modelled output of each éCO2mix region for hours [start, end), both hour starts in
+    UTC, keyed by the codes of odre.REGIONS, computed one calendar year at a time; see
+    `model_regions` and `model_france`."""
+    grid.check_period(start, end)
+    monthly = load_monthly_capacity(technology, end - grid.HOUR)
+    regions = natural_earth.load_admin1("FR")
+    years = [
+        model_regions(technology, first, stop, parameters, monthly, regions, cache_dir)
+        for first, stop in _calendar_years(start, end)
+    ]
+    return {
+        code: Modelled.validate(pd.concat(year[code] for year in years)) for code in odre.REGIONS
+    }
+
+
+def _calendar_years(
+    start: pd.Timestamp, end: pd.Timestamp
+) -> Iterator[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Periods [first, stop) that cut the hours [start, end), both hour starts in UTC, at each new
+    year."""
     for year in range(start.year, (end - grid.HOUR).year + 1):
         first = max(start, pd.Timestamp(year, 1, 1, tz="UTC"))
         stop = min(end, pd.Timestamp(year + 1, 1, 1, tz="UTC"))
-        years.append(model(technology, first, stop, parameters, monthly, regions, cache_dir))
-    return Modelled.validate(pd.concat(years))
+        yield first, stop

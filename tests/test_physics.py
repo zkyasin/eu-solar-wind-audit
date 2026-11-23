@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,7 @@ from eu_solar_wind_audit import physics, pv, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.physics import read_weather, split_by_commissioning
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import era5, natural_earth, sdes
+from eu_solar_wind_audit.sources import era5, natural_earth, odre, sdes
 
 SDES_SOLAR = Path(__file__).parent / "fixtures" / "sdes" / "solaire-pv-2026-t2.xlsx"
 STEP = 0.25
@@ -506,10 +506,14 @@ WRONG_PERIODS = [
 ]
 
 
+@pytest.mark.parametrize(
+    "load", [physics.model_france, physics.model_france_regions], ids=["mainland", "regions"]
+)
 @pytest.mark.parametrize(("start", "end", "error"), WRONG_PERIODS)
 def test_wrong_period_is_refused_before_any_download(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    load: Callable[..., object],
     start: pd.Timestamp,
     end: pd.Timestamp,
     error: str,
@@ -520,17 +524,25 @@ def test_wrong_period_is_refused_before_any_download(
     monkeypatch.setattr(physics, "load_monthly_capacity", no_download)
 
     with pytest.raises(ValueError, match=error):
-        physics.model_france("solar", start, end, COUNTRY, cache_dir=tmp_path)
+        load("solar", start, end, COUNTRY, cache_dir=tmp_path)
 
 
+@pytest.mark.parametrize(
+    "modelled", [physics.model, physics.model_regions], ids=["mainland", "regions"]
+)
 @pytest.mark.parametrize(("start", "end", "error"), WRONG_PERIODS)
 def test_wrong_period_is_refused_before_reading_era5(
-    store: FakeStore, tmp_path: Path, start: pd.Timestamp, end: pd.Timestamp, error: str
+    store: FakeStore,
+    tmp_path: Path,
+    modelled: Callable[..., object],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    error: str,
 ) -> None:
     monthly = panel("solar", {"01": constant(1.0)})
 
     with pytest.raises(ValueError, match=error):
-        physics.model("solar", start, end, COUNTRY, monthly, REGIONS, tmp_path)
+        modelled("solar", start, end, COUNTRY, monthly, REGIONS, tmp_path)
     assert store.calls == []
 
 
@@ -545,3 +557,236 @@ def test_hours_after_the_last_final_month_end_use_provisional_capacity(
 
     # The 31 January figure holds at 1 February 00:00; later hours lean on the February figure.
     assert result["capacity_provisional"].tolist() == [False, False, False, True]
+
+
+# REGIONS with Allier ("03") and Côte-d'Or ("21"), which covers the east half of the cell of Ain
+# ("01") and the cell east of it.
+DEPARTMENTS = gpd.GeoDataFrame(
+    {"region": ["01", "02", "2A", "03", "21"]},
+    geometry=[*REGIONS.geometry, box(*cell(45.0, 2.5)), box(2.0, *cell(45.0, 2.25)[1:])],
+    crs="EPSG:4326",
+)
+# Ain and Allier are in one region, Côte-d'Or in another one that shares the cell of Ain.
+REGION_OF = {
+    "01": "Auvergne-Rhône-Alpes",
+    "02": "Hauts-de-France",
+    "03": "Auvergne-Rhône-Alpes",
+    "21": "Bourgogne-Franche-Comté",
+    "2A": "Corse",
+}
+DAY = (utc("2020-06-01"), utc("2020-06-02"))
+
+
+def regional_panel(technology: str, capacity: dict[str, dict[str, float]]) -> pd.DataFrame:
+    """`panel` with the region of each department in REGION_OF."""
+    monthly = panel(technology, capacity)
+    return monthly.assign(region=monthly["department_code"].map(REGION_OF))
+
+
+def growing(first_mw: float, monthly_mw: float) -> dict[str, float]:
+    """Capacity at the month ends of `constant`, rising by `monthly_mw` from `first_mw`."""
+    return {day: first_mw + monthly_mw * index for index, day in enumerate(constant(0.0))}
+
+
+# Departments growing at their own pace, so that the wind windows of each region differ.
+CAPACITY = {
+    "01": growing(30.0, 1.0),
+    "02": growing(20.0, 2.0),
+    "03": growing(10.0, 0.5),
+    "21": growing(40.0, 1.5),
+    "2A": constant(1000.0),
+}
+# The regions of CAPACITY: Bourgogne-Franche-Comté, Hauts-de-France, Auvergne-Rhône-Alpes.
+WITH_CAPACITY = ["27", "32", "84"]
+
+
+def factor_by_cell(weather: xr.Dataset, parameters: object) -> xr.DataArray:
+    """A capacity factor that differs between cells, hours and wind hub heights."""
+    # Each field holds its hour count since 2019.
+    factor = weather["latitude"] / 100 + weather["longitude"] / 10 + weather["u10"] % 24 / 100
+    if isinstance(parameters, wind.WindParameters):
+        (member,) = parameters.fleet
+        factor = factor * member.hub_height_m / 100
+    return factor
+
+
+@pytest.mark.parametrize("technology", ["solar", "wind_onshore"])
+def test_regions_add_up_to_the_mainland_model(
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    technology: physics.Technology,
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", factor_by_cell)
+    monkeypatch.setattr(wind, "capacity_factor", factor_by_cell)
+    monthly = regional_panel(technology, CAPACITY)
+    mainland = physics.model(technology, *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    regional = physics.model_regions(technology, *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    for column in ["energy_mwh", "capacity_mw"]:
+        total = np.sum([frame[column] for frame in regional.values()], axis=0)
+        np.testing.assert_allclose(total, mainland[column], rtol=1e-9)
+    flags = ["complete", "capacity_provisional", "era5_source"]
+    for frame in regional.values():
+        pd.testing.assert_frame_equal(frame[flags], mainland[flags])
+    producing = [code for code, frame in regional.items() if frame["energy_mwh"].gt(0).all()]
+    assert producing == WITH_CAPACITY
+
+
+@pytest.mark.parametrize("technology", ["solar", "wind_onshore"])
+def test_each_region_is_the_model_of_its_departments(
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    technology: physics.Technology,
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", factor_by_cell)
+    monkeypatch.setattr(wind, "capacity_factor", factor_by_cell)
+    monthly = regional_panel(technology, CAPACITY)
+
+    regional = physics.model_regions(technology, *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    for code in WITH_CAPACITY:
+        rows = monthly[monthly["region"] == odre.REGIONS[code]]
+        expected = physics.model(technology, *DAY, COUNTRY, rows, DEPARTMENTS, tmp_path)
+        pd.testing.assert_frame_equal(regional[code], expected, check_exact=False, rtol=1e-12)
+
+
+@pytest.mark.parametrize("technology", ["solar", "wind_onshore"])
+def test_each_region_has_the_sdes_capacity_of_its_departments(
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    technology: physics.Technology,
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monkeypatch.setattr(wind, "capacity_factor", constant_factor(0.5))
+    # On this day, the wind capacity of each department lies in two generation windows.
+    monthly = regional_panel(technology, CAPACITY)
+
+    regional = physics.model_regions(technology, *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    for code in WITH_CAPACITY:
+        expected = sdes.hourly_capacity(monthly, technology, *DAY, region=odre.REGIONS[code])
+        np.testing.assert_allclose(regional[code]["capacity_mw"], expected, rtol=1e-12)
+
+
+def test_regions_are_keyed_by_code_and_validated(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monthly = regional_panel("solar", {"01": constant(100.0), "02": constant(40.0)})
+
+    regional = physics.model_regions("solar", *DAY, COUNTRY, monthly, REGIONS, tmp_path)
+
+    assert list(regional) == list(odre.REGIONS)
+    hours = pd.date_range(*DAY, freq="h", inclusive="left", name="time")
+    for frame in regional.values():
+        physics.Modelled.validate(frame)
+        assert frame.index.equals(hours)
+    assert regional["84"]["energy_mwh"].to_numpy() == pytest.approx(50.0)
+    assert regional["32"]["energy_mwh"].to_numpy() == pytest.approx(20.0)
+
+
+def test_a_region_without_capacity_has_no_output(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", factor_by_cell)
+    # Aisne has no capacity, and only Ain and Aisne have rows.
+    monthly = regional_panel("solar", {"01": constant(100.0), "02": constant(0.0)})
+
+    regional = physics.model_regions("solar", *DAY, COUNTRY, monthly, REGIONS, tmp_path)
+
+    for code, frame in regional.items():
+        if code != "84":
+            assert frame["energy_mwh"].eq(0).all(), code
+            assert frame["capacity_mw"].eq(0).all(), code
+            assert frame["complete"].all(), code
+    assert regional["84"]["energy_mwh"].gt(0).all()
+
+
+def test_a_missing_value_leaves_the_regions_of_its_cell_incomplete(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def factor(weather: xr.Dataset, parameters: PVParameters) -> xr.DataArray:
+        # NaN at the first hour in the cell that Ain and Côte-d'Or share.
+        values = xr.full_like(weather["ssrd"], 0.5, dtype=float)
+        shared = (values["latitude"] == 45.0) & (values["longitude"] == 2.0)
+        return values.where((values["time"] > values["time"][0]) | ~shared)
+
+    monkeypatch.setattr(pv, "capacity_factor", factor)
+    monthly = regional_panel("solar", CAPACITY)
+    mainland = physics.model("solar", *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    regional = physics.model_regions("solar", *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    assert not mainland["complete"].iloc[0]
+    incomplete = [code for code, frame in regional.items() if not frame["complete"].iloc[0]]
+    assert incomplete == ["27", "84"]
+    assert all(frame["complete"].iloc[1:].all() for frame in regional.values())
+
+
+@pytest.mark.parametrize(("technology", "parts"), [("solar", 1), ("wind_onshore", 3)])
+def test_weather_and_capacity_factors_are_computed_once_for_all_regions(
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    technology: physics.Technology,
+    parts: int,
+) -> None:
+    computed: list[object] = []
+
+    def factor(weather: xr.Dataset, parameters: object) -> xr.DataArray:
+        computed.append(parameters)
+        return factor_by_cell(weather, parameters)
+
+    monkeypatch.setattr(pv, "capacity_factor", factor)
+    monkeypatch.setattr(wind, "capacity_factor", factor)
+    # No year is final, so that every read of the weather reaches the store.
+    monkeypatch.setattr(physics, "era5_final_until", lambda today: pd.Timestamp("2019-01-01"))
+    monthly = regional_panel(technology, CAPACITY)
+
+    physics.model_regions(technology, *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    assert store.calls == [(DAY[0].tz_localize(None), DAY[1].tz_localize(None))]
+    assert len(computed) == parts
+
+
+def test_regions_unknown_to_eco2mix_are_refused_before_reading_era5(
+    store: FakeStore, tmp_path: Path
+) -> None:
+    monthly = panel("solar", {"01": constant(100.0)})
+
+    with pytest.raises(ValueError, match=r"not in odre.REGIONS: \['region'\]"):
+        physics.model_regions("solar", *DAY, COUNTRY, monthly, REGIONS, tmp_path)
+    assert store.calls == []
+
+
+def test_model_france_regions_runs_one_calendar_year_at_a_time(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monthly = regional_panel("solar", {"01": constant(100.0), "02": constant(40.0)})
+    monkeypatch.setattr(physics, "load_monthly_capacity", lambda technology, until: monthly)
+    monkeypatch.setattr(natural_earth, "load_admin1", lambda country: REGIONS)
+    periods: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    model_regions = physics.model_regions
+
+    def spy(
+        technology: physics.Technology, start: pd.Timestamp, end: pd.Timestamp, *args: Any
+    ) -> Mapping[str, pd.DataFrame]:
+        periods.append((start, end))
+        return model_regions(technology, start, end, *args)
+
+    monkeypatch.setattr(physics, "model_regions", spy)
+    start, end = utc("2019-12-31 22:00"), utc("2020-01-01 02:00")
+
+    regional = physics.model_france_regions("solar", start, end, COUNTRY, cache_dir=tmp_path)
+
+    assert periods == [(start, utc("2020-01-01")), (utc("2020-01-01"), end)]
+    assert list(regional) == list(odre.REGIONS)
+    expected = pd.date_range(start, end, freq="h", inclusive="left", name="time")
+    assert all(frame.index.equals(expected) for frame in regional.values())
+    assert regional["84"]["energy_mwh"].to_numpy() == pytest.approx(50.0)
+    assert regional["32"]["energy_mwh"].to_numpy() == pytest.approx(20.0)
