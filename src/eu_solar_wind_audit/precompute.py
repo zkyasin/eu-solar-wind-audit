@@ -44,7 +44,7 @@ class Covariates(pa.DataFrameModel):
     start and whether it uses provisional capacity months, the ERA5 release, the apparent sun
     elevation and the global and clear-sky horizontal irradiance in W m-2 seen by the fleet at
     mid-hour, the air temperature at 2 m in degC over the hour, and the days.day_types of its
-    local day."""
+    local day in the country of the fleet."""
 
     time: Index[grid.UtcTime] = pa.Field(unique=True, check_name=True)
     complete: Series[bool]
@@ -161,6 +161,7 @@ def solar(
         horizontal_mwh=energy[:, -1],
         shares=np.array([system.share for system in params.fleet]),
         covariates=_covariates(
+            parameters.country,
             fleet,
             complete,
             elevation,
@@ -314,6 +315,7 @@ def wind_onshore(
         capacity_mw=histograms,
         generations=parameters.wind_onshore,
         covariates=_covariates(
+            parameters.country,
             fleet,
             complete,
             sun["apparent_elevation"].to_numpy(),
@@ -355,6 +357,7 @@ def _capacity_centroid(
 
 
 def _covariates(
+    country: str,
     fleet: physics.Fleet,
     complete: BoolArray,
     sun_elevation_deg: FloatArray,
@@ -374,7 +377,7 @@ def _covariates(
             "ghi_w_m2": ghi_w_m2,
             "clear_sky_ghi_w_m2": clear_sky_ghi_w_m2,
             "air_temperature_c": air_temperature_c,
-            "day_type": days.day_types(hours).to_numpy(),
+            "day_type": days.day_types(hours, country).to_numpy(),
         },
         index=hours.rename("time"),
     )
