@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -523,14 +523,22 @@ def test_wrong_period_is_refused_before_any_download(
         physics.model_france("solar", start, end, COUNTRY, cache_dir=tmp_path)
 
 
+@pytest.mark.parametrize(
+    "modelled", [physics.model, physics.model_regions], ids=["mainland", "regions"]
+)
 @pytest.mark.parametrize(("start", "end", "error"), WRONG_PERIODS)
 def test_wrong_period_is_refused_before_reading_era5(
-    store: FakeStore, tmp_path: Path, start: pd.Timestamp, end: pd.Timestamp, error: str
+    store: FakeStore,
+    tmp_path: Path,
+    modelled: Callable[..., object],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    error: str,
 ) -> None:
     monthly = panel("solar", {"01": constant(1.0)})
 
     with pytest.raises(ValueError, match=error):
-        physics.model("solar", start, end, COUNTRY, monthly, REGIONS, tmp_path)
+        modelled("solar", start, end, COUNTRY, monthly, REGIONS, tmp_path)
     assert store.calls == []
 
 
@@ -694,3 +702,39 @@ def test_a_missing_value_leaves_the_regions_of_its_cell_incomplete(
     incomplete = [code for code, frame in regional.items() if not frame["complete"].iloc[0]]
     assert incomplete == ["27", "84"]
     assert all(frame["complete"].iloc[1:].all() for frame in regional.values())
+
+
+@pytest.mark.parametrize(("technology", "parts"), [("solar", 1), ("wind_onshore", 3)])
+def test_weather_and_capacity_factors_are_computed_once_for_all_regions(
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    technology: physics.Technology,
+    parts: int,
+) -> None:
+    computed: list[object] = []
+
+    def factor(weather: xr.Dataset, parameters: object) -> xr.DataArray:
+        computed.append(parameters)
+        return factor_by_cell(weather, parameters)
+
+    monkeypatch.setattr(pv, "capacity_factor", factor)
+    monkeypatch.setattr(wind, "capacity_factor", factor)
+    # No year is final, so that every read of the weather reaches the store.
+    monkeypatch.setattr(physics, "era5_final_until", lambda today: pd.Timestamp("2019-01-01"))
+    monthly = regional_panel(technology, CAPACITY)
+
+    physics.model_regions(technology, *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    assert store.calls == [(DAY[0].tz_localize(None), DAY[1].tz_localize(None))]
+    assert len(computed) == parts
+
+
+def test_regions_unknown_to_eco2mix_are_refused_before_reading_era5(
+    store: FakeStore, tmp_path: Path
+) -> None:
+    monthly = panel("solar", {"01": constant(100.0)})
+
+    with pytest.raises(ValueError, match=r"not in odre.REGIONS: \['region'\]"):
+        physics.model_regions("solar", *DAY, COUNTRY, monthly, REGIONS, tmp_path)
+    assert store.calls == []
