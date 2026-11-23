@@ -28,21 +28,22 @@ from eu_solar_wind_audit import grid
 from eu_solar_wind_audit.anomalies import findings
 from eu_solar_wind_audit.anomalies.findings import Findings
 
-# A gap counts beyond 10 MWh and beyond 1 % of the total. 10 MWh is above the rounding of the
-# published values in an hour: 13 x 0.5 MWh for éCO2mix, whose national and 12 regional values
-# are whole MW over half-hours, and 5 x 0.5 MWh for SMARD, whose quarter-hours of Germany and its
-# four control areas came in steps of 0.25 MWh over 2019-2022.
+# A gap counts beyond 10 MWh and beyond 1 % of the total (detector design; the plan sets no
+# tolerance). 10 MWh is above the rounding of the published values in an hour: 13 x 0.5 MWh for
+# éCO2mix, whose national and 12 regional values are whole MW over half-hours, and 5 x 0.5 MWh for
+# SMARD, whose quarter-hours of Germany and its four control areas came in steps of 0.25 MWh over
+# 2019-2022.
 GAP_FLOOR_MWH = 10.0
 GAP_SHARE = 0.01
 
 # A departure counts beyond 1 % of the factor of the month, on the hours with at least 50 MWh in
-# the original series, where the rounding of the SMARD quarter-hours (up to 0.5 MWh in an hour
-# over 2019-2022) stays within 1 % of the hour.
+# the original series (detector design), where the rounding of the SMARD quarter-hours (up to
+# 0.5 MWh in an hour over 2019-2022) stays within 1 % of the hour.
 ORIGINAL_FLOOR_MWH = 50.0
 DEPARTURE_SHARE = 0.01
 
-# Runs less than a day apart are one finding, so that a gap over the daylight hours of
-# consecutive days is reported once.
+# Runs less than a day apart are one finding (detector design), so that a gap over the daylight
+# hours of consecutive days is reported once.
 MERGE_GAP = pd.Timedelta(days=1)
 
 
