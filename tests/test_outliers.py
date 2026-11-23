@@ -127,6 +127,12 @@ def test_hours_out_of_order_give_the_same_findings() -> None:
     pd.testing.assert_frame_equal(negatives(published.iloc[::-1]), negatives(published))
 
 
+def test_hours_with_status_out_of_order_give_the_same_findings() -> None:
+    published = with_status(hourly([-1.0, 2.0, -2.0, -1.0]), "2022-06-01 02:00")
+
+    pd.testing.assert_frame_equal(negatives(published.iloc[::-1]), negatives(published))
+
+
 def test_no_negative_value_gives_an_empty_valid_frame() -> None:
     found = negatives(hourly([1.0, 2.0]))
 
@@ -352,6 +358,10 @@ def test_zeros_are_frozen_when_the_model_lacks_some_of_their_hours() -> None:
 
     assert evidence(found) == [{"hours": 24, "value_mwh": 0.0}]
     assert evidence(shorter) == [{"hours": 25, "value_mwh": 0.0}]
+
+
+def test_a_model_out_of_order_judges_zeros_the_same() -> None:
+    assert frozen(hourly([0.0] * 24), "wind", calm(0.0).iloc[::-1]).empty
 
 
 @pytest.mark.parametrize("technology", ["solar", "wind"])
