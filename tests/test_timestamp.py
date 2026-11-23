@@ -101,15 +101,21 @@ def test_the_residual_takes_off_the_bias_of_the_model() -> None:
 
 @pytest.mark.parametrize(
     ("hours_left_out", "usable_share", "valid"),
-    # Hours from 06:00 hold 9.1, 19.5 and 33.7 % of the bell.
-    [(3, 0.909, True), (4, 0.805, True), (5, 0.663, False)],
+    # The 3, 4 and 5 hours from 06:00 hold 9.1, 19.5 and 33.7 % of the bell, and the hours from
+    # 16:00 to 18:00 hold 2.8 %.
+    [
+        (range(6, 9), 0.909, True),
+        (range(6, 10), 0.805, True),
+        ([*range(6, 10), 16, 17], 0.776, False),
+        (range(6, 11), 0.663, False),
+    ],
 )
 def test_a_day_is_valid_from_80_percent_of_its_modelled_energy_in_usable_hours(
-    hours_left_out: int, usable_share: float, valid: bool
+    hours_left_out: Sequence[int], usable_share: float, valid: bool
 ) -> None:
     published = clear_days([0.0, 0.0])
-    morning = on_day(published, "2022-06-02", range(6, 6 + hours_left_out))
-    published.loc[morning, ["energy_mwh", "complete"]] = [np.nan, False]
+    left_out = on_day(published, "2022-06-02", hours_left_out)
+    published.loc[left_out, ["energy_mwh", "complete"]] = [np.nan, False]
 
     table = centroids(published)
 
