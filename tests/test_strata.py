@@ -493,3 +493,58 @@ def test_levels_and_composition_count_each_hour_in_its_utc_year() -> None:
         (2019, "sunday_or_holiday", 1),
         (2020, "sunday_or_holiday", 1),
     ]
+
+
+def test_weights_count_hours_and_days_as_a_sample_that_repeats_them() -> None:
+    training = two_strata()
+    # The two Paris days of the first stratum twice and once, the second stratum's day three times.
+    weights = pd.Series([2, 1, 1, 3, 3, 0], index=training.eligible.index)
+
+    ratios = strata.fit_ratios(*training, weights=weights)
+
+    first = row(ratios, "30-40", 10, "working_day")
+    assert (first["training_hours"], first["distinct_days"]) == (4, 3)
+    assert first["raw_ratio"] == pytest.approx(1.5)
+    second = row(ratios, "10-20", 10, "working_day")
+    assert (second["training_hours"], second["distinct_days"]) == (6, 3)
+    assert ratios.pooled_ratio == pytest.approx((4 * 30 + 6 * 10) / (10 * 20))
+
+
+def test_an_hour_of_weight_zero_is_left_out_of_the_ratios() -> None:
+    training = two_strata()
+    first_day = pd.Series([0, 0, 0, 1, 1, 1], index=training.eligible.index)
+
+    weighted = strata.fit_ratios(*training, weights=first_day)
+    without = strata.fit_ratios(
+        *training._replace(eligible=training.eligible & first_day.astype(bool))
+    )
+
+    assert weighted.pooled_ratio == pytest.approx(without.pooled_ratio)
+    pd.testing.assert_frame_equal(weighted.table, without.table)
+
+
+def test_decile_edges_count_each_hour_by_its_weight() -> None:
+    hours = utc_hours("2021-03-01 00:00", 10)
+    potential_mwh = pd.Series(np.arange(10.0, 110.0, 10.0), index=hours)
+    eligible = pd.Series(True, index=hours)
+    weights = pd.Series([1] * 9 + [91], index=hours)
+
+    ratios = strata.fit_ratios(
+        potential_mwh, potential_mwh, covariates(hours), eligible, weights=weights
+    )
+
+    factor = np.repeat(potential_mwh.to_numpy() / CAPACITY_MW, weights)
+    assert ratios.decile_edges == pytest.approx(np.quantile(factor, strata.DECILE_LEVELS))
+
+
+def test_annual_levels_count_each_hour_by_its_weight() -> None:
+    hours = utc_stamps(["2019-03-01 10:00", "2019-07-01 10:00", "2020-05-01 10:00"])
+    published_mwh = pd.Series([10.0, 60.0, 30.0], index=hours)
+    potential_mwh = pd.Series([20.0, 40.0, 20.0], index=hours)
+    eligible = pd.Series(True, index=hours)
+
+    levels = strata.annual_levels(
+        published_mwh, potential_mwh, eligible, weights=pd.Series([3, 1, 0], index=hours)
+    )
+
+    np.testing.assert_allclose(levels, [(3 * 10 + 60) / (3 * 20 + 40), np.nan])
