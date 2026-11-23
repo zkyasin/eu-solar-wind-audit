@@ -208,6 +208,18 @@ def test_hourly_capacity_is_linear_in_time_between_local_month_ends() -> None:
     assert capacity.to_numpy() == pytest.approx(1_000.0 + np.arange(673.0))
 
 
+def test_hourly_capacity_does_not_depend_on_the_order_of_the_panel(
+    german_payload: dict[str, Any],
+) -> None:
+    panel = energy_charts.parse_installed_power(german_payload)
+    start, end = utc("2024-12-31 23:00"), utc("2025-12-31 23:00")
+
+    pd.testing.assert_series_equal(
+        energy_charts.hourly_capacity(panel.iloc[::-1], "solar", start, end),
+        energy_charts.hourly_capacity(panel, "solar", start, end),
+    )
+
+
 @pytest.mark.parametrize(
     ("start", "end"),
     [("2025-01-31 22:00", "2025-01-31 23:00"), ("2025-02-28 23:00", "2025-03-01 01:00")],
