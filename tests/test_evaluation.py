@@ -209,6 +209,19 @@ def test_climatology_of_each_fold_is_a_model_of_the_predictions() -> None:
     assert frame["climatology_mwh"].tolist() == pytest.approx([20.0, 25.0, 30.0, 20.0, 40.0, 60.0])
 
 
+def test_climatology_never_learns_from_the_prospective_year() -> None:
+    hours = observed(
+        ["2019-07-01 12:00", "2020-07-01 12:00", "2026-07-01 12:00"],
+        published_mwh=[50.0, 70.0, 90.0],
+        capacity_mw=[100.0] * 3,
+        eligible=[True] * 3,
+    )
+
+    # 2026 stays out of the 2019 fold, and the 2026 test learns from 2019 and 2020.
+    assert climatology(hours, 2019).tolist() == pytest.approx([70.0])
+    assert climatology(hours, 2026).tolist() == pytest.approx([60.0])
+
+
 @pytest.mark.parametrize("tz", [None, "Europe/Paris"])
 def test_climatology_needs_hours_in_utc(tz: str | None) -> None:
     hours = observed(["2019-01-01 10:00"], [1.0], [10.0], [True]).tz_convert(tz)

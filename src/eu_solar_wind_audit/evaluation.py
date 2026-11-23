@@ -23,6 +23,8 @@ SKY_CLASSES = ["clear", "mixed", "overcast"]
 # Every energy column other than the published one holds the prediction of a model.
 MODEL_COLUMNS = r"^(?!published_mwh$).+_mwh$"
 METRICS = ["correlation", "rmse_cf", "bias", "bias_relative_to_year"]
+# Models and baselines learn from these years only; 2026 is a prospective test (evaluation plan).
+TRAINING_YEARS = range(2019, 2026)
 # The 2019-2022 folds are the years the model forms were chosen on, so their errors are optimistic;
 # the minimal detectable effect uses the 2023-2025 folds (evaluation plan, Deviations).
 PERIODS = {"2019-2022": range(2019, 2023), "2023-2025": range(2023, 2026)}
@@ -74,8 +76,8 @@ class Predictions(pa.DataFrameModel):
 
 def climatology(hours: pd.DataFrame, held_out_year: int) -> pd.Series:
     """Monthly-hourly climatology of the hours of `held_out_year`, in MWh: the mean capacity factor
-    of the eligible hours of the other years in `hours` with the same calendar month and UTC hour,
-    times the capacity of the hour. NaN where no eligible hour of another year has that month and
+    of the eligible hours of the other years of `TRAINING_YEARS` in `hours` with the same calendar
+    month and UTC hour, times the capacity of the hour. NaN where no such hour has that month and
     hour.
 
     `hours` has a UTC time index and the columns `published_mwh`, `capacity_mw` and `eligible` of
@@ -84,7 +86,9 @@ def climatology(hours: pd.DataFrame, held_out_year: int) -> pd.Series:
     time = hours.index
     if not isinstance(time, pd.DatetimeIndex) or str(time.tz) != "UTC":
         raise ValueError("expected a DatetimeIndex in UTC")
-    training = (time.year != held_out_year) & hours["eligible"].to_numpy()
+    training = (
+        time.year.isin(TRAINING_YEARS) & (time.year != held_out_year) & hours["eligible"].to_numpy()
+    )
     held_out = time.year == held_out_year
     factor = hours["published_mwh"] / hours["capacity_mw"]
     mean_factor = factor[training].groupby([time.month[training], time.hour[training]]).mean()
