@@ -3,7 +3,7 @@ item 2, and Deviations): the published output over the potential is estimated in
 hours, then over each year.
 
 The stratum of an hour is the band of its sun elevation, the decile of the capacity factor of the
-potential and the type of its Europe/Paris day (days.day_types). The elevation is the
+potential and the type of its local day (the `day_type` covariate). The elevation is the
 `sun_elevation_deg` covariate of precompute: capacity-weighted for solar, at the capacity centroid
 of the fleet for onshore wind. The decile edges are the 10 % to 90 % quantiles of the capacity
 factor over the eligible hours of the training years; hours below or above them go to the first
@@ -148,7 +148,7 @@ def classify_hours(
                 np.take(ELEVATION_BANDS, band), index=hours, dtype="str"
             ).where(~np.isnan(elevation)),
             "decile": pd.Series(decile, index=hours, dtype="Int64").where(~np.isnan(factor)),
-            "day_type": days.day_types(hours),
+            "day_type": covariates["day_type"],
         }
     )
     return HourStrata.validate(strata)

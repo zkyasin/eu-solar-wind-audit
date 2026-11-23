@@ -12,7 +12,7 @@ import xarray as xr
 from pandera.errors import SchemaError
 from shapely.geometry import box
 
-from eu_solar_wind_audit import eligibility, physics, precompute, regimes
+from eu_solar_wind_audit import days, eligibility, physics, precompute, regimes
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.pv import PVParameters, System
 from eu_solar_wind_audit.sources import era5, natural_earth, odre, smard
@@ -53,6 +53,7 @@ def inputs(hours: pd.DatetimeIndex) -> Inputs:
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 600.0,
             "air_temperature_c": 20.0,
+            "day_type": days.day_types(hours).to_numpy(),
         },
         index=hours,
     )

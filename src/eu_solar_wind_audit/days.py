@@ -10,7 +10,7 @@ import pandas as pd
 from pandas.tseries.holiday import AbstractHolidayCalendar, EasterMonday, Holiday
 from pandas.tseries.offsets import Day, Easter
 
-from eu_solar_wind_audit import grid, precompute
+from eu_solar_wind_audit import grid
 
 TIMEZONE = "Europe/Paris"
 
@@ -60,7 +60,6 @@ def clear_sky_index(covariates: pd.DataFrame) -> "pd.Series[float]":
     precompute.Covariates frame: the global over the clear-sky irradiance, each summed over the
     hours of the day. NaN for a day without clear-sky irradiance or with a missing value. Indexed
     by the day, as a naive date."""
-    precompute.Covariates.validate(covariates)
     irradiance = covariates[["ghi_w_m2", "clear_sky_ghi_w_m2"]]
     by_day = irradiance.groupby(local_days(pd.DatetimeIndex(covariates.index)).rename("day"))
     sums = by_day.sum(skipna=False)

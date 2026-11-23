@@ -10,7 +10,7 @@ import pytest
 import xarray as xr
 from shapely.geometry import box
 
-from eu_solar_wind_audit import physics, precompute, pv, wind
+from eu_solar_wind_audit import days, physics, precompute, pv, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.precompute import FloatArray
 from eu_solar_wind_audit.pv import PVParameters, System
@@ -260,6 +260,7 @@ def solar_arrays(hours: pd.DatetimeIndex) -> precompute.SolarArrays:
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 700.0,
             "air_temperature_c": 20.0,
+            "day_type": days.day_types(hours).to_numpy(),
         },
         index=hours.as_unit("ns").rename("time"),
     )

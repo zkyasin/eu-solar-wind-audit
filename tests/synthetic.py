@@ -46,6 +46,7 @@ def covariates(
             "ghi_w_m2": rng.uniform(40.0, 110.0, day.max() + 1)[day],
             "clear_sky_ghi_w_m2": 100.0,
             "air_temperature_c": 20.0,
+            "day_type": days.day_types(hours).to_numpy(),
         },
         index=hours,
     )
