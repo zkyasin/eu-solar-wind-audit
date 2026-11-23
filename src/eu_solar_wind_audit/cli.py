@@ -16,9 +16,11 @@ from eu_solar_wind_audit import (
     bootstrap,
     calibrate,
     dc_ac,
+    detectability,
     eligibility,
     evaluation,
     fits,
+    folds,
     modulation,
     physics,
 )
@@ -210,9 +212,10 @@ def estimate_modulation(
 ) -> list[Path]:
     """Estimate the modulation of `technology` over every year of evaluation.TRAINING_YEARS with
     the frozen `fit`, its 90 % interval from `replicates` bootstrap replicates (none with 0), and,
-    for solar, the interval with the DC/AC ratios of the sensitivity; compare the estimate with
-    the RTE volumes of `reference_dir`, and write the tables and a JSON summary to `output`. Gives
-    the paths written."""
+    for solar, the interval with the DC/AC ratios of the sensitivity; give the minimal detectable
+    effect of each year from the leave-one-year-out folds; compare the estimate with the RTE
+    volumes of `reference_dir` and, with an interval, give the verdict. Write the tables and a
+    JSON summary to `output`. Gives the paths written."""
     # The reference series are imported here only, so that calibrate-france never loads them.
     from eu_solar_wind_audit import comparison, references
 
@@ -223,6 +226,12 @@ def estimate_modulation(
         ]
     hours = modulation.negative_hours(years, fit)
     months = modulation.months(hours)
+    report = (
+        folds.solar(years, parameters.solar) if technology == "solar" else folds.wind_onshore(years)
+    )
+    covariates = pd.concat([inputs.arrays.covariates for inputs in years])
+    errors = detectability.daily_errors(report.predictions, covariates, technology)
+    mde_gwh = detectability.minimal_detectable_effects(errors, hours)
     references.verify_manifest(reference_dir)
     found = comparison.compare(months, references.load_rte_modulation(reference_dir), technology)
 
@@ -233,6 +242,7 @@ def estimate_modulation(
         "rte-months": found.months,
         "rte-years": found.years,
     }
+    outcome = None
     if replicates > 0:
         estimate = months["modulation_gwh"]
         by_year = estimate.groupby(estimate.index.str[:4]).sum()
@@ -248,6 +258,9 @@ def estimate_modulation(
             tables[f"modulation-{name}"] = interval
             if name == "intervals":
                 tables["modulation-replicates"] = replicated
+        judged = comparison.verdict(found, tables["modulation-intervals"], mde_gwh)
+        tables["verdict-years"] = judged.years
+        outcome = judged.verdict
     written = []
     for name, table in tables.items():
         path = output / f"{technology}-{name}.parquet"
@@ -267,6 +280,10 @@ def estimate_modulation(
             "mean_block_days": bootstrap.MEAN_BLOCK_DAYS,
             "percentiles": list(bootstrap.PERCENTILES),
         },
+        "daily_error_sd": _finite(float(errors.std())),
+        "error_days": len(errors),
+        "mde_gwh": {year: _finite(float(value)) for year, value in mde_gwh.items()},
+        "verdict": outcome,
     }
     path = output / f"{technology}-modulation.json"
     path.write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8")

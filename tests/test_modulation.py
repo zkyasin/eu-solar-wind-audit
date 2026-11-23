@@ -158,11 +158,16 @@ def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
         "solar-modulation-replicates.parquet",
         "solar-modulation-intervals.parquet",
         "solar-modulation-intervals-dc-ac-sensitivity.parquet",
+        "solar-verdict-years.parquet",
         "solar-modulation.json",
     }
     summary = json.loads((tmp_path / "out" / "solar-modulation.json").read_text())
     assert set(summary["tests"]) == {"annual_ratio", "monthly_detail", "monthly_rates"}
     assert summary["bootstrap"]["replicates"] == 3
+    # Every fifth hour makes no whole day, so no day has a sky class: no hour measures the
+    # detectable effect, and no year is conclusive.
+    assert summary["mde_gwh"] == {str(year): None for year in range(2019, 2026)}
+    assert summary["verdict"] == "inconclusive"
     intervals = pd.read_parquet(tmp_path / "out" / "solar-modulation-intervals.parquet")
     assert intervals.columns.tolist() == ["low_gwh", "high_gwh", "estimate_gwh"]
     assert {"2019", "2020", "2021"} <= set(intervals.index)
