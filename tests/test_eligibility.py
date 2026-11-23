@@ -257,6 +257,17 @@ def test_a_quarter_hour_without_a_price_makes_its_hour_missing(tmp_path: Path) -
     assert classes["regime"].tolist() == expected
 
 
+def test_prices_that_smard_does_not_publish_are_missing(tmp_path: Path) -> None:
+    # Nothing is published for the hour before the period or for its last hour.
+    prices = pd.Series(50.0, index=quarter_hours("2022-03-01 00:00", "2022-03-01 05:00"))
+
+    classes = classes_from(prices, tmp_path, [])
+
+    assert classes.index.equals(utc_hours("2022-03-01 00:00", periods=6))
+    expected = ["buffer", "reference", "reference", "reference", "buffer", "missing"]
+    assert classes["regime"].tolist() == expected
+
+
 # Four ERA5 cells of 0.25 degree, all in department "01".
 BOX = era5.Box(west=2.0, south=45.0, east=2.25, north=45.25)
 REGIONS = gpd.GeoDataFrame(
