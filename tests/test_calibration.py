@@ -10,14 +10,21 @@ from scipy.optimize import OptimizeResult, least_squares
 from scipy.stats import norm
 
 from eu_solar_wind_audit import calibration, precompute
+from eu_solar_wind_audit.config import WindGeneration
 from eu_solar_wind_audit.precompute import FloatArray
 from eu_solar_wind_audit.pv import PVParameters, System
 
 CAPACITY_MW = 100.0
 PV = PVParameters(fleet=(System(35.0, 180.0, 0.25), System(15.0, 110.0, 0.75)), dc_ac_ratio=1.2)
 SOLAR_TRUTH = (0.85, 0.55, 0.04)
+GENERATIONS = (
+    WindGeneration("VestasV82_1.65MW_82", 80.0, 2012),
+    WindGeneration("IEA_Reference_3.4MW_130", 100.0),
+)
+WIND_TRUTH = 0.88
 
 SolarCase = tuple[list[precompute.SolarArrays], pd.Series, pd.Series]
+WindCase = tuple[list[precompute.WindArrays], pd.Series, pd.Series]
 
 
 def covariates(year: int) -> DataFrame[precompute.Covariates]:
@@ -51,6 +58,21 @@ def solar_year(year: int, rng: np.random.Generator) -> precompute.SolarArrays:
     )
 
 
+def wind_year(year: int, rng: np.random.Generator) -> precompute.WindArrays:
+    """Each generation holds 50 MW, spread over 20 cells whose hub-height speeds scatter around
+    a mean speed of the hour."""
+    hours = covariates(year)
+    cells = 20
+    mean_speed = rng.uniform(2.0, 14.0, len(hours))
+    capacity_mw = np.zeros((len(GENERATIONS), len(hours), precompute.SPEED_CENTRES.size))
+    for generation in capacity_mw:
+        speeds = mean_speed[:, np.newaxis] * rng.lognormal(0.0, 0.25, (len(hours), cells))
+        bins = np.digitize(np.minimum(speeds, 39.0), precompute.SPEED_EDGES) - 1
+        rows = np.repeat(np.arange(len(hours)), cells)
+        np.add.at(generation, (rows, bins.ravel()), CAPACITY_MW / len(GENERATIONS) / cells)
+    return precompute.WindArrays(capacity_mw=capacity_mw, generations=GENERATIONS, covariates=hours)
+
+
 def with_errors(potential: pd.Series, rng: np.random.Generator) -> pd.Series:
     """`potential` with a noise of 0.01 in capacity factor, and ten times its value, a decimal
     shift, on one hour in a hundred."""
@@ -63,6 +85,13 @@ def solar_case(truth: tuple[float, float, float] = SOLAR_TRUTH) -> SolarCase:
     rng = np.random.default_rng(2019)
     arrays = [solar_year(year, rng) for year in (2019, 2020)]
     potential = pd.concat([precompute.solar_energy(part, 1.2, *truth) for part in arrays])
+    return arrays, with_errors(potential, rng), pd.Series(True, index=potential.index)
+
+
+def wind_case(truth: float = WIND_TRUTH) -> WindCase:
+    rng = np.random.default_rng(2020)
+    arrays = [wind_year(year, rng) for year in (2019, 2020)]
+    potential = pd.concat([precompute.wind_energy(part, truth) for part in arrays])
     return arrays, with_errors(potential, rng), pd.Series(True, index=potential.index)
 
 
@@ -82,6 +111,18 @@ def test_solar_parameters_are_recovered_despite_gross_errors() -> None:
     assert fitted.fit.f_scale == pytest.approx(1.345 * 0.01, rel=0.05)
     assert fitted.fit.status > 0
     assert fitted.fit.eligible_hours == len(published_mwh)
+    assert fitted.fit.training_years == (2019, 2020)
+
+
+def test_wind_speed_scale_is_recovered_despite_gross_errors() -> None:
+    arrays, published_mwh, eligible = wind_case()
+
+    fitted = calibration.fit_wind(arrays, published_mwh, eligible)
+
+    assert fitted.speed_scale == pytest.approx(WIND_TRUTH, abs=0.005)
+    assert not fitted.speed_scale_at_bound
+    assert fitted.fit.f_scale == pytest.approx(1.345 * 0.01, rel=0.05)
+    assert fitted.fit.status > 0
     assert fitted.fit.training_years == (2019, 2020)
 
 
@@ -153,9 +194,19 @@ def test_a_level_beyond_its_bounds_is_flagged() -> None:
     assert not fitted.seasonal_amplitude_at_bound
 
 
+def test_a_speed_scale_beyond_its_bounds_is_flagged() -> None:
+    arrays, published_mwh, eligible = wind_case(truth=0.45)
+
+    fitted = calibration.fit_wind(arrays, published_mwh, eligible)
+
+    assert fitted.speed_scale == pytest.approx(calibration.WIND_LOWER[0], abs=calibration.AT_BOUND)
+    assert fitted.speed_scale_at_bound
+
+
 def test_hours_of_2026_are_never_fitted() -> None:
     rng = np.random.default_rng(0)
     solar = [solar_year(2025, rng), solar_year(2026, rng)]
+    wind = [wind_year(2025, rng), wind_year(2026, rng)]
     hours = pd.DatetimeIndex(pd.concat([part.covariates for part in solar]).index)
     published_mwh = pd.Series(10.0, index=hours)
     # Refused even when none of them is eligible.
@@ -164,12 +215,16 @@ def test_hours_of_2026_are_never_fitted() -> None:
 
     with pytest.raises(ValueError, match=error):
         calibration.fit_solar(solar, published_mwh, eligible, PV)
+    with pytest.raises(ValueError, match=error):
+        calibration.fit_wind(wind, published_mwh, eligible)
 
 
 def test_fits_are_deterministic() -> None:
     solar = solar_case()
+    wind = wind_case()
 
     assert calibration.fit_solar(*solar, PV) == calibration.fit_solar(*solar, PV)
+    assert calibration.fit_wind(*wind) == calibration.fit_wind(*wind)
 
 
 def only_2020_eligible(case: SolarCase) -> SolarCase:

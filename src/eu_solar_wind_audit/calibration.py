@@ -1,6 +1,6 @@
 """Calibrated potential of the evaluation plan ("Two model objects", item 2): the parameters of the
-solar potential of `precompute`, fitted to the published output of the eligible hours with a Huber
-loss.
+solar and onshore wind potential of `precompute`, fitted to the published output of the eligible
+hours with a Huber loss.
 
 For parameters x, the residual of an eligible hour t is
 
@@ -29,8 +29,9 @@ The calibration is x2, with the scale c1 and the cost F(x2; c1). The constant 1.
 Huber estimator 95 % efficiency when the errors are normal (Huber 1981, Robust Statistics).
 
 Solar: x = (level, horizontal share, seasonal amplitude) of precompute.solar_energy, at the
-configured DC/AC ratio. Fits refuse any hour outside evaluation.TRAINING_YEARS: 2026 is a
-prospective test.
+configured DC/AC ratio. Onshore wind: x = (speed scale) of precompute.wind_energy, without speed
+offset and with the default smoothing. Fits refuse any hour outside evaluation.TRAINING_YEARS: 2026
+is a prospective test.
 """
 
 from collections.abc import Callable, Sequence
@@ -61,6 +62,11 @@ SOLAR_START = (1.0, 0.0, 0.0)
 SOLAR_LOWER = (0.3, 0.0, -0.3)
 SOLAR_UPPER = (1.5, 1.0, 0.3)
 SOLAR_X_SCALE = (1.0, 1.0, 1.0)
+# Speed scale, from the nominal model.
+WIND_START = (1.0,)
+WIND_LOWER = (0.5,)
+WIND_UPPER = (1.5,)
+WIND_X_SCALE = (1.0,)
 
 
 @dataclass(frozen=True)
@@ -92,6 +98,15 @@ class SolarCalibration:
     seasonal_amplitude_at_bound: bool
     dc_ac_ratio: float
     effective_gain: float
+    fit: HuberFit
+
+
+@dataclass(frozen=True)
+class WindCalibration:
+    """Speed scale of precompute.wind_energy, flagged when it lies within AT_BOUND of a bound."""
+
+    speed_scale: float
+    speed_scale_at_bound: bool
     fit: HuberFit
 
 
@@ -149,6 +164,35 @@ def fit_solar(
         effective_gain=level * parameters.dc_ac_ratio * (1 - parameters.dc_losses),
         fit=fit,
     )
+
+
+def fit_wind(
+    arrays: Sequence[precompute.WindArrays], published_mwh: pd.Series, eligible: pd.Series
+) -> WindCalibration:
+    """Onshore wind calibration on the eligible hours of `arrays`, which cover consecutive periods
+    such as the UTC years that precompute.wind_onshore gives. `published_mwh` and the boolean
+    `eligible` are indexed on the hours of the arrays, in the same order.
+
+    Raises ValueError as `fit_solar` does.
+    """
+
+    def potential(x: FloatArray) -> FloatArray:
+        (speed_scale,) = x
+        return np.concatenate(
+            [precompute.wind_energy(part, speed_scale).to_numpy() for part in arrays]
+        )
+
+    (speed_scale,), (at_bound,), fit = _huber_fit(
+        potential,
+        [part.covariates for part in arrays],
+        published_mwh,
+        eligible,
+        WIND_START,
+        WIND_LOWER,
+        WIND_UPPER,
+        WIND_X_SCALE,
+    )
+    return WindCalibration(speed_scale=speed_scale, speed_scale_at_bound=at_bound, fit=fit)
 
 
 def _huber_fit(
