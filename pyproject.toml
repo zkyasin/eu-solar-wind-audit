@@ -66,6 +66,8 @@ addopts = ["-ra", "--strict-markers", "--strict-config"]
 filterwarnings = [
     # pvlib 0.16.1 reads DatetimeIndex.dayofyear, which pandas 3.1 deprecates.
     "ignore:DatetimeIndex.dayofyear is deprecated:pandas.errors.Pandas4Warning:pvlib",
+    # regionmask 0.13 composes affine transforms with `*`, which affine deprecates for `@`.
+    "ignore:Use `@` matmul:PendingDeprecationWarning:regionmask",
 ]
 
 [tool.commitizen]
