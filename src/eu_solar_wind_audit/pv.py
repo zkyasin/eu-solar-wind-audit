@@ -1,4 +1,4 @@
-"""AC capacity factor of a PV fleet from hourly ERA5 fields, with pvlib.
+"""AC capacity factor of a PV fleet from hourly ERA5 fields, and clear-sky irradiance, with pvlib.
 
 Defaults come from the PVWatts V5 manual (A. P. Dobos, NREL/TP-6A20-62641, 2014), cited by section.
 """
@@ -78,6 +78,35 @@ def split_irradiance(ghi: Array, direct_horizontal: Array, zenith: Array) -> tup
     return np.where(rejected, 0.0, dni), np.where(rejected, ghi, dhi)
 
 
+def clear_sky_ghi(
+    times: pd.DatetimeIndex,
+    latitude: Array,
+    longitude: Array,
+    apparent_zenith: Array,
+    dni_extra: Array,
+) -> Array:
+    """Clear-sky global horizontal irradiance in W m-2, shape (time, cell), from the Ineichen and
+    Perez (2002) model with the monthly Linke turbidity climatology of pvlib (Remund et al. 2003)
+    and the altitude of each cell.
+
+    `apparent_zenith` (degrees, shape (time, cell)) and `dni_extra` (W m-2) are those already
+    computed for `times`, so that the sun position is not computed again.
+    """
+    cells = list(zip(latitude, longitude, strict=True))
+    altitude = np.array([pvlib.location.lookup_altitude(lat, lon) for lat, lon in cells])
+    linke = np.column_stack(
+        [pvlib.clearsky.lookup_linke_turbidity(times, lat, lon).to_numpy() for lat, lon in cells]
+    )
+    airmass = pvlib.atmosphere.get_absolute_airmass(
+        pvlib.atmosphere.get_relative_airmass(apparent_zenith), pvlib.atmosphere.alt2pres(altitude)
+    )
+    # The direct part divides by the cosine of the zenith, which is zero at night.
+    with np.errstate(divide="ignore"):
+        sky = pvlib.clearsky.ineichen(apparent_zenith, airmass, linke, altitude, dni_extra)
+    ghi: Array = sky["ghi"]
+    return ghi
+
+
 def plane_of_array(
     system: System,
     apparent_zenith: Array,
@@ -122,16 +151,32 @@ def plane_of_array(
     return poa
 
 
+def dc_per_unit(poa: Array, temp_air: Array, wind_speed: Array, gamma_pdc: float) -> Array:
+    """DC output per unit of DC capacity before system losses, with temperatures in degC and wind
+    speed in m/s."""
+    temp_cell = pvlib.temperature.faiman(poa, temp_air, wind_speed)
+    dc: Array = pvlib.pvsystem.pvwatts_dc(poa, temp_cell, 1.0, gamma_pdc)
+    return dc
+
+
+def ac_from_dc(dc: Array, dc_ac_ratio: float, dc_losses: float) -> Array:
+    """AC output per unit of AC capacity from the DC output per unit of DC capacity of
+    `dc_per_unit`."""
+    # An inverter DC rating of 1 / efficiency gives an AC nameplate of 1, where pvwatts clips.
+    ac: Array = pvlib.inverter.pvwatts(
+        dc * dc_ac_ratio * (1 - dc_losses),
+        1 / INVERTER_EFFICIENCY,
+        eta_inv_nom=INVERTER_EFFICIENCY,
+    )
+    return ac
+
+
 def ac_capacity_factor(
     poa: Array, temp_air: Array, wind_speed: Array, params: PVParameters
 ) -> Array:
     """AC output per unit of AC capacity, with temperatures in degC and wind speed in m/s."""
-    temp_cell = pvlib.temperature.faiman(poa, temp_air, wind_speed)
-    dc = pvlib.pvsystem.pvwatts_dc(poa, temp_cell, params.dc_ac_ratio, params.gamma_pdc)
-    dc = dc * (1 - params.dc_losses)
-    # An inverter DC rating of 1 / efficiency gives an AC nameplate of 1, where pvwatts clips.
-    ac: Array = pvlib.inverter.pvwatts(dc, 1 / INVERTER_EFFICIENCY, eta_inv_nom=INVERTER_EFFICIENCY)
-    return ac
+    dc = dc_per_unit(poa, temp_air, wind_speed, params.gamma_pdc)
+    return ac_from_dc(dc, params.dc_ac_ratio, params.dc_losses)
 
 
 def fleet_capacity_factor(

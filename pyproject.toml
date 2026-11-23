@@ -63,6 +63,10 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra", "--strict-markers", "--strict-config"]
+filterwarnings = [
+    # pvlib 0.16.1 reads DatetimeIndex.dayofyear, which pandas 3.1 deprecates.
+    "ignore:DatetimeIndex.dayofyear is deprecated:pandas.errors.Pandas4Warning:pvlib",
+]
 
 [tool.commitizen]
 name = "cz_conventional_commits"
