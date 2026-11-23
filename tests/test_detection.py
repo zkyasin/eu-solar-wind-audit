@@ -336,6 +336,23 @@ def test_germany_gets_the_rules_and_the_cross_source_checks() -> None:
     }
 
 
+def test_values_above_capacity_are_checked_where_the_capacity_is_positive() -> None:
+    found = germany()
+    total = found.series["smard.DE.solar"]
+    # No capacity before 10 January, then 2,000 MW, which sunny noons exceed (up to 2,800 MWh).
+    capacity_mw = pd.Series(2000.0, index=HOURS)
+    capacity_mw.loc[: utc("2019-01-09 23:00")] = 0.0
+    series = found.series | {"smard.DE.solar": dataclasses.replace(total, capacity_mw=capacity_mw)}
+
+    findings = detection.detect(
+        dataclasses.replace(found, series=series), None, START, END
+    ).findings
+
+    above = findings[findings["kind"] == "above_capacity"]
+    assert not above.empty
+    assert (above["start"] >= utc("2019-01-10")).all()
+
+
 def test_the_command_reads_france_from_the_first_day_and_writes_the_run(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -6,7 +6,9 @@ Rule-based detectors run on every series: completeness on the raw rows of each d
 values, values above capacity and frozen values on each part of a series; the national totals
 against the sum of their regions or control areas, and Energy-Charts public power against SMARD.
 An offshore wind series with an offshore mask is checked on the hours it flags only, since éCO2mix
-publishes zeros for the regions and the months without offshore farms.
+publishes zeros for the regions and the months without offshore farms. Values above capacity are
+checked where the capacity is positive: the SDES capacity of a region grows from zero over the
+quarter of its first farm.
 
 Statistical detectors run on the series with a model, which only France has: timestamp shifts and
 clock-change jumps of the solar series that the thresholds make eligible, residual outliers, and
@@ -211,8 +213,12 @@ def _rule_based(found: DetectionInputs) -> Iterator[pd.DataFrame]:
                 continue
             yield outliers.negative_values(hourly, series=series, provenance=part.provenance)
             if item.capacity_mw is not None:
+                with_capacity = (item.capacity_mw.reindex(hourly.index) > 0).to_numpy()
                 yield outliers.above_capacity(
-                    hourly, item.capacity_mw, series=series, provenance=part.provenance
+                    hourly[with_capacity],
+                    item.capacity_mw,
+                    series=series,
+                    provenance=part.provenance,
                 )
             yield outliers.frozen_values(
                 hourly,
