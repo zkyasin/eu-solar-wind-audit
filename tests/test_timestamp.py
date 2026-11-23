@@ -291,7 +291,7 @@ def test_a_series_off_from_its_first_day_is_claimed() -> None:
 
 @pytest.mark.parametrize("sign", [1, -1])
 def test_a_half_hour_shift_is_never_claimed_as_an_hour(sign: int) -> None:
-    # Two days average 47 minutes, but the median of the first seven is 33 minutes.
+    # Two days average 47 minutes, but the median of the seven days from them is 33 minutes.
     offsets = [sign * offset for offset in [31, 33, 35, 32, 32, 50, 44, 31, 33, 36, 31, 31, 34]]
     published = clear_days(episode(offsets))
 
@@ -301,6 +301,24 @@ def test_a_half_hour_shift_is_never_claimed_as_an_hour(sign: int) -> None:
     # The offset stays visible in the centroid table.
     residual = centroids(published)["residual_minutes"]
     np.testing.assert_allclose(residual.iloc[10:23], offsets, atol=1e-9)
+
+
+@pytest.mark.parametrize("sign", [1, -1])
+def test_a_shift_is_sized_from_its_deciding_days(sign: int) -> None:
+    # A week off by about 35 minutes, then a shift of one hour: the median of the week alone is
+    # 35 minutes.
+    offsets = [sign * offset for offset in [35, 36, 34, 35, 36, 34, 35, *[60] * 10]]
+
+    found = claims(clear_days(episode(offsets)))
+
+    assert spans(found) == [(utc("2022-06-11"), utc("2022-06-28"), sign)]
+    assert evidence(found)[0] == {
+        "shift_hours": sign,
+        "median_residual_minutes": pytest.approx(sign * 60.0),
+        "deciding_days": ["2022-06-17", "2022-06-18"],
+        "deciding_mean_minutes": pytest.approx(sign * 47.5),
+        "days_off": 17,
+    }
 
 
 @pytest.mark.parametrize(
