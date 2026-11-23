@@ -1,6 +1,7 @@
 default_stages: [pre-commit]
-# Test fixtures and reference files are raw exports and must stay byte-identical.
-exclude: ^(tests/fixtures|references)/
+# Test fixtures and reference files are raw exports, and the figures are drawn by draw-figures:
+# they must stay byte-identical.
+exclude: ^(tests/fixtures|references|docs/figures)/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
