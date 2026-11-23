@@ -42,6 +42,7 @@ def covariates(year: int) -> DataFrame[precompute.Covariates]:
             "sun_elevation_deg": 30.0,
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 700.0,
+            "air_temperature_c": 20.0,
         },
         index=hours.rename("time"),
     )
@@ -55,6 +56,7 @@ def solar_year(year: int, rng: np.random.Generator) -> precompute.SolarArrays:
         horizontal_mwh=rng.uniform(0.0, 80.0, (len(hours), precompute.DC_AC_GRID.size)),
         shares=np.array([system.share for system in PV.fleet]),
         covariates=hours,
+        centroid=(46.0, 2.0),
     )
 
 
@@ -208,6 +210,28 @@ def test_a_pass_that_does_not_converge_raises(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(RuntimeError, match="did not converge"):
         calibration.fit_solar(*solar_case(), PV)
+
+
+def test_one_pass_with_the_final_scale_reaches_the_fit() -> None:
+    arrays, published_mwh, eligible = solar_case()
+    fitted = calibration.fit_solar(arrays, published_mwh, eligible, PV)
+
+    def residuals(x: FloatArray) -> FloatArray:
+        potential = pd.concat([precompute.solar_energy(part, 1.2, *x) for part in arrays])
+        return (potential - published_mwh).to_numpy() / CAPACITY_MW
+
+    result = calibration.huber_pass(
+        residuals,
+        np.array(calibration.SOLAR_START),
+        fitted.fit.f_scale,
+        calibration.SOLAR_LOWER,
+        calibration.SOLAR_UPPER,
+        calibration.SOLAR_X_SCALE,
+    )
+
+    estimates = [fitted.level, fitted.horizontal_share, fitted.seasonal_amplitude]
+    assert result.x == pytest.approx(estimates, abs=1e-7)
+    assert result.cost == pytest.approx(fitted.fit.cost, rel=1e-10)
 
 
 def with_hourly_capacity(case: SolarCase) -> SolarCase:

@@ -215,15 +215,37 @@ def test_solar_covariates_are_capacity_weighted_means_at_mid_hour(
     weights = capacity.transpose("time", "cell").to_numpy()
     elevation, clear = sky_of_cells(cells, mid_hours(start, end))
     ghi = cells["ssrd"].transpose("time", "cell").to_numpy()
+    temp_air = cells["t2m"].transpose("time", "cell").to_numpy().astype(float) - pv.KELVIN
 
     for column, values in [
         ("sun_elevation_deg", elevation),
         ("ghi_w_m2", ghi),
         ("clear_sky_ghi_w_m2", clear),
+        ("air_temperature_c", temp_air),
     ]:
         expected = np.average(values, axis=1, weights=weights)
         np.testing.assert_allclose(covariates[column], expected, rtol=1e-12, atol=1e-12)
     assert covariates["clear_sky_ghi_w_m2"].max() > 500
+
+
+def test_the_solar_centroid_weights_the_cells_by_their_capacity(
+    store: WeatherStore, tmp_path: Path
+) -> None:
+    start, end = utc("2020-06-01"), utc("2020-06-03")
+
+    centroid = precompute.solar(start, end, COUNTRY, SOLAR_PANEL, REGIONS, tmp_path).centroid
+
+    weather = physics.read_weather(
+        "FR", BOX, physics.INPUTS["solar"], start.tz_localize(None), end.tz_localize(None), tmp_path
+    )
+    cells, (capacity,), _ = physics.fleet_cells("solar", weather, COUNTRY, SOLAR_PANEL, REGIONS)
+    per_cell = capacity.sum("time").to_numpy()
+    expected = [np.average(cells[name], weights=per_cell) for name in ("latitude", "longitude")]
+    assert centroid == pytest.approx(expected, rel=1e-12)
+    # "02", with most of the capacity on its two cells, pulls the centroid north and east of the
+    # plain mean of the three cells, 45.25 N and 2.17 E.
+    assert centroid[0] > 45.25
+    assert centroid[1] > 2.17
 
 
 def solar_arrays(hours: pd.DatetimeIndex) -> precompute.SolarArrays:
@@ -237,6 +259,7 @@ def solar_arrays(hours: pd.DatetimeIndex) -> precompute.SolarArrays:
             "sun_elevation_deg": 30.0,
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 700.0,
+            "air_temperature_c": 20.0,
         },
         index=hours.as_unit("ns").rename("time"),
     )
@@ -245,6 +268,7 @@ def solar_arrays(hours: pd.DatetimeIndex) -> precompute.SolarArrays:
         horizontal_mwh=rng.uniform(0.0, 100.0, (hours.size, precompute.DC_AC_GRID.size)),
         shares=np.array([0.25, 0.75]),
         covariates=precompute.Covariates.validate(covariates),
+        centroid=(46.0, 2.0),
     )
 
 
@@ -381,11 +405,16 @@ def test_wind_covariates_refer_to_the_wind_fleet(store: WeatherStore, tmp_path: 
     centroid = pvlib.solarposition.get_solarposition(times, latitude, longitude)
     _, clear = sky_of_cells(cells, times)
     ghi = cells["ssrd"].transpose("time", "cell").to_numpy()
+    temp_air = cells["t2m"].transpose("time", "cell").to_numpy().astype(float) - pv.KELVIN
 
     np.testing.assert_allclose(
         covariates["sun_elevation_deg"], centroid["apparent_elevation"], rtol=1e-12, atol=1e-12
     )
-    for column, values in [("ghi_w_m2", ghi), ("clear_sky_ghi_w_m2", clear)]:
+    for column, values in [
+        ("ghi_w_m2", ghi),
+        ("clear_sky_ghi_w_m2", clear),
+        ("air_temperature_c", temp_air),
+    ]:
         expected = np.average(values, axis=1, weights=weights)
         np.testing.assert_allclose(covariates[column], expected, rtol=1e-12, atol=1e-12)
     # The plain mean latitude of the three cells is 45.25, and the first window alone puts the

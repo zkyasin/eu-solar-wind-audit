@@ -41,7 +41,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import least_squares
+from scipy.optimize import OptimizeResult, least_squares
 from scipy.stats import median_abs_deviation
 
 from eu_solar_wind_audit import precompute
@@ -223,21 +223,7 @@ def _huber_fit(
     # start.
     for _ in range(2):
         f_scale = HUBER_TUNING * median_abs_deviation(residuals(x), scale="normal")
-        result = least_squares(
-            residuals,
-            x,
-            jac="2-point",
-            bounds=(lower, upper),
-            method="trf",
-            ftol=FTOL,
-            xtol=XTOL,
-            gtol=GTOL,
-            x_scale=np.array(x_scale),
-            loss="huber",
-            f_scale=f_scale,
-        )
-        if not result.success:
-            raise RuntimeError(f"the Huber fit did not converge: {result.message}")
+        result = huber_pass(residuals, x, f_scale, lower, upper, x_scale)
         x = result.x
 
     at_bound = (x - np.array(lower) <= AT_BOUND) | (np.array(upper) - x <= AT_BOUND)
@@ -252,6 +238,35 @@ def _huber_fit(
         training_years=tuple(int(year) for year in np.unique(years)),
     )
     return x.tolist(), at_bound.tolist(), fit
+
+
+def huber_pass(
+    residuals: Callable[[FloatArray], FloatArray],
+    start: FloatArray,
+    f_scale: float,
+    lower: tuple[float, ...],
+    upper: tuple[float, ...],
+    x_scale: tuple[float, ...],
+) -> OptimizeResult:
+    """One pass of the estimator of the module docstring: x minimising F(x; `f_scale`) for
+    `residuals`, from `start`, between `lower` and `upper`. Raises RuntimeError unless the pass
+    ends on a convergence test of least_squares."""
+    result = least_squares(
+        residuals,
+        start,
+        jac="2-point",
+        bounds=(lower, upper),
+        method="trf",
+        ftol=FTOL,
+        xtol=XTOL,
+        gtol=GTOL,
+        x_scale=np.array(x_scale),
+        loss="huber",
+        f_scale=f_scale,
+    )
+    if not result.success:
+        raise RuntimeError(f"the Huber fit did not converge: {result.message}")
+    return result
 
 
 def _training_hours(

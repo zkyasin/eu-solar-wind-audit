@@ -36,6 +36,7 @@ def covariates(
             "sun_elevation_deg": sun_elevation_deg,
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 700.0,
+            "air_temperature_c": 20.0,
         },
         index=hours,
     )

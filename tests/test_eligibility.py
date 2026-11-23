@@ -52,6 +52,7 @@ def inputs(hours: pd.DatetimeIndex) -> Inputs:
             "sun_elevation_deg": 30.0,
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 600.0,
+            "air_temperature_c": 20.0,
         },
         index=hours,
     )
