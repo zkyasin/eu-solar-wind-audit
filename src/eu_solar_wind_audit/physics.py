@@ -6,7 +6,7 @@ capacity factor times capacity in MW.
 """
 
 import shutil
-from collections.abc import Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Literal, NamedTuple
 
@@ -213,28 +213,38 @@ def model(
         end.tz_convert(None),
         cache_dir,
     )
-    cells, capacities, capacity_provisional = fleet_cells(
-        technology, weather, parameters, monthly, regions
-    )
+    fleet = fleet_cells(technology, weather, parameters, monthly, regions)
+    return _modelled(fleet, _capacity_factors(technology, fleet.cells, parameters))
 
-    energy = xr.zeros_like(cells["time"], dtype=float)
-    for index, capacity_mw in enumerate(capacities):
-        if technology == "solar":
-            factor = pv.capacity_factor(cells, parameters.solar)
-        else:
-            turbine = generation_parameters(parameters.wind_onshore[index])
-            factor = wind.capacity_factor(cells, turbine)
+
+def _capacity_factors(
+    technology: Technology, cells: xr.Dataset, parameters: Country
+) -> Iterator[xr.DataArray]:
+    """Capacity factor on `cells` of each part of the fleet, in the order of Fleet.capacities."""
+    # Yielded one by one, so that `model` never holds the three wind generations at once, which
+    # raises its peak memory over a year by about 70 MB.
+    if technology == "solar":
+        yield pv.capacity_factor(cells, parameters.solar)
+    else:
+        for generation in parameters.wind_onshore:
+            yield wind.capacity_factor(cells, generation_parameters(generation))
+
+
+def _modelled(fleet: Fleet, factors: Iterable[xr.DataArray]) -> DataFrame[Modelled]:
+    """Output of `fleet`, given the capacity factor of each of its parts on its cells."""
+    energy = xr.zeros_like(fleet.cells["time"], dtype=float)
+    for factor, capacity_mw in zip(factors, fleet.capacities, strict=True):
         energy = energy + (factor * capacity_mw).sum("cell", skipna=False)
-    total_capacity = sum(capacity_mw.sum("cell").to_numpy() for capacity_mw in capacities)
+    total_capacity = sum(capacity_mw.sum("cell").to_numpy() for capacity_mw in fleet.capacities)
 
-    hours = pd.DatetimeIndex(cells.indexes["time"])
+    hours = pd.DatetimeIndex(fleet.cells.indexes["time"])
     modelled = pd.DataFrame(
         {
             "energy_mwh": energy.to_numpy(),
             "complete": energy.notnull().to_numpy(),
             "capacity_mw": total_capacity,
-            "capacity_provisional": capacity_provisional,
-            "era5_source": cells["source"].to_numpy().astype(str),
+            "capacity_provisional": fleet.capacity_provisional,
+            "era5_source": fleet.cells["source"].to_numpy().astype(str),
         },
         # ERA5 times read outside the zarr cache are not always in nanoseconds.
         index=hours.tz_localize("UTC").as_unit("ns").rename("time"),
