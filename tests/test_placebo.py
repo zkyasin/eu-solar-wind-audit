@@ -94,9 +94,12 @@ def test_hours_priced_outside_the_placebo_range_are_never_chosen(fit: fits.Fit) 
     years = [priced(solar_year(year), 50.0) for year in YEARS]
 
     found = placebo.match(years, fit, consumption(years))
+    report = placebo.evaluate(years, "solar", PV, fit, consumption(years), count=5)
 
     assert not found.targets.any()
     assert (found.counts["matched"] == 0).all()
+    assert report.years.empty
+    assert report.years.columns.tolist() == placebo.REPORT_COLUMNS
 
 
 def test_an_injected_modulation_moves_the_estimate_by_its_volume(
@@ -120,3 +123,18 @@ def test_an_injected_modulation_moves_the_estimate_by_its_volume(
     month = pd.DatetimeIndex(injected.index).tz_convert("Europe/Paris").strftime("%Y-%m")
     volume = injected.groupby(month).sum() / 1000
     assert (after - before).to_numpy() == pytest.approx(volume.to_numpy())
+
+
+def test_the_report_shows_the_injection_moves_the_estimate_by_its_volume(
+    years: list[eligibility.YearInputs], fit: fits.Fit
+) -> None:
+    report = placebo.evaluate(years, "solar", PV, fit, consumption(years), count=5)
+
+    table = report.years
+    assert table.index.tolist() == [str(year) for year in YEARS]
+    for column in ("gwh", "low_gwh", "high_gwh"):
+        shift = table[f"injected_{column}"] - table[f"placebo_{column}"]
+        assert shift.to_numpy() == pytest.approx(table["volume_gwh"].to_numpy())
+    covers_zero = (table["placebo_low_gwh"] <= 0) & (table["placebo_high_gwh"] >= 0)
+    assert table["injection_covered"].tolist() == covers_zero.tolist()
+    assert report.pairs.size == table["matched"].sum()
