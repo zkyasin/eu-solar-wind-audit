@@ -318,6 +318,44 @@ def test_the_annual_level_is_a_ratio_of_sums_over_the_eligible_hours() -> None:
     assert levels.index.name == "year"
 
 
+def test_each_week_takes_the_level_of_the_other_weeks_of_its_year() -> None:
+    hours = utc_stamps(
+        [
+            # 2020 is a leap year: its last week holds 30 and 31 December.
+            "2020-12-29 23:00",
+            "2020-12-30 00:00",
+            "2020-12-31 23:00",
+            # The first week of 2021 ends on 8 January at 00:00 UTC, so it holds the hour before,
+            # already 8 January in Paris. The last week holds 31 December alone.
+            "2021-01-01 12:00",
+            "2021-01-07 23:00",
+            "2021-01-08 00:00",
+            "2021-01-08 01:00",
+            "2021-12-30 12:00",
+            "2021-12-31 12:00",
+            "2022-03-01 10:00",
+        ]
+    )
+    published_mwh = pd.Series(
+        [5.0, 20.0, 10.0, 10.0, 6.0, 30.0, 1000.0, 8.0, 40.0, 10.0], index=hours
+    )
+    potential_mwh = pd.Series(
+        [10.0, 10.0, 10.0, 20.0, 4.0, 20.0, 1.0, 10.0, 40.0, 10.0], index=hours
+    )
+    eligible = pd.Series(True, index=hours)
+    eligible.iloc[6] = False
+
+    levels = strata.cross_fitted_levels(published_mwh, potential_mwh, eligible)
+
+    # Published and potential energy of the eligible hours of each week: in 2020, 5 and 10, then 30
+    # and 20; in 2021, 16 and 24, 30 and 20, 8 and 10, then 40 and 40, out of 94 and 94. 2022 has
+    # no other week with eligible hours.
+    in_2020 = [30 / 20, 5 / 10, 5 / 10]
+    in_2021 = [78 / 70, 78 / 70, 64 / 74, 64 / 74, 86 / 84, 54 / 54]
+    np.testing.assert_allclose(levels, [*in_2020, *in_2021, np.nan])
+    assert levels.index.equals(hours)
+
+
 def levels_off_the_hours(given: Training) -> Training:
     return given._replace(potential_mwh=given.potential_mwh.iloc[1:])
 
@@ -347,3 +385,5 @@ def test_level_inputs_are_checked(change: Callable[[Training], Training], error:
 
     with pytest.raises(ValueError, match=error):
         strata.annual_levels(given.published_mwh, given.potential_mwh, given.eligible)
+    with pytest.raises(ValueError, match=error):
+        strata.cross_fitted_levels(given.published_mwh, given.potential_mwh, given.eligible)

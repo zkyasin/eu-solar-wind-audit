@@ -20,7 +20,8 @@ without such hours takes the pooled ratio. The potential with strata is the pote
 shrunk ratio of the stratum of each hour.
 
 The annual level of a UTC year is the published energy over the potential with strata, both summed
-over the eligible hours of the year.
+over the eligible hours of the year. Cross-fitted within the year, the hours of a week take the
+level of the other weeks of their year.
 """
 
 from collections.abc import Sequence
@@ -47,6 +48,8 @@ STRATA = pd.MultiIndex.from_product([ELEVATION_BANDS, DECILES, days.DAY_TYPES], 
 # Weight n / (n + SHRINKAGE_DAYS) of the raw ratio of a stratum, n counting its distinct days:
 # the hours of a day are not independent (evaluation plan, Deviations).
 SHRINKAGE_DAYS = 7
+# Weeks of the cross-fitted level: blocks of 7 days from 1 January 00:00 UTC.
+WEEK_DAYS = 7
 
 
 class HourStrata(pa.DataFrameModel):
@@ -207,6 +210,26 @@ def annual_levels(
     sums = _eligible_sums(published_mwh, potential_mwh, eligible)
     by_year = sums.groupby(pd.DatetimeIndex(sums.index).year.rename("year")).sum()
     return (by_year["published_mwh"] / by_year["potential_mwh"]).rename("annual_level")
+
+
+def cross_fitted_levels(
+    published_mwh: pd.Series, potential_mwh: pd.Series, eligible: pd.Series
+) -> "pd.Series[float]":
+    """Annual level of each hour of `eligible` cross-fitted within its UTC year: the level of
+    `annual_levels` over the eligible hours of the other weeks of the year. Weeks are blocks of 7
+    days from 1 January 00:00 UTC; the last block of a year has 1 or 2 days. NaN where the other
+    weeks have no eligible hours.
+
+    Raises ValueError as `annual_levels` does.
+    """
+    sums = _eligible_sums(published_mwh, potential_mwh, eligible)
+    hours = pd.DatetimeIndex(sums.index)
+    weeks = [hours.year, (hours.day_of_year - 1) // WEEK_DAYS]
+    by_week = sums.groupby(weeks).sum()
+    other_weeks = by_week.groupby(level=0).transform("sum") - by_week
+    level = other_weeks["published_mwh"] / other_weeks["potential_mwh"]
+    by_hour = level.reindex(pd.MultiIndex.from_arrays(weeks)).to_numpy()
+    return pd.Series(by_hour, index=hours, name="level")
 
 
 def _eligible_sums(
