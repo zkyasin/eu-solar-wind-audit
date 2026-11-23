@@ -1,7 +1,11 @@
+from collections.abc import Callable
+from typing import NamedTuple
+
 import numpy as np
 import pandas as pd
 import pytest
 from numpy.typing import ArrayLike
+from pandera.errors import SchemaError
 from pandera.typing import DataFrame
 
 from eu_solar_wind_audit import days, precompute, strata
@@ -13,6 +17,10 @@ EDGES = tuple(np.arange(1, 10) / 10)
 
 def utc_hours(start: str, periods: int) -> pd.DatetimeIndex:
     return pd.date_range(start, periods=periods, freq="h", tz="UTC", unit="ns", name="time")
+
+
+def utc_stamps(stamps: list[str]) -> pd.DatetimeIndex:
+    return pd.DatetimeIndex(stamps, tz="UTC", name="time").as_unit("ns")
 
 
 def covariates(
@@ -112,3 +120,176 @@ def test_the_potential_must_be_on_the_hours_of_the_covariates() -> None:
 
     with pytest.raises(ValueError, match="not on the hours of the covariates"):
         strata.classify_hours(pd.Series(50.0, index=hours[1:]), covariates(hours), EDGES)
+
+
+class Training(NamedTuple):
+    published_mwh: pd.Series
+    potential_mwh: pd.Series
+    covariates: pd.DataFrame
+    eligible: pd.Series
+
+
+def two_strata() -> Training:
+    """Eligible hours of two strata on working days, all with a potential of 20 MWh, so in the
+    last decile: three hours at 35 degrees with a raw ratio of 1.5, on one UTC day but two days in
+    Paris, and two hours at 15 degrees with a raw ratio of 0.5, on one day. The last hour is not
+    eligible."""
+    hours = utc_stamps(
+        [
+            # 23:00 on Wednesday 15 June 2022 in Paris, then 00:00 and 01:00 on the Thursday.
+            "2022-06-15 21:00",
+            "2022-06-15 22:00",
+            "2022-06-15 23:00",
+            "2022-06-20 10:00",
+            "2022-06-20 11:00",
+            "2022-06-20 12:00",
+        ]
+    )
+    return Training(
+        published_mwh=pd.Series([30.0, 30.0, 30.0, 10.0, 10.0, 500.0], index=hours),
+        potential_mwh=pd.Series([20.0, 20.0, 20.0, 20.0, 20.0, 90.0], index=hours),
+        covariates=covariates(hours, [35.0, 35.0, 35.0, 15.0, 15.0, 35.0]),
+        eligible=pd.Series([True] * 5 + [False], index=hours),
+    )
+
+
+# Pooled ratio of `two_strata`: (90 + 20) / (60 + 40).
+POOLED = 1.1
+
+
+def row(ratios: strata.StratumRatios, band: str, decile: int, day_type: str) -> pd.Series:
+    table = ratios.table
+    (index,) = np.flatnonzero(
+        (table["elevation_band"] == band)
+        & (table["decile"] == decile)
+        & (table["day_type"] == day_type)
+    )
+    return table.iloc[index]
+
+
+def test_raw_ratios_are_shrunk_by_the_distinct_days_in_paris() -> None:
+    ratios = strata.fit_ratios(*two_strata())
+
+    assert ratios.pooled_ratio == pytest.approx(POOLED)
+    two_days = row(ratios, "30-40", 10, "working_day")
+    assert (two_days["training_hours"], two_days["distinct_days"]) == (3, 2)
+    assert two_days["raw_ratio"] == pytest.approx(1.5)
+    assert two_days["shrunk_ratio"] == pytest.approx(2 / 9 * 1.5 + 7 / 9 * POOLED)
+    one_day = row(ratios, "10-20", 10, "working_day")
+    assert (one_day["training_hours"], one_day["distinct_days"]) == (2, 1)
+    assert one_day["raw_ratio"] == pytest.approx(0.5)
+    assert one_day["shrunk_ratio"] == pytest.approx(1 / 8 * 0.5 + 7 / 8 * POOLED)
+
+
+def test_the_table_holds_every_stratum_once() -> None:
+    ratios = strata.fit_ratios(*two_strata())
+
+    pd.testing.assert_frame_equal(ratios.table[strata.STRATUM], strata.STRATA.to_frame(index=False))
+    empty = ratios.table[ratios.table["training_hours"] == 0]
+    assert len(empty) == 7 * 10 * 3 - 2
+    assert empty["distinct_days"].eq(0).all()
+    assert empty["raw_ratio"].isna().all()
+    assert empty["shrunk_ratio"].to_numpy() == pytest.approx(POOLED)
+    with pytest.raises(SchemaError, match="every_stratum"):
+        strata.StratumTable.validate(ratios.table.iloc[1:])
+
+
+def test_a_stratum_without_training_hours_takes_the_pooled_ratio() -> None:
+    ratios = strata.fit_ratios(*two_strata())
+    # Saturday 2 July 2022 at 35 degrees, then Monday 4 July at 60 and 35 degrees, and without
+    # a sun elevation.
+    hours = utc_stamps(
+        ["2022-07-02 10:00", "2022-07-04 10:00", "2022-07-04 11:00", "2022-07-04 12:00"]
+    )
+    potential_mwh = pd.Series([30.0, 20.0, 40.0, 10.0], index=hours)
+
+    found = strata.apply_ratios(
+        ratios, potential_mwh, covariates(hours, [35.0, 60.0, 35.0, np.nan])
+    )
+
+    trained = row(ratios, "30-40", 10, "working_day")["shrunk_ratio"]
+    expected = [30.0 * POOLED, 20.0 * POOLED, 40.0 * trained, np.nan]
+    np.testing.assert_allclose(found, expected)
+    assert found.index.equals(hours)
+
+
+def test_decile_edges_come_from_the_eligible_hours_only() -> None:
+    rng = np.random.default_rng(0)
+    hours = utc_hours("2021-03-01 00:00", 200)
+    potential_mwh = pd.Series(rng.uniform(0.0, 60.0, hours.size), index=hours)
+    # Higher capacity factors on the hours that are not eligible.
+    potential_mwh.iloc[100:] += 30.0
+    eligible = pd.Series(np.arange(hours.size) < 100, index=hours)
+
+    ratios = strata.fit_ratios(1.1 * potential_mwh, potential_mwh, covariates(hours), eligible)
+
+    factor = potential_mwh.iloc[:100] / CAPACITY_MW
+    assert list(ratios.decile_edges) == np.quantile(factor, np.arange(1, 10) / 10).tolist()
+    assert ratios.table["training_hours"].sum() == 100
+
+
+def published_off_the_hours(given: Training) -> Training:
+    return given._replace(published_mwh=given.published_mwh.iloc[1:])
+
+
+def eligibility_as_numbers(given: Training) -> Training:
+    return given._replace(eligible=given.eligible.astype(float))
+
+
+def nothing_eligible(given: Training) -> Training:
+    return given._replace(eligible=given.eligible & False)
+
+
+SECOND_HOUR = pd.Timestamp("2022-06-15 22:00", tz="UTC")
+
+
+def eligible_without_published_energy(given: Training) -> Training:
+    given.published_mwh.iloc[1] = np.nan
+    return given
+
+
+def eligible_without_potential(given: Training) -> Training:
+    given.potential_mwh.iloc[1] = np.nan
+    return given
+
+
+def eligible_without_capacity(given: Training) -> Training:
+    given.covariates.loc[SECOND_HOUR, "capacity_mw"] = 0.0
+    return given
+
+
+def eligible_without_sun_elevation(given: Training) -> Training:
+    given.covariates.loc[SECOND_HOUR, "sun_elevation_deg"] = np.nan
+    return given
+
+
+def an_hour_of_2026(given: Training) -> Training:
+    hours = pd.DatetimeIndex(given.eligible.index)
+    later = hours.where(hours != hours[-1], pd.Timestamp("2026-01-01", tz="UTC"))
+    return Training(
+        given.published_mwh.set_axis(later),
+        given.potential_mwh.set_axis(later),
+        given.covariates.set_axis(later),
+        given.eligible.set_axis(later),
+    )
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (published_off_the_hours, "not on the same hours"),
+        (eligibility_as_numbers, "must be boolean"),
+        (nothing_eligible, "no eligible hours"),
+        (eligible_without_published_energy, "15 22:00:00.* has no published energy"),
+        (eligible_without_potential, "has no potential"),
+        (eligible_without_capacity, "has no capacity"),
+        (eligible_without_sun_elevation, "has no sun elevation"),
+        # Refused even when the hour is not eligible.
+        (an_hour_of_2026, r"2026-01-01 00:00:00\+00:00 lies outside the training years 2019-2025"),
+    ],
+)
+def test_fit_inputs_are_checked(change: Callable[[Training], Training], error: str) -> None:
+    given = change(two_strata())
+
+    with pytest.raises(ValueError, match=error):
+        strata.fit_ratios(*given)
