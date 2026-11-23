@@ -8,8 +8,8 @@ from eu_solar_wind_audit.evaluation import (
     Metrics,
     Predictions,
     climatology,
-    mean_absolute_by_period,
     metrics,
+    period_summary,
 )
 
 
@@ -414,23 +414,25 @@ def annual_biases(by_year: dict[int, float]) -> pd.DataFrame:
     )
 
 
-def test_each_period_is_summarised_by_the_mean_absolute_value_of_its_folds() -> None:
+def test_each_period_is_summarised_by_the_mean_and_mean_absolute_value_of_its_folds() -> None:
     table = annual_biases(
         {2019: 0.1, 2020: -0.3, 2021: 0.2, 2022: 0.4, 2023: -0.1, 2024: 0.1, 2025: -0.4, 2026: 0.5}
     )
 
-    summary = mean_absolute_by_period(table)
+    summary = period_summary(table)
 
     # The prospective 2026 fold belongs to no period.
     assert summary["period"].tolist() == ["2019-2022", "2023-2025"]
+    assert summary["mean_value"].tolist() == pytest.approx([0.1, -0.4 / 3])
     assert summary["mean_absolute_value"].tolist() == pytest.approx([0.25, 0.2])
     assert summary["folds"].tolist() == [4, 3]
     assert summary["hours"].tolist() == [400, 300]
 
 
 def test_undefined_values_are_left_out_of_the_summary() -> None:
-    summary = mean_absolute_by_period(annual_biases({2019: np.nan, 2020: -0.2}))
+    summary = period_summary(annual_biases({2019: np.nan, 2020: -0.2}))
 
+    assert summary["mean_value"].tolist() == pytest.approx([-0.2])
     assert summary["mean_absolute_value"].tolist() == pytest.approx([0.2])
     assert summary["folds"].tolist() == [1]
 
@@ -446,7 +448,7 @@ def test_models_metrics_and_groups_are_summarised_apart() -> None:
         ignore_index=True,
     )
 
-    summary = mean_absolute_by_period(table)
+    summary = period_summary(table)
 
     assert summary["mean_absolute_value"].tolist() == pytest.approx([0.1, 0.3, 0.2, 0.4])
     assert set(summary["folds"]) == {1}

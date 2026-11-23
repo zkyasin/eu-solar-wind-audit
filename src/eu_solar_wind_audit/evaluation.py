@@ -163,10 +163,10 @@ def metrics(predictions: pd.DataFrame, technology: str) -> DataFrame[Metrics]:
     return Metrics.validate(table)
 
 
-def mean_absolute_by_period(table: pd.DataFrame) -> pd.DataFrame:
-    """Mean absolute value of each metric of a `Metrics` table over the folds of each period of
-    `PERIODS`, with the number of folds and their eligible hours. Undefined values and folds of
-    other years, such as a prospective test year, are left out."""
+def period_summary(table: pd.DataFrame) -> pd.DataFrame:
+    """Mean and mean absolute value of each metric of a `Metrics` table over the folds of each
+    period of `PERIODS`, with the number of folds and their eligible hours. Undefined values and
+    folds of other years, such as the prospective test year, are left out."""
     Metrics.validate(table)
     defined = table.dropna(subset=["value"])
     period_of_year = {year: period for period, years in PERIODS.items() for year in years}
@@ -177,6 +177,7 @@ def mean_absolute_by_period(table: pd.DataFrame) -> pd.DataFrame:
     keys = ["technology", "period", "model", "metric", "group"]
     summary = by_period.groupby(keys, sort=False).agg(
         folds=("value", "size"),
+        mean_value=("value", "mean"),
         mean_absolute_value=("absolute_value", "mean"),
         hours=("hours", "sum"),
     )
