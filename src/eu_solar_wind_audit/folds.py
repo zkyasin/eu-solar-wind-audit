@@ -1,11 +1,11 @@
-"""Leave-one-year-out evaluation of the calibrated potential of mainland France (evaluation plan,
-"Two model objects", item 2, "Axis 1: model quality" and Deviations).
+"""Leave-one-year-out evaluation of the calibrated potential of a country (evaluation plan, "Two
+model objects", item 2, "Axis 1: model quality" and Deviations).
 
-The inputs are the eligibility.YearInputs of one technology, one per UTC year. Each year of
-FOLD_YEARS among them is held out in turn, and everything is learned on the eligible hours of the
-other fold years: the parameters of calibration, the decile edges and stratum ratios of strata for
-the potential with these parameters, and the climatology. Five models predict every hour of the
-held-out year, as the model columns of evaluation.Predictions:
+The inputs are the eligibility.YearInputs of one technology in one country, one per UTC year. Each
+year of the FOLD_YEARS of the country among them is held out in turn, and everything is learned on
+the eligible hours of the other fold years: the parameters of calibration, the decile edges and
+stratum ratios of strata for the potential with these parameters, and the climatology. Five models
+predict every hour of the held-out year, as the model columns of evaluation.Predictions:
 
 - raw: the nominal model of physics.model, from precompute at level 1, without horizontal modules
   or seasonal term and at the configured DC/AC ratio for solar, at speed scale 1 for onshore wind;
@@ -42,11 +42,17 @@ from eu_solar_wind_audit import (
 )
 from eu_solar_wind_audit.pv import PVParameters
 
-# Onshore wind has no reference from June 2022 to December 2023 in Paris time, so its 2022 fold
-# ends with May and 2023 is no fold (evaluation plan, Deviations).
-FOLD_YEARS: dict[physics.Technology, tuple[int, ...]] = {
-    "solar": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
-    "wind_onshore": (2019, 2020, 2021, 2022, 2024, 2025),
+# French onshore wind has no reference from June 2022 to December 2023 in Paris time, so its 2022
+# fold ends with May and 2023 is no fold (evaluation plan, Deviations).
+FOLD_YEARS: dict[str, dict[physics.Technology, tuple[int, ...]]] = {
+    "FR": {
+        "solar": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
+        "wind_onshore": (2019, 2020, 2021, 2022, 2024, 2025),
+    },
+    "DE": {
+        "solar": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
+        "wind_onshore": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
+    },
 }
 # Price selection removes most sunny peak hours from the eligible hours of 2024 and 2025
 # (evaluation plan, Deviations), so the sensitivity fit stops before them (calibration critique).
@@ -166,9 +172,10 @@ def _report[Arrays: precompute.SolarArrays | precompute.WindArrays, Fitted: Cali
     """Report of the module docstring, from the `nominal` output of the arrays of a year, the
     `fit` of calibration and the `energy` of the potential with fitted parameters."""
     calendar = _calendar_years(years)
-    fold_years = [year for year in calendar if year in FOLD_YEARS[technology]]
+    folds_of_country = fold_years_of(years, technology)
+    fold_years = [year for year in calendar if year in folds_of_country]
     if len(fold_years) < 2:
-        raise ValueError(f"leave-one-year-out needs two of the fold years {FOLD_YEARS[technology]}")
+        raise ValueError(f"leave-one-year-out needs two of the fold years {folds_of_country}")
     if fold_years[0] > SENSITIVITY_LAST_YEAR:
         raise ValueError(f"the sensitivity fit needs a fold year up to {SENSITIVITY_LAST_YEAR}")
     arrays_of = dict(zip(calendar, arrays, strict=True))
@@ -256,6 +263,17 @@ def _report[Arrays: precompute.SolarArrays | precompute.WindArrays, Fitted: Cali
     return Report(
         folds, predictions, metrics, evaluation.period_summary(metrics), final, sensitivity
     )
+
+
+def fold_years_of(
+    years: Sequence[eligibility.YearInputs], technology: physics.Technology
+) -> tuple[int, ...]:
+    """The FOLD_YEARS of `technology` in the country of the yearly inputs `years`. Raises
+    ValueError unless they share one country."""
+    countries = sorted({inputs.country for inputs in years})
+    if len(countries) != 1:
+        raise ValueError(f"expected the inputs of one country, not of {countries}")
+    return FOLD_YEARS[countries[0]][technology]
 
 
 def _calendar_years(years: Sequence[eligibility.YearInputs]) -> list[int]:

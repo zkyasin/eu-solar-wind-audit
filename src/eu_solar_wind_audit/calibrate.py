@@ -157,7 +157,7 @@ def describe(calibrated: Run, git_describe: str | None) -> dict[str, Any]:
         "technology": calibrated.technology,
         "git_describe": git_describe,
         "package_version": importlib.metadata.version("eu-solar-wind-audit"),
-        "fold_years": list(folds.FOLD_YEARS[calibrated.technology]),
+        "fold_years": list(folds.fold_years_of(calibrated.years, calibrated.technology)),
         "estimator": {
             "huber_tuning": calibration.HUBER_TUNING,
             "tolerances": [calibration.FTOL, calibration.XTOL, calibration.GTOL],

@@ -371,3 +371,13 @@ def test_inputs_are_checked(given: Callable[[], list[eligibility.YearInputs]], e
 def test_onshore_wind_needs_its_arrays() -> None:
     with pytest.raises(ValueError, match=r"expected the arrays of precompute\.wind_onshore"):
         folds.wind_onshore([solar_year(2019), solar_year(2020)])
+
+
+def test_fold_years_are_those_of_the_country_of_the_inputs() -> None:
+    french = [wind_year(year) for year in (2022, 2023)]
+    german = [dataclasses.replace(inputs, country="DE") for inputs in french]
+
+    assert folds.fold_years_of(french, "wind_onshore") == (2019, 2020, 2021, 2022, 2024, 2025)
+    assert folds.fold_years_of(german, "wind_onshore") == tuple(range(2019, 2026))
+    with pytest.raises(ValueError, match="inputs of one country"):
+        folds.fold_years_of([french[0], german[1]], "wind_onshore")
