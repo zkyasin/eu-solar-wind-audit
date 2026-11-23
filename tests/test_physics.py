@@ -653,6 +653,25 @@ def test_each_region_is_the_model_of_its_departments(
         pd.testing.assert_frame_equal(regional[code], expected, check_exact=False, rtol=1e-12)
 
 
+@pytest.mark.parametrize("technology", ["solar", "wind_onshore"])
+def test_each_region_has_the_sdes_capacity_of_its_departments(
+    store: FakeStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    technology: physics.Technology,
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monkeypatch.setattr(wind, "capacity_factor", constant_factor(0.5))
+    # On this day, the wind capacity of each department lies in two generation windows.
+    monthly = regional_panel(technology, CAPACITY)
+
+    regional = physics.model_regions(technology, *DAY, COUNTRY, monthly, DEPARTMENTS, tmp_path)
+
+    for code in WITH_CAPACITY:
+        expected = sdes.hourly_capacity(monthly, technology, *DAY, region=odre.REGIONS[code])
+        np.testing.assert_allclose(regional[code]["capacity_mw"], expected, rtol=1e-12)
+
+
 def test_regions_are_keyed_by_code_and_validated(
     store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
