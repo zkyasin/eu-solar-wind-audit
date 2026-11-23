@@ -327,9 +327,19 @@ def model_france(
     grid.check_period(start, end)
     monthly = load_monthly_capacity(technology, end - grid.HOUR)
     regions = natural_earth.load_admin1("FR")
-    years = []
+    years = [
+        model(technology, first, stop, parameters, monthly, regions, cache_dir)
+        for first, stop in _calendar_years(start, end)
+    ]
+    return Modelled.validate(pd.concat(years))
+
+
+def _calendar_years(
+    start: pd.Timestamp, end: pd.Timestamp
+) -> Iterator[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Periods [first, stop) that cut the hours [start, end), both hour starts in UTC, at each new
+    year."""
     for year in range(start.year, (end - grid.HOUR).year + 1):
         first = max(start, pd.Timestamp(year, 1, 1, tz="UTC"))
         stop = min(end, pd.Timestamp(year + 1, 1, 1, tz="UTC"))
-        years.append(model(technology, first, stop, parameters, monthly, regions, cache_dir))
-    return Modelled.validate(pd.concat(years))
+        yield first, stop
