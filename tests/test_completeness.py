@@ -45,6 +45,7 @@ def check(
         label=label,
         dataset=DATASET,
         provenance=PROVENANCE,
+        provisional=False,
         local_days=local_days,
     )
 
@@ -427,6 +428,7 @@ def test_national_spring_rows_follow_the_clock_change_convention(tmp_path: Path)
         utc("2025-03-31"),
         step=odre.CONSOLIDATED_STEP,
         label=odre.CONSOLIDATED_LABEL,
+        provisional=False,
         local_days=odre.TIMEZONE,
         **eco2mix(odre.NATIONAL_CONSOLIDATED),
     )
@@ -441,6 +443,7 @@ def test_national_spring_rows_follow_the_clock_change_convention(tmp_path: Path)
         "2025-03-30T01:00:00+00:00/2025-03-30T02:00:00+00:00"
     ]
     assert evidence(found)[0]["series_count"] == 3
+    assert not found["provisional"].any()
 
 
 def test_realtime_autumn_points_follow_the_clock_change_convention(tmp_path: Path) -> None:
@@ -456,6 +459,7 @@ def test_realtime_autumn_points_follow_the_clock_change_convention(tmp_path: Pat
         utc("2026-10-26"),
         step=odre.REALTIME_STEP,
         label=odre.REALTIME_LABEL,
+        provisional=True,
         local_days=odre.TIMEZONE,
         **eco2mix(odre.NATIONAL_REALTIME),
     )
@@ -468,6 +472,7 @@ def test_realtime_autumn_points_follow_the_clock_change_convention(tmp_path: Pat
     assert evidence(found)[0]["missing_stamps"] == [
         "2026-10-25T00:00:00+00:00/2026-10-25T01:00:00+00:00"
     ]
+    assert found["provisional"].all()
     assert evidence(found)[0]["series_count"] == len(names)
 
 
@@ -486,6 +491,7 @@ def test_regional_autumn_rows_follow_the_clock_change_convention(tmp_path: Path)
         utc("2022-10-31"),
         step=odre.CONSOLIDATED_STEP,
         label=odre.CONSOLIDATED_LABEL,
+        provisional=False,
         local_days=odre.TIMEZONE,
         **eco2mix(odre.REGIONAL_CONSOLIDATED),
     )
@@ -513,6 +519,7 @@ def test_the_empty_row_that_opens_2026_is_a_gap_in_every_regional_series(tmp_pat
         utc("2026-01-01"),
         step=odre.CONSOLIDATED_STEP,
         label=odre.CONSOLIDATED_LABEL,
+        provisional=False,
         local_days=odre.TIMEZONE,
         **eco2mix(odre.REGIONAL_CONSOLIDATED),
     )
@@ -555,6 +562,7 @@ def test_smard_weeks_of_the_clock_changes_are_complete(
         label=smard.FEED_IN_LABEL,
         dataset="smard.4068.DE",
         provenance="Bundesnetzagentur | SMARD.de, filter 4068, region DE",
+        provisional=False,
     )
 
     assert found.empty
@@ -575,6 +583,7 @@ def test_energy_charts_days_are_complete(endpoint: str, day: str) -> None:
         label=energy_charts.POWER_LABEL,
         dataset=f"energy_charts.{endpoint}",
         provenance=f"Energy-Charts.info, Fraunhofer ISE, {endpoint}",
+        provisional=False,
     )
 
     assert found.empty

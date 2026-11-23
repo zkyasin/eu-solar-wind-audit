@@ -98,6 +98,7 @@ def completeness(
     label: grid.Label,
     dataset: str,
     provenance: str,
+    provisional: bool,
     local_days: str | None = None,
 ) -> DataFrame[Findings]:
     """Findings on the raw rows of the series of one dataset that cover the hours [start, end),
@@ -105,6 +106,7 @@ def completeness(
 
     `published` maps each series id to its values as fetched: indexed by UTC stamps, with repeated
     stamps kept and missing values as NaN. `step` and `label` give the layout of the rows.
+    `provisional` tells whether the rows are real-time values, which their producer replaces later.
 
     `local_days` is the time zone of a dataset that publishes the same rows for every local day,
     as éCO2mix does. In UTC, the stamps of the hour after a spring clock change then come twice,
@@ -171,7 +173,7 @@ def completeness(
         records.append(
             _convention(dataset, provenance, local_days, conventional, layout, after_spring)
         )
-    return findings.from_records(records)
+    return findings.from_records({**record, "provisional": provisional} for record in records)
 
 
 def on_grid(values: pd.Series, step: pd.Timedelta) -> pd.Series:
