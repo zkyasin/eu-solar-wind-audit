@@ -19,7 +19,7 @@ segment before. A search with wind never spans WIND_SWITCH, when the French publ
 from wind to onshore wind.
 """
 
-from collections.abc import Hashable, Mapping
+from collections.abc import Hashable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, ClassVar, Literal, NamedTuple
 
@@ -75,6 +75,10 @@ REASONS = ["near_junction", "no_joint_break", "single_technology", "opposite_sig
 # breaks of [START, END) once the ratios reach 15 days past END (anomaly critique).
 FIRST_DAY = pd.Timestamp("2019-01-01", tz="UTC")
 MARGIN_DAYS = 15
+# Penalties tried on 2019-2022 (detector design), and the false-alarm budget per series and year
+# (evaluation plan, Deviations).
+PENALTIES = (50.0, 75.0, 100.0, 150.0, 200.0, 300.0, 400.0, 600.0)
+BUDGET = 1
 
 
 class DailyRatios(pa.DataFrameModel):
@@ -449,6 +453,97 @@ def level_breaks(
             unattributed.append((record, reason))
 
     return LevelBreaks(_findings(found), _unattributed(unattributed))
+
+
+class BreakCounts(pa.DataFrameModel):
+    """Breaks that the search named `search` dates in a UTC year of 2019-2022 with a penalty."""
+
+    search: Series[str]
+    year: Series[int] = pa.Field(isin=list(PROFILE_YEARS))
+    penalty: Series[float]
+    breaks: Series[int] = pa.Field(ge=0)
+
+    class Config:
+        strict = True
+        unique: ClassVar[list[str]] = ["search", "year", "penalty"]
+
+
+def break_counts(
+    searches: Mapping[str, Mapping[Technology, Ratios]],
+    *,
+    penalties: Sequence[float] = PENALTIES,
+) -> DataFrame[BreakCounts]:
+    """`BreakCounts` of each search of `searches`, named by its key, with each of `penalties`: the
+    search of one series, or of the solar and the wind series of an area together, as
+    change_points runs it on daily ratios of PROFILE_YEARS only. A joint break counts once.
+
+    Raises ValueError if a day of the daily ratios lies outside PROFILE_YEARS.
+    """
+    rows = []
+    for name, ratios in searches.items():
+        for searched in ratios.values():
+            _check_profile_years(pd.DatetimeIndex(searched.daily.index))
+        for penalty in penalties:
+            days = pd.DatetimeIndex(change_points(ratios, penalty=penalty)["day"].unique())
+            per_year = days.year.value_counts()
+            rows += [
+                {
+                    "search": name,
+                    "year": year,
+                    "penalty": float(penalty),
+                    "breaks": int(per_year.get(year, 0)),
+                }
+                for year in PROFILE_YEARS
+            ]
+    if not rows:
+        return BreakCounts.empty()
+    return BreakCounts.validate(pd.DataFrame(rows))
+
+
+class PenaltyFolds(pa.DataFrameModel):
+    """Leave-one-year-out choice of the penalty. For the year `held_out_year`, `penalty` is the
+    smallest penalty with at most the budget of breaks in every search and other year; with it,
+    the held-out year has `breaks` over all searches, at most `most_breaks` in one search, and
+    `searches_over_budget` searches with more breaks than the budget."""
+
+    held_out_year: Index[int] = pa.Field(unique=True, check_name=True)
+    penalty: Series[float]
+    breaks: Series[int] = pa.Field(ge=0)
+    most_breaks: Series[int] = pa.Field(ge=0)
+    searches_over_budget: Series[int] = pa.Field(ge=0)
+
+    class Config:
+        strict = True
+
+
+def penalty_folds(counts: pd.DataFrame, *, budget: int = BUDGET) -> DataFrame[PenaltyFolds]:
+    """`PenaltyFolds` of `counts`, a BreakCounts frame, for each of its years, with at most
+    `budget` breaks per search and year. The thresholds rest on the largest choice of the folds.
+
+    Raises ValueError if no penalty of `counts` keeps every search within the budget in the other
+    years of a fold.
+    """
+    table = BreakCounts.validate(counts)
+    by_penalty = table.pivot(index=["search", "year"], columns="penalty", values="breaks")
+    by_penalty = by_penalty.sort_index(axis="columns")
+    years = by_penalty.index.get_level_values("year")
+    rows = []
+    for held_out in sorted(set(years)):
+        within = (by_penalty[years != held_out] <= budget).all()
+        if not within.any():
+            raise ValueError(f"no penalty keeps every search within the budget without {held_out}")
+        penalty = within.index[within.to_numpy()][0]
+        held = by_penalty.loc[years == held_out, penalty]
+        rows.append(
+            {
+                "held_out_year": held_out,
+                "penalty": float(penalty),
+                "breaks": int(held.sum()),
+                "most_breaks": int(held.max()),
+                "searches_over_budget": int((held > budget).sum()),
+            }
+        )
+    return PenaltyFolds.validate(pd.DataFrame(rows).set_index("held_out_year"))
 
 
 def _check_window(

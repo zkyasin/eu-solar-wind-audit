@@ -264,3 +264,42 @@ def test_junctions_are_the_first_era5t_and_provisional_hours_and_status_changes(
         ("first_provisional_capacity_hour", utc("2020-12-01 06:00")),
         ("status_change", utc("2020-12-01")),
     ]
+
+
+def counts(by_penalty: dict[float, list[int]], search: str = "odre.FR.solar") -> pd.DataFrame:
+    """BreakCounts of one search: the breaks of 2019-2022 with each penalty."""
+    return pd.DataFrame(
+        [
+            {"search": search, "year": year, "penalty": penalty, "breaks": breaks_of_year}
+            for penalty, per_year in by_penalty.items()
+            for year, breaks_of_year in zip(breaks.PROFILE_YEARS, per_year, strict=True)
+        ]
+    )
+
+
+def test_each_fold_takes_the_smallest_penalty_within_the_budget_of_the_other_years() -> None:
+    table = counts({100.0: [2, 0, 3, 0], 200.0: [1, 0, 2, 0], 300.0: [0, 0, 1, 0]})
+
+    folds = breaks.penalty_folds(table)
+
+    # Without 2021, 200 keeps every other year within one break; with 2021, 300 is needed.
+    assert folds["penalty"].to_dict() == {2019: 300.0, 2020: 300.0, 2021: 200.0, 2022: 300.0}
+    assert folds.loc[2021, "breaks"] == 2
+    assert folds.loc[2021, "searches_over_budget"] == 1
+
+
+def test_no_penalty_within_the_budget_is_an_error() -> None:
+    with pytest.raises(ValueError, match="no penalty keeps every search within the budget"):
+        breaks.penalty_folds(counts({100.0: [2, 2, 0, 0]}))
+
+
+def test_break_counts_count_a_joint_break_once_per_year() -> None:
+    step = np.log(0.7)
+    ratios: dict[breaks.Technology, Ratios] = {
+        "solar": flat(daily("2019-01-01", "2023-01-01", {"2020-06-15": step}, seed=1)),
+        "wind": flat(daily("2019-01-01", "2023-01-01", {"2020-06-15": step}, seed=2)),
+    }
+
+    table = breaks.break_counts({"odre.FR-84": ratios}, penalties=[300.0])
+
+    assert table.set_index("year")["breaks"].to_dict() == {2019: 0, 2020: 1, 2021: 0, 2022: 0}
