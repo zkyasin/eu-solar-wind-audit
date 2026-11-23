@@ -1,16 +1,20 @@
 """Hours on which the calibrated potential of France is fitted and evaluated (evaluation plan,
-"Scope", "Two model objects", "Axis 1" and Deviations).
+"Scope", "Two model objects", "Axis 1" and Deviations), and the price classes they are chosen
+with.
 
 Each rule of `Eligibility` has its own column, so that a report can count the hours that each one
 leaves out.
 """
 
+from pathlib import Path
+
+import httpx
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Index, Series
 
-from eu_solar_wind_audit import evaluation, grid, physics, precompute
-from eu_solar_wind_audit.sources import odre
+from eu_solar_wind_audit import evaluation, grid, physics, precompute, regimes
+from eu_solar_wind_audit.sources import odre, smard
 
 FINAL_STATUSES = ["definitive", "consolidated"]
 
@@ -88,3 +92,28 @@ def eligible_hours(
         rules["onshore_reference"] = ~with_offshore
     rules["eligible"] = rules.all(axis="columns")
     return Eligibility.validate(rules)
+
+
+def price_classes(
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    client: httpx.Client | None = None,
+    cache_dir: Path = smard.CACHE_DIR,
+) -> pd.DataFrame:
+    """regimes.classify_hours of the French day-ahead prices for each hour of [start, end), both
+    hour starts in UTC. Prices are read from SMARD every quarter-hour (filter 254, which repeats
+    the hourly price before October 2025); a quarter-hour without a price makes its hour missing.
+
+    The hours just before and after the period are classified with it, then left out: a negative
+    or missing neighbour keeps an hour out of the reference class.
+    """
+    grid.check_period(start, end)
+    first, stop = start - grid.HOUR, end + grid.HOUR
+    filter_id, region = smard.PRICES["FR"]
+    prices = smard.fetch_series(
+        filter_id, region, "quarterhour", first, stop, client=client, cache_dir=cache_dir
+    )
+    quarter_hours = pd.date_range(first, stop, freq="15min", inclusive="left", unit="ns")
+    classes = regimes.classify_hours(prices.reindex(quarter_hours))
+    return classes.loc[start : end - grid.HOUR].rename_axis("time")

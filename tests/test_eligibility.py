@@ -1,6 +1,9 @@
+import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import NamedTuple
 
+import httpx
 import numpy as np
 import pandas as pd
 import pytest
@@ -186,3 +189,64 @@ def test_eligible_must_meet_every_rule() -> None:
 
     with pytest.raises(SchemaError, match="eligible_meets_every_rule"):
         eligibility.Eligibility.validate(found)
+
+
+def smard_files(prices: pd.Series) -> dict[str, bytes]:
+    """SMARD chart files that publish `prices`, in EUR/MWh on UTC quarter-hours, as the French
+    day-ahead price in a single file; NaN is published as null."""
+    stamps = [int(stamp.timestamp() * 1000) for stamp in prices.index]
+    rows = [
+        [stamp, None if np.isnan(value) else value]
+        for stamp, value in zip(stamps, prices, strict=True)
+    ]
+    return {
+        "index_quarterhour.json": json.dumps({"timestamps": [stamps[0]]}).encode(),
+        f"254_DE_quarterhour_{stamps[0]}.json": json.dumps({"series": rows}).encode(),
+    }
+
+
+def serving(files: dict[str, bytes], requests: list[str]) -> httpx.Client:
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        name = request.url.path.rsplit("/", 1)[-1]
+        return httpx.Response(200, content=files[name]) if name in files else httpx.Response(404)
+
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def quarter_hours(start: str, end: str) -> pd.DatetimeIndex:
+    return pd.date_range(start, end, freq="15min", inclusive="left", tz="UTC")
+
+
+def classes_from(prices: pd.Series, tmp_path: Path, requests: list[str]) -> pd.DataFrame:
+    start, end = (
+        pd.Timestamp("2022-03-01 00:00", tz="UTC"),
+        pd.Timestamp("2022-03-01 06:00", tz="UTC"),
+    )
+    with serving(smard_files(prices), requests) as client:
+        return eligibility.price_classes(start, end, client=client, cache_dir=tmp_path)
+
+
+def test_price_classes_take_the_hours_around_the_period_into_account(tmp_path: Path) -> None:
+    requests: list[str] = []
+    prices = pd.Series(50.0, index=quarter_hours("2022-02-28 23:00", "2022-03-01 07:00"))
+    # A negative hour before the period and an hour without prices after it.
+    prices[prices.index < pd.Timestamp("2022-03-01 00:00", tz="UTC")] = -5.0
+    prices[prices.index >= pd.Timestamp("2022-03-01 06:00", tz="UTC")] = np.nan
+
+    classes = classes_from(prices, tmp_path, requests)
+
+    assert classes.index.equals(utc_hours("2022-03-01 00:00", periods=6))
+    expected = ["buffer"] + ["reference"] * 4 + ["buffer"]
+    assert classes["regime"].tolist() == expected
+    assert requests[0] == "/app/chart_data/254/DE/index_quarterhour.json"
+
+
+def test_a_quarter_hour_without_a_price_makes_its_hour_missing(tmp_path: Path) -> None:
+    prices = pd.Series(50.0, index=quarter_hours("2022-02-28 23:00", "2022-03-01 07:00"))
+    absent = pd.Timestamp("2022-03-01 02:15", tz="UTC")
+
+    classes = classes_from(prices.drop([absent]), tmp_path, [])
+
+    expected = ["reference", "buffer", "missing", "buffer", "reference", "reference"]
+    assert classes["regime"].tolist() == expected
