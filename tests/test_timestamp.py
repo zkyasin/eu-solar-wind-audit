@@ -1,3 +1,4 @@
+import json
 from collections.abc import Sequence
 
 import numpy as np
@@ -5,10 +6,13 @@ import numpy.typing as npt
 import pandas as pd
 import pytest
 
-from eu_solar_wind_audit.anomalies.timestamp import BIAS_MINUTES, daily_centroids
+from eu_solar_wind_audit.anomalies.findings import Findings
+from eu_solar_wind_audit.anomalies.timestamp import BIAS_MINUTES, daily_centroids, shifts
 
 FloatArray = npt.NDArray[np.float64]
 
+SERIES = "test.FR.solar"
+PROVENANCE = "Producer, test dataset"
 FIRST_DAY = "2022-06-01"
 # Middle of each minute of a day.
 MINUTES = np.arange(24 * 60) + 0.5
@@ -220,3 +224,176 @@ def test_price_classes_on_naive_hours_are_refused() -> None:
 
     with pytest.raises(ValueError, match="price classes"):
         centroids(published, classes=reference(pd.DatetimeIndex(published.index).tz_localize(None)))
+
+
+def claims(
+    published: pd.DataFrame,
+    modelled: pd.DataFrame | None = None,
+    classes: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Shift findings of `published`, with the defaults of `centroids`."""
+    table = centroids(published, modelled, classes)
+    return shifts(table, series=SERIES, provenance=PROVENANCE)
+
+
+def episode(offsets: Sequence[float]) -> list[float]:
+    """`offsets` from 11 June 2022, with ten days without offset before and after them."""
+    return [0.0] * 10 + list(offsets) + [0.0] * 10
+
+
+def spans(found: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp, float]]:
+    """Start, end and score of each finding, the score rounded to 1e-9."""
+    rows = found[["start", "end", "score"]].itertuples(index=False, name=None)
+    return [(start, end, round(score, 9)) for start, end, score in rows]
+
+
+def evidence(found: pd.DataFrame) -> list[dict[str, object]]:
+    return [json.loads(text) for text in found["evidence"]]
+
+
+@pytest.mark.parametrize("hours", [1, -1, 2, -2])
+def test_a_bell_shifted_by_whole_hours_is_claimed_with_its_size(hours: int) -> None:
+    found = claims(clear_days(episode([60.0 * hours] * 14)))
+
+    assert spans(found) == [(utc("2022-06-11"), utc("2022-06-25"), hours)]
+    assert evidence(found) == [
+        {
+            "shift_hours": hours,
+            "median_residual_minutes": pytest.approx(60.0 * hours),
+            "deciding_days": ["2022-06-11", "2022-06-12"],
+            "deciding_mean_minutes": pytest.approx(60.0 * hours),
+            "days_off": 14,
+        }
+    ]
+    assert found[["series", "provenance", "kind"]].values.tolist() == [
+        [SERIES, PROVENANCE, "timestamp_shift"]
+    ]
+    assert not found["provisional"].any()
+
+
+@pytest.mark.parametrize(("offset", "hours"), [(84.0, 1), (96.0, 2), (-84.0, -1), (-96.0, -2)])
+def test_the_size_is_the_median_offset_rounded_to_whole_hours(offset: float, hours: int) -> None:
+    found = claims(clear_days(episode([offset] * 3)))
+
+    assert evidence(found)[0]["shift_hours"] == hours
+
+
+def test_a_series_off_from_its_first_day_is_claimed() -> None:
+    found = claims(clear_days([60.0] * 20))
+
+    assert spans(found) == [(utc(FIRST_DAY), utc("2022-06-21"), 1.0)]
+
+
+@pytest.mark.parametrize("sign", [1, -1])
+def test_a_half_hour_shift_is_never_claimed_as_an_hour(sign: int) -> None:
+    # Two days average 47 minutes, but the median of the first seven is 33 minutes.
+    offsets = [sign * offset for offset in [31, 33, 35, 32, 32, 50, 44, 31, 33, 36, 31, 31, 34]]
+    published = clear_days(episode(offsets))
+
+    found = claims(published)
+
+    assert found.empty
+    # The offset stays visible in the centroid table.
+    residual = centroids(published)["residual_minutes"]
+    np.testing.assert_allclose(residual.iloc[10:23], offsets, atol=1e-9)
+
+
+@pytest.mark.parametrize(
+    ("offsets", "claimed"),
+    [([40.0, 52.0], True), ([40.0, 48.0], False), ([-40.0, -52.0], True), ([-40.0, -48.0], False)],
+)
+def test_the_two_deciding_days_must_be_off_by_45_minutes_on_average(
+    offsets: list[float], claimed: bool
+) -> None:
+    assert len(claims(clear_days(episode(offsets)))) == claimed
+
+
+@pytest.mark.parametrize("offsets", [[120.0], [-120.0], [120.0, 0.0, 120.0]])
+def test_a_one_day_excursion_is_not_claimed(offsets: list[float]) -> None:
+    assert claims(clear_days(episode(offsets))).empty
+
+
+@pytest.mark.parametrize(
+    ("gap", "expected"),
+    [
+        (3, [(utc("2022-06-06"), utc("2022-06-19"), 1.0)]),
+        (
+            4,
+            [
+                (utc("2022-06-06"), utc("2022-06-11"), 1.0),
+                (utc("2022-06-15"), utc("2022-06-20"), 1.0),
+            ],
+        ),
+    ],
+)
+def test_same_sign_runs_up_to_three_valid_days_apart_are_one_finding(
+    gap: int, expected: list[tuple[pd.Timestamp, pd.Timestamp, float]]
+) -> None:
+    published = clear_days([0.0] * 5 + [60.0] * 5 + [0.0] * gap + [60.0] * 5 + [0.0] * 5)
+
+    assert spans(claims(published)) == expected
+
+
+def test_days_that_are_not_valid_do_not_separate_runs() -> None:
+    # Five days between the runs, two of them too dark to be valid.
+    published = clear_days([0.0] * 5 + [60.0] * 5 + [0.0] * 5 + [60.0] * 5 + [0.0] * 5)
+    modelled = model_of(published)
+    for curve in (published, modelled):
+        for day in ("2022-06-12", "2022-06-14"):
+            curve.loc[on_day(curve, day), "energy_mwh"] *= 0.3
+
+    found = claims(published, modelled)
+
+    assert spans(found) == [(utc("2022-06-06"), utc("2022-06-21"), 1.0)]
+    assert evidence(found)[0]["days_off"] == 10
+
+
+def test_runs_of_opposite_signs_are_separate_findings() -> None:
+    published = clear_days([0.0] * 5 + [60.0] * 5 + [0.0] * 2 + [-60.0] * 5 + [0.0] * 5)
+
+    assert spans(claims(published)) == [
+        (utc("2022-06-06"), utc("2022-06-11"), 1.0),
+        (utc("2022-06-13"), utc("2022-06-18"), -1.0),
+    ]
+
+
+def test_real_time_hours_are_left_out_of_the_claims() -> None:
+    consolidated = clear_days(episode([60.0] * 14)).assign(status="consolidated")
+    # Real-time rows from the first day of the shift.
+    status = np.where(consolidated.index < utc("2022-06-11"), "consolidated", "realtime")
+
+    assert len(claims(consolidated)) == 1
+    assert claims(consolidated.assign(status=status)).empty
+
+
+def test_output_cut_in_negative_price_hours_is_not_claimed_as_a_shift() -> None:
+    # Output is cut from 09:00 to 12:00 UTC on 14 days of negative prices, which moves the
+    # published centroid by 56 minutes.
+    published = clear_days(episode([0.0] * 14))
+    cut = published.index[
+        (published.index >= utc("2022-06-11"))
+        & (published.index < utc("2022-06-25"))
+        & pd.DatetimeIndex(published.index).hour.isin([9, 10, 11])
+    ]
+    published.loc[cut, "energy_mwh"] = 0.0
+    classes = reference(published.index)
+    classes.loc[cut, "regime"] = "negative"
+
+    assert len(claims(published)) == 1
+    assert claims(published, classes=classes).empty
+
+
+def test_centroids_out_of_order_give_the_same_claims() -> None:
+    table = centroids(clear_days(episode([60.0] * 14)))
+
+    pd.testing.assert_frame_equal(
+        shifts(table.iloc[::-1], series=SERIES, provenance=PROVENANCE),
+        shifts(table, series=SERIES, provenance=PROVENANCE),
+    )
+
+
+def test_no_claim_gives_an_empty_valid_frame() -> None:
+    found = claims(clear_days([0.0] * 10))
+
+    assert found.empty
+    assert list(found.columns) == list(Findings.to_schema().columns)
