@@ -6,10 +6,12 @@ definitive rows, with the reference price class (evaluation plan, Deviations). T
 day is the published minus the modelled centroid, minus the centroid bias of the model. Only valid
 days, sunny enough and mostly usable, are judged.
 
-`shifts` claims shifts of the timestamps by one hour or more. It is a statistical detector: its
-thresholds rest on 2019-2022, and its findings count in the false-alarm budget (evaluation plan,
-Deviations). Real-time hours are left out, so no finding is provisional. Score of a
-`timestamp_shift`: the median residual of the finding, in hours.
+`shifts` claims shifts of the timestamps by one hour or more, and `clock_change_jumps` tests the
+residual for jumps at the clock changes of the time zone of the source. Both are statistical
+detectors: their thresholds rest on 2019-2022, and their findings count in the false-alarm budget
+(evaluation plan, Deviations). Real-time hours are left out, so no finding is provisional. Scores:
+`timestamp_shift`, the median residual of the finding in hours; `clock_change_jump`, the jump of
+the residual in hours.
 """
 
 import numpy as np
@@ -45,6 +47,11 @@ CLAIM_FROM_MINUTES = 45.0
 # is the median residual of its first 7 days off (detector design).
 MERGE_GAP_DAYS = 3
 SIZE_DAYS = 7
+# A jump compares the median residuals of the valid days in the 14 days before and after a clock
+# change, with at least 3 on each side, and counts from 30 minutes (detector design).
+JUMP_WINDOW_DAYS = 14
+JUMP_MIN_VALID_DAYS = 3
+JUMP_FROM_MINUTES = 30.0
 
 
 class Centroids(pa.DataFrameModel):
@@ -208,6 +215,64 @@ def shifts(
     return findings.from_records(records)
 
 
+def clock_change_jumps(
+    centroids: pd.DataFrame,
+    *,
+    time_zone: str,
+    series: str,
+    provenance: str,
+    jump_from_minutes: float = JUMP_FROM_MINUTES,
+) -> DataFrame[Findings]:
+    """Jumps of the residual at the clock changes of `time_zone`, the time zone of the source, in
+    the solar series `series`, whose rows come from `provenance`, from its `Centroids`.
+
+    For a change on the UTC day D, the jump is the median residual of the valid days in
+    (D, D + JUMP_WINDOW_DAYS] minus that of the valid days in [D - JUMP_WINDOW_DAYS, D). It is
+    tested when each side has at least JUMP_MIN_VALID_DAYS valid days, and gives a finding over
+    these days when it reaches `jump_from_minutes` in absolute value. A source that labels local
+    time as UTC gives a jump of one hour at each change. The evidence gives the time zone, the
+    instant of the change, the jump, and the median residual and the number of valid days on each
+    side.
+    """
+    table = Centroids.validate(centroids).sort_index()
+    residual = table.loc[table["valid"], "residual_minutes"]
+    if residual.empty:
+        return findings.from_records([])
+    days = pd.DatetimeIndex(residual.index)
+    window = JUMP_WINDOW_DAYS * DAY
+    records: list[dict[str, object]] = []
+    for change in _clock_changes(time_zone, days[0], days[-1] + DAY):
+        day = change.floor("D")
+        before = residual[(days >= day - window) & (days < day)]
+        after = residual[(days > day) & (days <= day + window)]
+        if min(len(before), len(after)) < JUMP_MIN_VALID_DAYS:
+            continue
+        jump = after.median() - before.median()
+        if abs(jump) < jump_from_minutes:
+            continue
+        records.append(
+            {
+                "series": series,
+                "provenance": provenance,
+                "provisional": False,
+                "start": before.index[0],
+                "end": after.index[-1] + DAY,
+                "kind": "clock_change_jump",
+                "score": jump / 60,
+                "evidence": {
+                    "time_zone": time_zone,
+                    "clock_change": change.isoformat(),
+                    "jump_minutes": jump,
+                    "median_before_minutes": before.median(),
+                    "median_after_minutes": after.median(),
+                    "valid_days_before": len(before),
+                    "valid_days_after": len(after),
+                },
+            }
+        )
+    return findings.from_records(records)
+
+
 def _published(published: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     """`published` validated, and whether each of its hours is real-time."""
     if "status" in published.columns:
@@ -224,6 +289,13 @@ def _groups(off: npt.NDArray[np.intp]) -> list[npt.NDArray[np.intp]]:
     valid_days_between = np.diff(off) - 1
     groups = np.split(off, np.flatnonzero(valid_days_between > MERGE_GAP_DAYS) + 1)
     return [positions for positions in groups if positions.size > 1]
+
+
+def _clock_changes(time_zone: str, start: pd.Timestamp, end: pd.Timestamp) -> pd.DatetimeIndex:
+    """The UTC hours of [start, end) from which the UTC offset of `time_zone` changes."""
+    hours = pd.date_range(start, end, freq="h", inclusive="left", unit="ns")
+    utc_offset = hours.tz_convert(time_zone).tz_localize(None) - hours.tz_localize(None)
+    return hours[1:][utc_offset[1:] != utc_offset[:-1]]
 
 
 def _centroid(energy: pd.Series, position: pd.Series, day: pd.DatetimeIndex) -> pd.Series:
