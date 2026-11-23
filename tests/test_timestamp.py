@@ -148,6 +148,22 @@ def test_the_highest_modelled_energy_is_taken_over_the_15_days_on_each_side() ->
     assert table["valid"].sum() == 41 - 15
 
 
+def test_valid_days_follow_the_given_shares() -> None:
+    # The usable hours of the second day hold 80.5 % of its modelled energy.
+    published = clear_days([0.0, 0.0])
+    morning = on_day(published, "2022-06-02", range(6, 10))
+    published.loc[morning, ["energy_mwh", "complete"]] = [np.nan, False]
+    modelled, classes = model_of(published), reference(published.index)
+
+    by_default = daily_centroids(published, modelled, classes)
+    higher_usable_share = daily_centroids(published, modelled, classes, usable_share_from=0.9)
+    higher_peak_share = daily_centroids(published, modelled, classes, peak_share_from=1.01)
+
+    assert by_default["valid"].tolist() == [True, True]
+    assert higher_usable_share["valid"].tolist() == [True, False]
+    assert higher_peak_share["valid"].tolist() == [False, False]
+
+
 def test_a_day_that_the_model_does_not_cover_whole_is_not_valid() -> None:
     published = clear_days([0.0, 0.0])
     modelled = model_of(published).drop(index=utc("2022-06-02 02:00"))
@@ -340,6 +356,24 @@ def test_each_deciding_day_must_be_off_by_30_minutes(offsets: list[float], claim
     assert len(claims(clear_days(episode(offsets)))) == claimed
 
 
+def test_claims_follow_the_given_thresholds() -> None:
+    table = centroids(clear_days(episode([41.0] * 4)))
+
+    by_default = shifts(table, series=SERIES, provenance=PROVENANCE)
+    lower_claim = shifts(table, series=SERIES, provenance=PROVENANCE, claim_from_minutes=40.0)
+    higher_decision = shifts(
+        table,
+        series=SERIES,
+        provenance=PROVENANCE,
+        decide_from_minutes=42.0,
+        claim_from_minutes=40.0,
+    )
+
+    assert by_default.empty
+    assert evidence(lower_claim)[0]["shift_hours"] == 1
+    assert higher_decision.empty
+
+
 def test_the_size_is_the_median_of_the_first_seven_days_off() -> None:
     # Days off by an hour, then days off by 31 minutes: four or three of the first seven days are
     # an hour off.
@@ -505,6 +539,24 @@ def around_spring_change(after_minutes: float) -> pd.DataFrame:
 @pytest.mark.parametrize(("after_minutes", "found"), [(25.0, False), (35.0, True), (-35.0, True)])
 def test_a_jump_counts_from_30_minutes(after_minutes: float, found: bool) -> None:
     assert len(jumps(around_spring_change(after_minutes))) == found
+
+
+def test_jumps_follow_the_given_threshold() -> None:
+    table = centroids(around_spring_change(35.0))
+
+    by_default = clock_change_jumps(
+        table, time_zone="Europe/Paris", series=SERIES, provenance=PROVENANCE
+    )
+    higher_threshold = clock_change_jumps(
+        table,
+        time_zone="Europe/Paris",
+        series=SERIES,
+        provenance=PROVENANCE,
+        jump_from_minutes=40.0,
+    )
+
+    assert len(by_default) == 1
+    assert higher_threshold.empty
 
 
 @pytest.mark.parametrize(("valid_after", "found"), [(2, False), (3, True)])
