@@ -1,4 +1,4 @@
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -506,10 +506,14 @@ WRONG_PERIODS = [
 ]
 
 
+@pytest.mark.parametrize(
+    "load", [physics.model_france, physics.model_france_regions], ids=["mainland", "regions"]
+)
 @pytest.mark.parametrize(("start", "end", "error"), WRONG_PERIODS)
 def test_wrong_period_is_refused_before_any_download(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    load: Callable[..., object],
     start: pd.Timestamp,
     end: pd.Timestamp,
     error: str,
@@ -520,7 +524,7 @@ def test_wrong_period_is_refused_before_any_download(
     monkeypatch.setattr(physics, "load_monthly_capacity", no_download)
 
     with pytest.raises(ValueError, match=error):
-        physics.model_france("solar", start, end, COUNTRY, cache_dir=tmp_path)
+        load("solar", start, end, COUNTRY, cache_dir=tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -738,3 +742,32 @@ def test_regions_unknown_to_eco2mix_are_refused_before_reading_era5(
     with pytest.raises(ValueError, match=r"not in odre.REGIONS: \['region'\]"):
         physics.model_regions("solar", *DAY, COUNTRY, monthly, REGIONS, tmp_path)
     assert store.calls == []
+
+
+def test_model_france_regions_runs_one_calendar_year_at_a_time(
+    store: FakeStore, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monthly = regional_panel("solar", {"01": constant(100.0), "02": constant(40.0)})
+    monkeypatch.setattr(physics, "load_monthly_capacity", lambda technology, until: monthly)
+    monkeypatch.setattr(natural_earth, "load_admin1", lambda country: REGIONS)
+    periods: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+    model_regions = physics.model_regions
+
+    def spy(
+        technology: physics.Technology, start: pd.Timestamp, end: pd.Timestamp, *args: Any
+    ) -> Mapping[str, pd.DataFrame]:
+        periods.append((start, end))
+        return model_regions(technology, start, end, *args)
+
+    monkeypatch.setattr(physics, "model_regions", spy)
+    start, end = utc("2019-12-31 22:00"), utc("2020-01-01 02:00")
+
+    regional = physics.model_france_regions("solar", start, end, COUNTRY, cache_dir=tmp_path)
+
+    assert periods == [(start, utc("2020-01-01")), (utc("2020-01-01"), end)]
+    assert list(regional) == list(odre.REGIONS)
+    expected = pd.date_range(start, end, freq="h", inclusive="left", name="time")
+    assert all(frame.index.equals(expected) for frame in regional.values())
+    assert regional["84"]["energy_mwh"].to_numpy() == pytest.approx(50.0)
+    assert regional["32"]["energy_mwh"].to_numpy() == pytest.approx(20.0)
