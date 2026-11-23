@@ -184,7 +184,9 @@ def test_raw_ratios_are_shrunk_by_the_distinct_days_in_paris() -> None:
 def test_the_table_holds_every_stratum_once() -> None:
     ratios = strata.fit_ratios(*two_strata())
 
-    pd.testing.assert_frame_equal(ratios.table[strata.STRATUM], strata.STRATA.to_frame(index=False))
+    pd.testing.assert_frame_equal(
+        ratios.table[strata.STRATUM_KEY], strata.STRATA.to_frame(index=False)
+    )
     empty = ratios.table[ratios.table["training_hours"] == 0]
     assert len(empty) == 7 * 10 * 3 - 2
     assert empty["distinct_days"].eq(0).all()

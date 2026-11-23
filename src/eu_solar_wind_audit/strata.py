@@ -46,8 +46,8 @@ ELEVATION_BANDS = ["night", "0-10", "10-20", "20-30", "30-40", "40-50", "50+"]
 DECILES = list(range(1, 11))
 # Quantile levels of the 9 decile edges.
 DECILE_LEVELS = np.arange(1, 10) / 10
-STRATUM = ["elevation_band", "decile", "day_type"]
-STRATA = pd.MultiIndex.from_product([ELEVATION_BANDS, DECILES, days.DAY_TYPES], names=STRATUM)
+STRATUM_KEY = ["elevation_band", "decile", "day_type"]
+STRATA = pd.MultiIndex.from_product([ELEVATION_BANDS, DECILES, days.DAY_TYPES], names=STRATUM_KEY)
 # Weight n / (n + SHRINKAGE_DAYS) of the raw ratio of a stratum, n counting its distinct days:
 # the hours of a day are not independent (evaluation plan, Deviations).
 SHRINKAGE_DAYS = 7
@@ -92,7 +92,7 @@ class StratumTable(pa.DataFrameModel):
 
     class Config:
         strict = True
-        unique: ClassVar[list[str]] = STRATUM
+        unique: ClassVar[list[str]] = STRATUM_KEY
 
 
 class Composition(pa.DataFrameModel):
@@ -188,7 +188,7 @@ def fit_ratios(
         published_mwh=published_mwh[training],
         potential_mwh=potential_mwh[training],
         day=days.local_days(pd.DatetimeIndex(strata.index)),
-    ).groupby(STRATUM)
+    ).groupby(STRATUM_KEY)
     sums = pd.DataFrame(
         {
             "training_hours": by_stratum.size(),
@@ -212,8 +212,8 @@ def apply_ratios(
     precompute.Covariates frame, times the shrunk ratio of the stratum of each hour. NaN where the
     hour has no stratum."""
     strata = classify_hours(potential_mwh, covariates, ratios.decile_edges)
-    shrunk = ratios.table.set_index(STRATUM)["shrunk_ratio"]
-    ratio = shrunk.reindex(pd.MultiIndex.from_frame(strata[STRATUM])).to_numpy()
+    shrunk = ratios.table.set_index(STRATUM_KEY)["shrunk_ratio"]
+    ratio = shrunk.reindex(pd.MultiIndex.from_frame(strata[STRATUM_KEY])).to_numpy()
     return pd.Series(potential_mwh.to_numpy() * ratio, index=strata.index, name="energy_mwh")
 
 
