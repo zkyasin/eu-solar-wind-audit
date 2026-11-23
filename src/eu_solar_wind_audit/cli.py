@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from eu_solar_wind_audit import calibrate, dc_ac, fits, physics
+from eu_solar_wind_audit.anomalies import inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
 from eu_solar_wind_audit.sources import natural_earth, odre, sdes
 
@@ -48,6 +49,13 @@ def main(argv: list[str] | None = None) -> None:
         default=dc_ac.REPLICATES,
         help="day-bootstrap replicates of the solar DC/AC profile",
     )
+    fix = commands.add_parser(
+        "fix-anomaly-thresholds",
+        help="fix the thresholds of the statistical anomaly detectors of mainland France on "
+        "2019-2022 and write them with the reference model they rest on",
+    )
+    fix.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
+    fix.add_argument("--output", type=Path, default=thresholds.THRESHOLDS_DIR / "FR.json")
     args = parser.parse_args(argv)
 
     if args.command == "snapshot-realtime":
@@ -74,6 +82,19 @@ def main(argv: list[str] | None = None) -> None:
             )
         for path in calibrate.write(calibrated, args.output, args.fits_dir, git_describe()):
             print(path)
+    elif args.command == "fix-anomaly-thresholds":
+        parameters = load_country(args.config)
+        with odre.make_client() as client:
+            found = inputs.france_inputs(
+                client,
+                thresholds.FIX_START,
+                thresholds.FIX_END,
+                parameters,
+                margin=pd.Timedelta(0),
+            )
+        reference = thresholds.reference_model(parameters, git_describe())
+        thresholds.write(args.output, thresholds.fix(found, reference))
+        print(args.output)
 
 
 def run_metadata(

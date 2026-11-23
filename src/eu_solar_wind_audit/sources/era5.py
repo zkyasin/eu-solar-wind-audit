@@ -13,6 +13,10 @@ import pandas as pd
 import xarray as xr
 
 ARCO_URL = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
+# Final ERA5 from the time-series group of the Earthmover store.
+ICECHUNK_BUCKET = "earthmover-icechunk-era5"
+ICECHUNK_PREFIX = "icechunkV2"
+ICECHUNK_GROUP = "single/temporal"
 ARCO_NAMES = {
     "surface_solar_radiation_downwards": "ssrd",
     "total_sky_direct_solar_radiation_at_surface": "fdir",
@@ -57,10 +61,10 @@ def from_icechunk(store: xr.Dataset) -> xr.Dataset:
 def open_icechunk() -> xr.Dataset:
     """Final ERA5, lazily, from the time-series group of the Earthmover store."""
     storage = icechunk.s3_storage(
-        bucket="earthmover-icechunk-era5", prefix="icechunkV2", region="us-east-1", anonymous=True
+        bucket=ICECHUNK_BUCKET, prefix=ICECHUNK_PREFIX, region="us-east-1", anonymous=True
     )
     session = icechunk.Repository.open(storage).readonly_session(branch="main")
-    store = xr.open_zarr(session.store, group="single/temporal", consolidated=False, chunks=None)
+    store = xr.open_zarr(session.store, group=ICECHUNK_GROUP, consolidated=False, chunks=None)
     return from_icechunk(store)
 
 

@@ -1,10 +1,11 @@
 """Inputs of the anomaly detectors (evaluation plan, axis 2) for a detection run of one country:
 its published series, the raw rows they come from, and what each series is compared with.
 
-A run judges the hours [start, end), both hour starts in UTC. Its inputs cover MARGIN more on each
-side, so that the windowed statistics of its first and last days are complete where the data
-exist. Each published series has an id, `<source>.<area>.<quantity>`, and comes in parts, one per
-dataset of its rows: a part cites the producer and the dataset of its rows as its provenance, and
+A run judges the hours [start, end), both hour starts in UTC. Its inputs cover a margin more on
+each side, MARGIN unless the run sets another, so that the windowed statistics of its first and
+last days are complete where the data exist; the thresholds of 2019-2022 are fixed without one.
+Each published series has an id, `<source>.<area>.<quantity>`, and comes in parts, one per dataset
+of its rows: a part cites the producer and the dataset of its rows as its provenance, and
 says whether they are real-time values, which their producer replaces later. The raw rows of each
 dataset, as fetched, go to the completeness detector; the hourly series are converted from the rows
 that completeness.on_grid keeps, so that a value off the grid of its dataset is reported instead of
@@ -102,7 +103,7 @@ class DetectionInputs:
     """Inputs of a detection run of `country` over the hours [start, end): the raw rows of each
     dataset, the series by id, and the price classes of the bidding zone of the country, the
     columns of regimes.classify_hours but the mean price. `hours` are the hours of the run with
-    MARGIN on each side: the parts of each series cover them together, and the model, the
+    its margin on each side: the parts of each series cover them together, and the model, the
     capacity, the offshore hours and the price classes are given on them."""
 
     country: str
@@ -123,6 +124,7 @@ def france_inputs(
     odre_cache_dir: Path = odre.CACHE_DIR,
     smard_cache_dir: Path = smard.CACHE_DIR,
     era5_cache_dir: Path = physics.ERA5_CACHE_DIR,
+    margin: pd.Timedelta = MARGIN,
 ) -> DetectionInputs:
     """Inputs of a detection run over the hours [start, end) of mainland France, both hour starts
     in UTC, from éCO2mix (ODRÉ), the SDES capacity, ERA5 and the French day-ahead prices.
@@ -142,7 +144,7 @@ def france_inputs(
     """
     grid.check_period(start, end)
     hours = pd.date_range(
-        start - MARGIN, end + MARGIN, freq="h", inclusive="left", unit="ns", name="time"
+        start - margin, end + margin, freq="h", inclusive="left", unit="ns", name="time"
     )
     first, last = hours[0], hours[-1] + grid.HOUR
     technologies: list[odre.RegionalSeries] = ["solar", "wind"]
@@ -193,6 +195,7 @@ def germany_inputs(
     *,
     smard_cache_dir: Path = smard.CACHE_DIR,
     energy_charts_cache_dir: Path = energy_charts.CACHE_DIR,
+    margin: pd.Timedelta = MARGIN,
 ) -> DetectionInputs:
     """Inputs of a detection run over the hours [start, end) of Germany, both hour starts in UTC:
     the feed-in of Germany and its four control areas from SMARD, `smard.<area>.<technology>`,
@@ -205,7 +208,7 @@ def germany_inputs(
     """
     grid.check_period(start, end)
     hours = pd.date_range(
-        start - MARGIN, end + MARGIN, freq="h", inclusive="left", unit="ns", name="time"
+        start - margin, end + margin, freq="h", inclusive="left", unit="ns", name="time"
     )
     first, last = hours[0], hours[-1] + grid.HOUR
     installed = energy_charts.fetch_installed_capacity(
