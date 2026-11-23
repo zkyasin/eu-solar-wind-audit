@@ -559,6 +559,15 @@ def test_jumps_follow_the_given_threshold() -> None:
     assert higher_threshold.empty
 
 
+def test_a_jump_compares_medians() -> None:
+    # A jump of 25 minutes, and one day two hours early before the change, which would move the
+    # mean of the days before by 8.6 minutes.
+    offsets = [0.0] * 14 + [25.0] * 15
+    offsets[3] = -120.0
+
+    assert jumps(clear_days(offsets, first_day="2022-03-13")).empty
+
+
 @pytest.mark.parametrize(("valid_after", "found"), [(2, False), (3, True)])
 def test_a_jump_needs_three_valid_days_on_each_side(valid_after: int, found: bool) -> None:
     published = around_spring_change(60.0)
