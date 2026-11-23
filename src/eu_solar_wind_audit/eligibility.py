@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Index, Series
@@ -140,6 +142,27 @@ def negative_price_hours(inputs: YearInputs) -> pd.Series:
     `Eligibility`: the hours of axis 4, which never enter a fit."""
     other_rules = inputs.eligibility.drop(columns=["reference_price", "eligible"])
     return other_rules.all(axis="columns") & (inputs.price_classes["regime"] == "negative")
+
+
+def hour_counts(eligible: pd.Series, weights: pd.Series | None) -> npt.NDArray[np.int64]:
+    """The number of times each hour of the boolean `eligible` counts in a fit, in the order of
+    these hours: its weight in `weights`, integers on the same hours, as in a bootstrap sample that
+    holds the hour that many times, or once without them.
+
+    Raises ValueError unless the weights are non-negative integers on the hours of `eligible`, with
+    a positive weight at an eligible hour.
+    """
+    mask = eligible.to_numpy(dtype=bool)
+    if weights is None:
+        return np.ones(int(mask.sum()), dtype=np.int64)
+    if not weights.index.equals(eligible.index):
+        raise ValueError("weights must be on the hours of the eligibility")
+    if not pd.api.types.is_integer_dtype(weights.dtype) or (weights < 0).any():
+        raise ValueError("weights must be non-negative integers")
+    counts: npt.NDArray[np.int64] = weights.to_numpy(dtype=np.int64)[mask]
+    if not counts.any():
+        raise ValueError("no eligible hour has a positive weight")
+    return counts
 
 
 def year_inputs(
