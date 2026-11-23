@@ -160,7 +160,8 @@ def test_a_day_without_clear_sky_irradiance_gets_no_sky_class() -> None:
     hours = paris_hours("2022-06-15", "2022-06-17")
     clear_sky_ghi = np.where(hours < pd.Timestamp("2022-06-15 22:00", tz="UTC"), 0.0, 100.0)
 
-    found = covariates(hours, np.where(clear_sky_ghi > 0, 50.0, 0.0), clear_sky_ghi)
+    # Global irradiance on the first day too, whose ratio of sums would be infinite.
+    found = covariates(hours, 50.0, clear_sky_ghi)
 
     assert np.isnan(days.clear_sky_index(found).iloc[0])
     pd.testing.assert_series_equal(
