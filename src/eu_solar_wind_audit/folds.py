@@ -18,13 +18,18 @@ held-out year, as the model columns of evaluation.Predictions:
 The season of an hour is that of its UTC month, and its sky class that of days.sky_classes over the
 joined inputs, so that the days across New Year are whole when the input years follow each other.
 The eligible hours of input years that are no fold years are never learned from or evaluated.
+
+The final fit learns the parameters and the strata on every fold year: it is the potential of axis
+4 and of the prospective test of 2026. The sensitivity fit learns the parameters on the fold years
+up to SENSITIVITY_LAST_YEAR, and both give the potential at the negative-price hours of each year.
 """
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import pandas as pd
-from pandera.typing import DataFrame
+import pandera.pandas as pa
+from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import (
     calibration,
@@ -43,6 +48,9 @@ FOLD_YEARS: dict[physics.Technology, tuple[int, ...]] = {
     "solar": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
     "wind_onshore": (2019, 2020, 2021, 2022, 2024, 2025),
 }
+# Price selection removes most sunny peak hours from the eligible hours of 2024 and 2025
+# (evaluation plan, Deviations), so the sensitivity fit stops before them (calibration critique).
+SENSITIVITY_LAST_YEAR = 2023
 
 Calibration = calibration.SolarCalibration | calibration.WindCalibration
 
@@ -57,16 +65,41 @@ class Potential:
     ratios: strata.StratumRatios
 
 
+class NegativePrices(pa.DataFrameModel):
+    """Hours of each UTC year with the negative price class that meet every other rule of
+    eligibility.Eligibility, and the calibrated potential in MWh of the sensitivity fit and of the
+    final fit summed over them."""
+
+    year: Index[int] = pa.Field(unique=True, check_name=True)
+    hours: Series[int] = pa.Field(ge=0)
+    sensitivity_mwh: Series[float]
+    final_mwh: Series[float]
+
+    class Config:
+        strict = True
+
+
+@dataclass(frozen=True)
+class Sensitivity:
+    """Parameters learned on the eligible hours of the fold years up to SENSITIVITY_LAST_YEAR, and
+    the potential with them and with those of the final fit at negative prices."""
+
+    calibration: Calibration
+    negative_prices: DataFrame[NegativePrices]
+
+
 @dataclass(frozen=True)
 class Report:
     """Leave-one-year-out evaluation of one technology: the potential of each fold, keyed by its
     held-out year; the predictions of the held-out years, their metrics and the summary of these
-    metrics by period of evaluation.PERIODS."""
+    metrics by period of evaluation.PERIODS; the final and the sensitivity fit."""
 
     folds: dict[int, Potential]
     predictions: DataFrame[evaluation.Predictions]
     metrics: DataFrame[evaluation.Metrics]
     period_summary: pd.DataFrame
+    final: Potential
+    sensitivity: Sensitivity
 
 
 def solar(years: Sequence[eligibility.YearInputs], parameters: PVParameters) -> Report:
@@ -106,9 +139,9 @@ def wind_onshore(years: Sequence[eligibility.YearInputs]) -> Report:
     precompute.wind_onshore.
 
     Raises ValueError unless the frames of each input are on the hours of one UTC year of
-    evaluation.TRAINING_YEARS, the years increase, two of them are fold years, and each eligible
-    hour of a held-out year has a cross-fitted level; and as calibration and strata do on their
-    inputs.
+    evaluation.TRAINING_YEARS, the years increase, two of them are fold years, one of these up to
+    SENSITIVITY_LAST_YEAR, and each eligible hour of a held-out year has a cross-fitted level; and
+    as calibration and strata do on their inputs.
     """
     arrays = [inputs.arrays for inputs in years if isinstance(inputs.arrays, precompute.WindArrays)]
     if len(arrays) != len(years):
@@ -136,6 +169,8 @@ def _report[Arrays: precompute.SolarArrays | precompute.WindArrays, Fitted: Cali
     fold_years = [year for year in calendar if year in FOLD_YEARS[technology]]
     if len(fold_years) < 2:
         raise ValueError(f"leave-one-year-out needs two of the fold years {FOLD_YEARS[technology]}")
+    if fold_years[0] > SENSITIVITY_LAST_YEAR:
+        raise ValueError(f"the sensitivity fit needs a fold year up to {SENSITIVITY_LAST_YEAR}")
     arrays_of = dict(zip(calendar, arrays, strict=True))
     covariates = pd.concat([part.covariates for part in arrays])
     hours = pd.DatetimeIndex(covariates.index)
@@ -206,7 +241,21 @@ def _report[Arrays: precompute.SolarArrays | precompute.WindArrays, Fitted: Cali
     predictions = evaluation.Predictions.validate(pd.concat(held_out_years))
     metrics = evaluation.metrics(predictions, technology)
 
-    return Report(folds, predictions, metrics, evaluation.period_summary(metrics))
+    final_fit = learn(fold_years)
+    final = Potential(final_fit, learn_strata(final_fit, fold_years))
+    early_fit = learn([year for year in fold_years if year <= SENSITIVITY_LAST_YEAR])
+    negative = pd.concat([_negative_price_hours(inputs) for inputs in years])
+    by_year = pd.DataFrame(
+        {
+            "hours": negative,
+            "sensitivity_mwh": potential_mwh(early_fit, calendar).where(negative, 0.0),
+            "final_mwh": potential_mwh(final_fit, calendar).where(negative, 0.0),
+        }
+    ).groupby(pd.Index(hours.year, dtype="int64", name="year"))
+    sensitivity = Sensitivity(early_fit, NegativePrices.validate(by_year.sum()))
+    return Report(
+        folds, predictions, metrics, evaluation.period_summary(metrics), final, sensitivity
+    )
 
 
 def _calendar_years(years: Sequence[eligibility.YearInputs]) -> list[int]:
@@ -229,3 +278,10 @@ def _calendar_years(years: Sequence[eligibility.YearInputs]) -> list[int]:
         first, last = evaluation.TRAINING_YEARS[0], evaluation.TRAINING_YEARS[-1]
         raise ValueError(f"{outside[0]} lies outside the training years {first}-{last}")
     return calendar
+
+
+def _negative_price_hours(inputs: eligibility.YearInputs) -> pd.Series:
+    """Whether each hour of `inputs` has the negative price class and meets every other rule of
+    eligibility.Eligibility."""
+    other_rules = inputs.eligibility.drop(columns=["reference_price", "eligible"])
+    return other_rules.all(axis="columns") & (inputs.price_classes["regime"] == "negative")

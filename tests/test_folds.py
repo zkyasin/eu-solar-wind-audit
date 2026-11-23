@@ -325,6 +325,86 @@ def test_season_and_sky_class_come_from_the_joined_years() -> None:
     assert predictions.loc[without_class, "eligible"].any()
 
 
+def test_the_final_fit_learns_on_every_fold_year(
+    solar_inputs: list[eligibility.YearInputs], solar_report: folds.Report
+) -> None:
+    observed = joined(solar_inputs)
+    arrays = solar_arrays(solar_inputs)
+
+    final = solar_report.final
+
+    direct = calibration.fit_solar(arrays, observed["published_mwh"], observed["eligible"], PV)
+    assert final.calibration == direct
+    assert final.calibration.fit.training_years == tuple(YEARS)
+    potential = pd.concat([solar_potential(inputs, direct) for inputs in solar_inputs])
+    covariates = pd.concat([inputs.arrays.covariates for inputs in solar_inputs])
+    ratios = strata.fit_ratios(
+        observed["published_mwh"], potential, covariates, observed["eligible"]
+    )
+    assert final.ratios.decile_edges == ratios.decile_edges
+    pd.testing.assert_frame_equal(final.ratios.table, ratios.table)
+
+
+def test_the_final_wind_fit_leaves_out_the_years_that_are_no_folds(
+    wind_inputs: list[eligibility.YearInputs], wind_report: folds.Report
+) -> None:
+    fit = wind_report.final.calibration.fit
+
+    assert fit.training_years == tuple(WIND_FOLDS)
+    in_folds = [inputs for year, inputs in zip(YEARS, wind_inputs, strict=True) if year != 2023]
+    assert fit.eligible_hours == sum(inputs.eligibility["eligible"].sum() for inputs in in_folds)
+
+
+def test_the_sensitivity_fit_learns_on_the_fold_years_up_to_2023(
+    solar_inputs: list[eligibility.YearInputs],
+    solar_report: folds.Report,
+    wind_report: folds.Report,
+) -> None:
+    early = solar_inputs[:5]
+    observed = joined(early)
+
+    sensitivity = solar_report.sensitivity
+
+    direct = calibration.fit_solar(
+        solar_arrays(early), observed["published_mwh"], observed["eligible"], PV
+    )
+    assert sensitivity.calibration == direct
+    assert sensitivity.calibration.fit.training_years == (2019, 2020, 2021, 2022, 2023)
+    assert wind_report.sensitivity.calibration.fit.training_years == (2019, 2020, 2021, 2022)
+
+
+def test_the_sensitivity_compares_the_potential_at_negative_prices(
+    solar_inputs: list[eligibility.YearInputs], solar_report: folds.Report
+) -> None:
+    table = solar_report.sensitivity.negative_prices
+
+    assert table.index.tolist() == YEARS
+    for year, inputs in zip(YEARS, solar_inputs, strict=True):
+        negative = inputs.published.index[::50]
+        # Other rules leave out the hours with the sun below the horizon.
+        sun_up = negative[inputs.arrays.covariates.loc[negative, "sun_elevation_deg"] > 0]
+        assert table.loc[year, "hours"] == sun_up.size
+        for column, potential in [
+            ("sensitivity_mwh", solar_report.sensitivity.calibration),
+            ("final_mwh", solar_report.final.calibration),
+        ]:
+            assert isinstance(potential, calibration.SolarCalibration)
+            expected = solar_potential(inputs, potential)[sun_up].sum()
+            assert table.loc[year, column] == pytest.approx(expected, rel=1e-12)
+
+
+def test_wind_hours_with_offshore_output_are_no_negative_price_hours(
+    wind_inputs: list[eligibility.YearInputs], wind_report: folds.Report
+) -> None:
+    table = wind_report.sensitivity.negative_prices
+
+    for year, inputs in zip(YEARS, wind_inputs, strict=True):
+        negative = inputs.published.index[::50]
+        onshore = (negative < odre.FIRST_OFFSHORE_POWER) | (negative >= odre.WIND_SPLIT_START)
+        assert table.loc[year, "hours"] == onshore.sum()
+    assert table.loc[2023, "hours"] == 0
+
+
 def realtime_from(inputs: eligibility.YearInputs, start: str) -> eligibility.YearInputs:
     """`inputs` of onshore wind whose published hours from `start` on are real-time values."""
     published = inputs.published.copy()
@@ -381,8 +461,9 @@ def classes_off_the_hours() -> list[eligibility.YearInputs]:
         (across_new_year, r"holds the hours of \[2019, 2020\], not of one UTC year"),
         (classes_off_the_hours, "not on the same hours"),
         (lambda: [solar_year(2019)], "needs two of the fold years"),
+        (lambda: [solar_year(2024), solar_year(2025)], "needs a fold year up to 2023"),
     ],
-    ids=["wind", "decreasing", "twice", "across-new-year", "off-the-hours", "one-fold"],
+    ids=["wind", "decreasing", "twice", "across-new-year", "off-the-hours", "one-fold", "late"],
 )
 def test_inputs_are_checked(given: Callable[[], list[eligibility.YearInputs]], error: str) -> None:
     with pytest.raises(ValueError, match=error):
