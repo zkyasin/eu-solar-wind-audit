@@ -177,6 +177,21 @@ def test_each_hour_is_compared_with_its_own_capacity() -> None:
     assert evidence(found)[0]["highest_hour"] == "2022-06-01T02:00:00+00:00"
 
 
+def test_the_evidence_is_read_at_the_hour_of_the_highest_ratio() -> None:
+    # That hour has neither the highest energy nor the highest capacity of the run.
+    found = above(hourly([120.0, 230.0]), capacity([100.0, 200.0]))
+
+    assert evidence(found) == [
+        {
+            "hours": 2,
+            "highest_hour": "2022-06-01T00:00:00+00:00",
+            "energy_mwh": 120.0,
+            "capacity_mw": 100.0,
+            "ratio": 1.2,
+        }
+    ]
+
+
 @pytest.mark.parametrize(("gap", "findings"), [(7 * 24 - 1, 1), (7 * 24, 2)])
 def test_runs_above_the_capacity_are_joined_within_seven_days(gap: int, findings: int) -> None:
     published = hourly([2.0, *[1.0] * gap, 2.0])
