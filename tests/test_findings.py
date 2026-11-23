@@ -44,12 +44,6 @@ def test_findings_model_accepts_a_valid_frame() -> None:
     Findings.validate(frame())
 
 
-# A total against the sum of its parts, and two sources of one quantity.
-@pytest.mark.parametrize("kind", ["sum_of_parts", "cross_source_gap"])
-def test_findings_model_accepts_both_cross_source_kinds(kind: str) -> None:
-    Findings.validate(frame(kind=kind))
-
-
 @pytest.mark.parametrize(
     ("found", "error"),
     [

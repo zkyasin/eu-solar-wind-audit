@@ -87,7 +87,7 @@ def test_a_gap_of_5_mwh_is_rounding_and_a_gap_of_2_percent_is_a_finding() -> Non
     found = check_split(total, {10: 5.0, 50: 40.0})
 
     assert spans(found) == [(hour(50), hour(51))]
-    assert found["kind"].tolist() == ["sum_of_parts"]
+    assert found["kind"].tolist() == ["parts_gap"]
     assert found["score"].tolist() == [40.0]
     assert evidence(found) == [
         {"parts": 2, "hours": 1, "largest_gap_mwh": 40.0, "largest_relative_gap": 0.02}

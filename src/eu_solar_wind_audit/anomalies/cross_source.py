@@ -14,8 +14,8 @@ Deviations):
 The rules compare published values only and are fixed in advance: their findings are facts,
 outside the false-alarm budget. Only the hours complete in every series are compared, and the
 completeness detector reports the others. Runs of hours that break a rule are one finding when
-less than a day separates them. Scores: `sum_of_parts`, the largest gap in MWh;
-`cross_source_gap`, the largest departure from the factor of the month, as a share of the factor.
+less than a day separates them. Scores: `parts_gap`, the largest gap in MWh; `cross_source_gap`,
+the largest departure from the factor of the month, as a share of the factor.
 """
 
 from collections.abc import Mapping
@@ -88,7 +88,7 @@ def sum_of_parts(
                 "provisional": provisional,
                 "start": start,
                 "end": end,
-                "kind": "sum_of_parts",
+                "kind": "parts_gap",
                 "score": run.max(),
                 "evidence": {
                     "parts": len(parts),
