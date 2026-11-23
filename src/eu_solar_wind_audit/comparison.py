@@ -4,7 +4,9 @@ publishes (evaluation plan, axis 4, "France against RTE").
 This is the only module that reads the reference series: the calibration and the estimate never
 do (tests/test_calibration_isolation.py). The RTE series is itself an estimate, so agreement is a
 replication, not a proof of accuracy. Its perimeter includes Corsica, which the éCO2mix series
-leave out.
+leave out. The plan's check of the wind perimeter passes: RTE describes its wind series as the
+modulation of onshore wind farms (page read on 2026-11-23; references/rte/manifest.json), the
+perimeter of the wind_onshore estimate.
 
 The tests of the plan, without the verdict, which needs the bootstrap interval and the minimal
 detectable effect:
