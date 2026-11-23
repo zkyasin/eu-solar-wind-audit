@@ -215,11 +215,13 @@ def test_solar_covariates_are_capacity_weighted_means_at_mid_hour(
     weights = capacity.transpose("time", "cell").to_numpy()
     elevation, clear = sky_of_cells(cells, mid_hours(start, end))
     ghi = cells["ssrd"].transpose("time", "cell").to_numpy()
+    temp_air = cells["t2m"].transpose("time", "cell").to_numpy().astype(float) - pv.KELVIN
 
     for column, values in [
         ("sun_elevation_deg", elevation),
         ("ghi_w_m2", ghi),
         ("clear_sky_ghi_w_m2", clear),
+        ("air_temperature_c", temp_air),
     ]:
         expected = np.average(values, axis=1, weights=weights)
         np.testing.assert_allclose(covariates[column], expected, rtol=1e-12, atol=1e-12)
@@ -237,6 +239,7 @@ def solar_arrays(hours: pd.DatetimeIndex) -> precompute.SolarArrays:
             "sun_elevation_deg": 30.0,
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 700.0,
+            "air_temperature_c": 20.0,
         },
         index=hours.as_unit("ns").rename("time"),
     )
@@ -381,11 +384,16 @@ def test_wind_covariates_refer_to_the_wind_fleet(store: WeatherStore, tmp_path: 
     centroid = pvlib.solarposition.get_solarposition(times, latitude, longitude)
     _, clear = sky_of_cells(cells, times)
     ghi = cells["ssrd"].transpose("time", "cell").to_numpy()
+    temp_air = cells["t2m"].transpose("time", "cell").to_numpy().astype(float) - pv.KELVIN
 
     np.testing.assert_allclose(
         covariates["sun_elevation_deg"], centroid["apparent_elevation"], rtol=1e-12, atol=1e-12
     )
-    for column, values in [("ghi_w_m2", ghi), ("clear_sky_ghi_w_m2", clear)]:
+    for column, values in [
+        ("ghi_w_m2", ghi),
+        ("clear_sky_ghi_w_m2", clear),
+        ("air_temperature_c", temp_air),
+    ]:
         expected = np.average(values, axis=1, weights=weights)
         np.testing.assert_allclose(covariates[column], expected, rtol=1e-12, atol=1e-12)
     # The plain mean latitude of the three cells is 45.25, and the first window alone puts the
