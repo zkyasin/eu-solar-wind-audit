@@ -53,6 +53,9 @@ def test_findings_model_accepts_a_valid_frame() -> None:
         pytest.param(frame(end=utc("2022-03-27 01:45")), "on_the_hour", id="end-off-hour"),
         pytest.param(frame(evidence=[1, 2]), "json_object", id="evidence-not-an-object"),
         pytest.param(frame().assign(evidence="{absent: 4}"), "json_object", id="evidence-not-json"),
+        pytest.param(
+            frame().assign(evidence='{"ratio": NaN}'), "json_object", id="evidence-with-nan"
+        ),
         pytest.param(frame(score=np.nan), "non-nullable", id="no-score"),
         pytest.param(frame(series=""), "str_length", id="no-series"),
         pytest.param(frame(provenance=""), "str_length", id="no-provenance"),
@@ -97,6 +100,12 @@ def test_evidence_mapping_is_stored_as_a_json_object() -> None:
 
     # Keys are sorted, so that the same finding always gives the same text.
     assert found["evidence"].item() == '{"series": 3, "time_zone": "Europe/Paris"}'
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf])
+def test_evidence_outside_json_is_refused(value: float) -> None:
+    with pytest.raises(ValueError, match="not JSON compliant"):
+        from_records([record(evidence={"ratio": value})])
 
 
 def test_records_with_naive_times_are_refused() -> None:

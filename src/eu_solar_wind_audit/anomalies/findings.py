@@ -2,9 +2,9 @@
 
 A finding describes the published rows of one series, or of every series of a dataset, over the
 hours [start, end) in UTC. It is a data report: `provenance` cites the producer and the dataset of
-the rows as their source. `evidence` is a JSON object with the facts a reader can check against
-the published data. It never holds hourly ENTSO-E values, whose terms allow only derived values,
-and it gives prices only as price classes (docs/data-licences.md).
+the rows as their source. `evidence` is a JSON object, without NaN or Infinity, with the facts a
+reader can check against the published data. It never holds hourly ENTSO-E values, whose terms
+allow only derived values, and it gives prices only as price classes (docs/data-licences.md).
 """
 
 import json
@@ -63,8 +63,8 @@ class Findings(pa.DataFrameModel):
     @classmethod
     def json_object(cls, evidence: str) -> bool:
         try:
-            return isinstance(json.loads(evidence), dict)
-        except json.JSONDecodeError:
+            return isinstance(json.loads(evidence, parse_constant=_not_json), dict)
+        except ValueError:
             return False
 
     @pa.dataframe_check
@@ -81,10 +81,7 @@ def from_records(records: Iterable[Mapping[str, object]]) -> DataFrame[Findings]
 
     Times are stored in nanoseconds, the unit of grid.UtcTime, whatever unit they come in.
     """
-    rows = [
-        {**record, "evidence": json.dumps(record["evidence"], ensure_ascii=False, sort_keys=True)}
-        for record in records
-    ]
+    rows = [{**record, "evidence": _json(record["evidence"])} for record in records]
     if not rows:
         return Findings.empty()
     frame = pd.DataFrame(rows)
@@ -92,6 +89,16 @@ def from_records(records: Iterable[Mapping[str, object]]) -> DataFrame[Findings]
         frame[column] = frame[column].astype("datetime64[ns, UTC]")
     frame["score"] = frame["score"].astype(float)
     return Findings.validate(frame)
+
+
+def _json(evidence: object) -> str:
+    # Sorted keys, so that the same finding always gives the same text.
+    return json.dumps(evidence, ensure_ascii=False, sort_keys=True, allow_nan=False)
+
+
+def _not_json(constant: str) -> object:
+    # Python reads NaN and Infinity, which are not JSON and which strict parsers refuse.
+    raise ValueError(f"{constant} is not JSON")
 
 
 def runs(hours: pd.DatetimeIndex, merge_gap: pd.Timedelta) -> pd.DataFrame:
