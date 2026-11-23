@@ -164,25 +164,55 @@ def solar_energy(
     horizontal_share: float = 0.0,
     seasonal_amplitude: float = 0.0,
 ) -> "pd.Series[float]":
-    """National solar output in MWh per hour, NaN where the hour is incomplete:
-
-        level * (1 + seasonal_amplitude * sin(2 pi (d - 172) / 365.25))
-              * ((1 - horizontal_share) * fleet + horizontal_share * horizontal)
-
-    with d the UTC day of year of the hour, fleet the configured systems weighted by their shares
-    and horizontal the horizontal modules, both at `dc_ac_ratio`, a value of DC_AC_GRID. The
-    parameters act on AC output, after the inverter.
-    """
+    """National solar output in MWh per hour, NaN where the hour is incomplete: the
+    `solar_potential` of the fleet and of the horizontal modules at `dc_ac_ratio`, a value of
+    DC_AC_GRID."""
     matches = np.flatnonzero(np.isclose(DC_AC_GRID, dc_ac_ratio, rtol=0.0, atol=1e-9))
     if matches.size != 1:
         raise ValueError(f"DC/AC ratio {dc_ac_ratio} is not on the grid")
-    fleet = arrays.fleet_mwh[:, :, matches[0]] @ arrays.shares
-    horizontal = arrays.horizontal_mwh[:, matches[0]]
     hours = pd.DatetimeIndex(arrays.covariates.index)
-    day = hours.day_of_year.to_numpy()
-    seasonal = 1 + seasonal_amplitude * np.sin(2 * np.pi * (day - SOLSTICE_DAY) / YEAR_DAYS)
-    energy = level * seasonal * ((1 - horizontal_share) * fleet + horizontal_share * horizontal)
+    energy = solar_potential(
+        arrays.fleet_mwh[:, :, matches[0]] @ arrays.shares,
+        arrays.horizontal_mwh[:, matches[0]],
+        seasonal_sine(hours),
+        level,
+        horizontal_share,
+        seasonal_amplitude,
+    )
     return pd.Series(energy, index=hours, name="energy_mwh")
+
+
+def solar_potential(
+    fleet: FloatArray,
+    horizontal: FloatArray,
+    sine: FloatArray,
+    level: float,
+    horizontal_share: float,
+    seasonal_amplitude: float,
+) -> FloatArray:
+    """Solar output from that of the whole fleet mounted as the configured systems weighted by
+    their shares, `fleet`, and as horizontal modules, `horizontal`, both at one DC/AC ratio, and
+    from the `seasonal_sine` of the hours:
+
+        level * (1 + seasonal_amplitude * sine)
+              * ((1 - horizontal_share) * fleet + horizontal_share * horizontal)
+
+    The parameters act on AC output, after the inverter. The output is linear in `fleet` and
+    `horizontal`, which can be energies or capacity factors.
+    """
+    seasonal = 1 + seasonal_amplitude * sine
+    output: FloatArray = (
+        level * seasonal * ((1 - horizontal_share) * fleet + horizontal_share * horizontal)
+    )
+    return output
+
+
+def seasonal_sine(hours: pd.DatetimeIndex) -> FloatArray:
+    """sin(2 pi (d - 172) / 365.25) with d the UTC day of year of each of `hours`: zero on the
+    June solstice of a common year, negative in spring and positive in autumn."""
+    day = hours.day_of_year.to_numpy()
+    sine: FloatArray = np.sin(2 * np.pi * (day - SOLSTICE_DAY) / YEAR_DAYS)
+    return sine
 
 
 def wind_onshore(
