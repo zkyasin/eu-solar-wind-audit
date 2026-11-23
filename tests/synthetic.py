@@ -81,8 +81,8 @@ def year_inputs(
     technology: physics.Technology = (
         "solar" if isinstance(arrays, precompute.SolarArrays) else "wind_onshore"
     )
-    rules = eligibility.eligible_hours(technology, published, arrays.covariates, classes)
-    return eligibility.YearInputs(odre.Hourly.validate(published), classes, arrays, rules)
+    rules = eligibility.eligible_hours("FR", technology, published, arrays.covariates, classes)
+    return eligibility.YearInputs("FR", odre.Hourly.validate(published), classes, arrays, rules)
 
 
 def solar_year(year: int, step: int = 5) -> eligibility.YearInputs:

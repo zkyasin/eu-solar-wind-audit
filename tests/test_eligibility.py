@@ -15,7 +15,7 @@ from shapely.geometry import box
 from eu_solar_wind_audit import days, eligibility, physics, precompute, regimes
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import era5, natural_earth, odre, smard
+from eu_solar_wind_audit.sources import bkg, era5, natural_earth, odre, smard
 
 SHARED_RULES = [
     "consolidated_or_definitive",
@@ -62,7 +62,7 @@ def inputs(hours: pd.DatetimeIndex) -> Inputs:
 
 def rules(technology: physics.Technology, given: Inputs) -> pd.DataFrame:
     classes = regimes.classify_hours(given.prices)
-    return eligibility.eligible_hours(technology, given.published, given.covariates, classes)
+    return eligibility.eligible_hours("FR", technology, given.published, given.covariates, classes)
 
 
 HOURS = utc_hours("2021-06-01 10:00")
@@ -172,6 +172,27 @@ def test_wind_hours_need_the_onshore_reference(start: pd.Timestamp, expected: li
     assert list(found.columns) == [*SHARED_RULES, "onshore_reference", "eligible"]
     assert found["onshore_reference"].tolist() == expected
     assert found["eligible"].tolist() == expected
+
+
+def test_german_hours_are_final_and_onshore_references() -> None:
+    # SMARD frames have no status. The hours span the period when French wind includes offshore.
+    given = inputs(utc_hours(odre.FIRST_OFFSHORE_POWER - pd.Timedelta(hours=2)))
+    published = given.published.drop(columns="status")
+    classes = regimes.classify_hours(given.prices)
+
+    found = eligibility.eligible_hours("DE", "wind_onshore", published, given.covariates, classes)
+
+    assert found["consolidated_or_definitive"].all()
+    assert found["onshore_reference"].all()
+    assert found["eligible"].all()
+
+
+def test_a_country_without_calibration_inputs_is_refused() -> None:
+    given = inputs(HOURS)
+    classes = regimes.classify_hours(given.prices)
+
+    with pytest.raises(ValueError, match="no calibration inputs for NL"):
+        eligibility.eligible_hours("NL", "solar", given.published, given.covariates, classes)
 
 
 def test_covariates_on_other_hours_are_refused() -> None:
@@ -435,3 +456,80 @@ def test_year_inputs_of_onshore_wind(sources: list[pd.Timestamp], tmp_path: Path
     assert inputs.published.index[inputs.published["complete"]].equals(YEAR_HOURS[onshore])
     # The first hour is next to the negative hour before 2022.
     assert inputs.eligibility.index[inputs.eligibility["eligible"]].equals(YEAR_HOURS[onshore][1:])
+
+
+GERMANY = Country(
+    country="DE",
+    time_zone="Europe/Berlin",
+    perimeter="germany",
+    era5_box=BOX,
+    solar=COUNTRY.solar,
+    wind_onshore=COUNTRY.wind_onshore,
+)
+# One district of five digits over the four cells.
+DISTRICTS = gpd.GeoDataFrame(
+    {"region": ["09162"]}, geometry=[box(1.875, 44.875, 2.375, 45.375)], crs="EPSG:4326"
+)
+
+
+def german_panel(technology: str) -> pd.DataFrame:
+    """Month-end capacity of district "09162", as physics.load_germany_capacity gives it: one part
+    per window of GERMANY for onshore wind."""
+    windows = range(len(GERMANY.wind_onshore)) if technology == "wind_onshore" else [0]
+    return pd.concat(
+        [capacity_panel(technology).assign(generation=window) for window in windows]
+    ).assign(department_code="09162", department="München", region="09")
+
+
+def german_year(
+    technology: physics.Technology, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> eligibility.YearInputs:
+    monkeypatch.setattr(
+        physics, "load_germany_capacity", lambda technology, parameters: german_panel(technology)
+    )
+    monkeypatch.setattr(bkg, "load_districts", lambda: DISTRICTS)
+    monkeypatch.setattr(era5, "read_era5", weather)
+    quarter_hour_stamps = quarter_hours("2021-12-31 23:00", "2023-01-01 01:00")
+    # The hour before 2022 has a negative price.
+    prices = pd.Series(50.0, index=quarter_hour_stamps)
+    prices.iloc[:4] = -5.0
+    # 250 MWh a quarter-hour, 1000 MWh an hour.
+    feed_in = pd.Series(250.0, index=quarter_hour_stamps)
+    files = smard_files(prices, "DE-LU") | feed_in_files(feed_in, technology)
+
+    with serving(files, []) as client:
+        return eligibility.year_inputs(
+            client,
+            technology,
+            2022,
+            GERMANY,
+            smard_cache_dir=tmp_path / "smard",
+            era5_cache_dir=tmp_path / "era5",
+        )
+
+
+def feed_in_files(energy: pd.Series, technology: physics.Technology) -> dict[str, bytes]:
+    """SMARD chart files that publish `energy`, in MWh on UTC quarter-hours, as the feed-in of
+    `technology` in Germany, in a single file starting where smard_files starts."""
+    stamps = [int(stamp.timestamp() * 1000) for stamp in energy.index]
+    rows = [[stamp, value] for stamp, value in zip(stamps, energy, strict=True)]
+    name = f"{smard.FEED_IN[technology]}_DE_quarterhour_{stamps[0]}.json"
+    return {name: json.dumps({"series": rows}).encode()}
+
+
+@pytest.mark.parametrize("technology", ["solar", "wind_onshore"])
+def test_year_inputs_of_germany(
+    technology: physics.Technology, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    inputs = german_year(technology, tmp_path, monkeypatch)
+
+    assert inputs.country == "DE"
+    for frame in (inputs.published, inputs.price_classes, inputs.eligibility):
+        assert frame.index.equals(YEAR_HOURS)
+    assert inputs.published["energy_mwh"].eq(1000.0).all()
+    assert inputs.price_classes["regime"].iloc[0] == "buffer"
+    assert inputs.eligibility["consolidated_or_definitive"].all()
+    # German Unity Day, Monday 3 October 2022, is a holiday; Thursday 14 July is not.
+    day_type = inputs.arrays.covariates["day_type"]
+    assert day_type[pd.Timestamp("2022-10-03 10:00", tz="UTC")] == "sunday_or_holiday"
+    assert day_type[pd.Timestamp("2022-07-14 10:00", tz="UTC")] == "working_day"

@@ -308,7 +308,7 @@ def realtime_from(inputs: eligibility.YearInputs, start: str) -> eligibility.Yea
     published = inputs.published.copy()
     published.loc[published.index >= pd.Timestamp(start, tz="UTC"), "status"] = "realtime"
     rules = eligibility.eligible_hours(
-        "wind_onshore", published, inputs.arrays.covariates, inputs.price_classes
+        "FR", "wind_onshore", published, inputs.arrays.covariates, inputs.price_classes
     )
     return dataclasses.replace(inputs, published=published, eligibility=rules)
 
