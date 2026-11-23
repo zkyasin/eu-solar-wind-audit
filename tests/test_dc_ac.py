@@ -3,10 +3,23 @@ import pandas as pd
 import pytest
 from numpy.typing import ArrayLike
 
-from eu_solar_wind_audit import days, dc_ac, precompute, regimes
+from eu_solar_wind_audit import calibration, days, dc_ac, precompute, pv, regimes
+from eu_solar_wind_audit.precompute import DC_AC_GRID, FloatArray
+from eu_solar_wind_audit.pv import PVParameters, System
 
 CAPACITY_MW = 100.0
 CENTROID = (46.0, 2.0)
+PV = PVParameters(fleet=(System(35.0, 180.0, 0.4), System(15.0, 110.0, 0.6)), dc_ac_ratio=1.2)
+# Level, horizontal share and seasonal amplitude of the synthetic published output.
+TRUTH = (0.85, 0.4, 0.04)
+# DC output of the second configured system and of horizontal modules relative to the first
+# system; horizontal modules gain on the others in summer, which tells their share apart from the
+# level.
+SECOND_SYSTEM = 0.85
+HORIZONTAL = 0.75
+HORIZONTAL_SUMMER_GAIN = 0.3
+
+Case = tuple[list[precompute.SolarArrays], pd.Series, pd.Series]
 
 
 def utc(stamp: str) -> pd.Timestamp:
@@ -40,8 +53,8 @@ def sky_arrays(
         index=hours,
     )
     return precompute.SolarArrays(
-        fleet_mwh=np.zeros((hours.size, 1, precompute.DC_AC_GRID.size)),
-        horizontal_mwh=np.zeros((hours.size, precompute.DC_AC_GRID.size)),
+        fleet_mwh=np.zeros((hours.size, 1, DC_AC_GRID.size)),
+        horizontal_mwh=np.zeros((hours.size, DC_AC_GRID.size)),
         shares=np.array([1.0]),
         covariates=precompute.Covariates.validate(covariates),
         centroid=centroid,
@@ -105,3 +118,161 @@ def test_the_sample_needs_inputs_on_the_hours_of_the_arrays() -> None:
         dc_ac.sample_hours([arrays], eligible.iloc[1:], classes)
     with pytest.raises(ValueError, match="on the hours of the arrays"):
         dc_ac.sample_hours([arrays], eligible, classes.iloc[1:])
+
+
+def ac_output(dc: FloatArray, ratio: float) -> FloatArray:
+    """AC output per unit of AC capacity of the DC output `dc` per unit of DC capacity."""
+    return pv.ac_from_dc(dc, ratio, PV.dc_losses)
+
+
+def clipping_case(
+    true_ratio: float, dc_scale: float = 1.0, years: tuple[int, ...] = (2019, 2020)
+) -> Case:
+    """Arrays on the hours from 08:00 to 16:00 UTC of every seventh day of `years`, whose DC output
+    follows the course of a clear day, and published output of the potential with TRUTH at
+    `true_ratio`, with a noise of 0.002 in capacity factor; every hour is in the sample."""
+    rng = np.random.default_rng(1)
+    arrays, published = [], []
+    for year in years:
+        midnights = pd.date_range(f"{year}-01-03", f"{year}-12-31", freq="7D", tz="UTC")
+        hours = pd.DatetimeIndex(
+            [
+                midnight + pd.Timedelta(hours=hour)
+                for midnight in midnights
+                for hour in range(8, 17)
+            ],
+            name="time",
+        ).as_unit("ns")
+        peak = np.repeat(rng.uniform(0.9, 1.05, midnights.size), 9)
+        dc = dc_scale * peak * np.sin(np.pi * (hours.hour.to_numpy() + 0.5 - 5) / 14)
+        summer = np.cos(2 * np.pi * (hours.day_of_year.to_numpy() - 172) / 365.25)
+        horizontal = HORIZONTAL * (1 + HORIZONTAL_SUMMER_GAIN * summer) * dc
+        systems = [dc, SECOND_SYSTEM * dc, horizontal]
+        on_grid = [
+            np.stack([ac_output(values, float(ratio)) for ratio in DC_AC_GRID], axis=-1)
+            for values in systems
+        ]
+        covariates = pd.DataFrame(
+            {
+                "complete": True,
+                "capacity_mw": CAPACITY_MW,
+                "capacity_provisional": False,
+                "era5_source": "ERA5",
+                "sun_elevation_deg": 40.0,
+                "ghi_w_m2": 600.0,
+                "clear_sky_ghi_w_m2": 620.0,
+                "air_temperature_c": 20.0,
+            },
+            index=hours,
+        )
+        shares = np.array([system.share for system in PV.fleet])
+        arrays.append(
+            precompute.SolarArrays(
+                fleet_mwh=CAPACITY_MW * np.stack(on_grid[:-1], axis=1),
+                horizontal_mwh=CAPACITY_MW * on_grid[-1],
+                shares=shares,
+                covariates=precompute.Covariates.validate(covariates),
+                centroid=CENTROID,
+            )
+        )
+        fleet = sum(
+            share * ac_output(values, true_ratio)
+            for share, values in zip(shares, systems[:-1], strict=True)
+        )
+        potential = precompute.solar_potential(
+            CAPACITY_MW * fleet,
+            CAPACITY_MW * ac_output(systems[-1], true_ratio),
+            precompute.seasonal_sine(hours),
+            *TRUTH,
+        )
+        noise = rng.normal(0.0, 0.002 * CAPACITY_MW, hours.size)
+        published.append(pd.Series(potential + noise, index=hours))
+    published_mwh = pd.concat(published)
+    return arrays, published_mwh, pd.Series(True, index=published_mwh.index)
+
+
+def column(ratio: float) -> int:
+    return int(np.flatnonzero(np.isclose(DC_AC_GRID, ratio))[0])
+
+
+@pytest.mark.parametrize("true_ratio", [1.21, 1.37, 1.6])
+def test_the_profile_finds_the_ratio_of_inverter_clipping(true_ratio: float) -> None:
+    arrays, published_mwh, sample = clipping_case(true_ratio)
+
+    found = dc_ac.profile(arrays, published_mwh, sample, PV)
+
+    assert found.minimum == true_ratio
+    assert not found.at_grid_end
+    assert found.parameters[column(true_ratio)] == pytest.approx(TRUTH, abs=0.01)
+    assert found.costs.shape == DC_AC_GRID.shape
+    assert (found.hours, found.days) == (936, 104)
+
+
+def test_ties_go_to_the_smallest_ratio() -> None:
+    arrays, published_mwh, sample = clipping_case(1.37)
+    # The ratios from 1.33 to 1.41 all get the output at 1.37.
+    tied = slice(column(1.33), column(1.41) + 1)
+    for part in arrays:
+        part.fleet_mwh[:, :, tied] = part.fleet_mwh[:, :, [column(1.37)]]
+        part.horizontal_mwh[:, tied] = part.horizontal_mwh[:, [column(1.37)]]
+
+    found = dc_ac.profile(arrays, published_mwh, sample, PV)
+
+    assert np.unique(found.costs[tied]).size == 1
+    assert found.minimum == 1.33
+
+
+@pytest.mark.parametrize(
+    ("true_ratio", "dc_scale", "end"),
+    [
+        pytest.param(2.2, 1.0, 1.8, id="above-the-grid"),
+        # A larger DC output lets inverters clip below the grid too.
+        pytest.param(0.8, 1.6, 0.9, id="below-the-grid"),
+    ],
+)
+def test_a_minimum_at_an_end_of_the_grid_is_flagged(
+    true_ratio: float, dc_scale: float, end: float
+) -> None:
+    arrays, published_mwh, sample = clipping_case(true_ratio, dc_scale)
+
+    found = dc_ac.profile(arrays, published_mwh, sample, PV)
+
+    assert found.minimum == end
+    assert found.at_grid_end
+
+
+def test_the_scale_and_the_fit_at_the_configured_ratio_are_those_of_calibration() -> None:
+    arrays, published_mwh, sample = clipping_case(1.37)
+    # A sample that leaves out some hours of the arrays.
+    sample[pd.DatetimeIndex(sample.index).hour == 12] = False
+
+    found = dc_ac.profile(arrays, published_mwh, sample, PV)
+
+    fitted = calibration.fit_solar(arrays, published_mwh, sample, PV)
+    assert found.f_scale == fitted.fit.f_scale
+    estimates = [fitted.level, fitted.horizontal_share, fitted.seasonal_amplitude]
+    assert found.parameters[column(1.2)] == pytest.approx(estimates, abs=1e-7)
+    assert found.costs[column(1.2)] == pytest.approx(fitted.fit.cost, rel=1e-9)
+
+
+def test_only_sample_hours_are_profiled() -> None:
+    arrays, published_mwh, sample = clipping_case(1.37)
+    in_2019 = pd.DatetimeIndex(sample.index).year == 2019
+    # Values of the other hours do not count.
+    published_mwh[~in_2019] = 0.0
+
+    found = dc_ac.profile(arrays, published_mwh, sample & in_2019, PV)
+
+    # The same hours and values of 2019, without the other year.
+    alone = dc_ac.profile(*clipping_case(1.37, years=(2019,)), PV)
+    np.testing.assert_array_equal(found.costs, alone.costs)
+    assert (found.minimum, found.hours, found.days) == (1.37, 468, 52)
+
+
+def test_hours_of_2026_are_never_profiled() -> None:
+    arrays, published_mwh, sample = clipping_case(1.37, years=(2025, 2026))
+
+    with pytest.raises(ValueError, match="outside the training years"):
+        dc_ac.profile(
+            arrays, published_mwh, sample & (pd.DatetimeIndex(sample.index).year == 2025), PV
+        )
