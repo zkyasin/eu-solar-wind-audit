@@ -34,7 +34,8 @@ KINDS = [
     "frozen",
     # Level breaks
     "level_break",
-    # Cross-source gaps
+    # Cross-source gaps: a total against the sum of its parts, and two sources of one quantity
+    "sum_of_parts",
     "cross_source_gap",
 ]
 
