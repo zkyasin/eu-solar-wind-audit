@@ -1,13 +1,59 @@
 import dataclasses
+import json
 from pathlib import Path
 
+import httpx
 import pandas as pd
-from synthetic import PV, solar_year
+import pytest
+from synthetic import PV, solar_year, wind_year
 
-from eu_solar_wind_audit import calibrate, evaluation
-from eu_solar_wind_audit.config import CONFIG_DIR, load_country
+from eu_solar_wind_audit import calibrate, cli, eligibility, evaluation, fits, physics
+from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
 
 YEARS = list(evaluation.TRAINING_YEARS)
+
+
+def test_calibrate_france_writes_the_tables_the_description_and_the_frozen_fit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    requested: list[tuple[str, int]] = []
+
+    def year_inputs(
+        client: httpx.Client, technology: physics.Technology, year: int, parameters: Country
+    ) -> eligibility.YearInputs:
+        requested.append((technology, year))
+        return wind_year(year)
+
+    monkeypatch.setattr(eligibility, "year_inputs", year_inputs)
+    output, fits_dir = tmp_path / "out", tmp_path / "fits"
+
+    cli.main(["calibrate-france", "wind_onshore", str(output), "--fits-dir", str(fits_dir)])
+
+    assert requested == [("wind_onshore", year) for year in YEARS]
+    tables = {
+        path.name.removeprefix("wind_onshore-").removesuffix(".parquet")
+        for path in output.glob("*.parquet")
+    }
+    assert tables == {
+        "folds",
+        "strata",
+        "predictions",
+        "metrics",
+        "summary",
+        "negative-prices",
+        "composition",
+    }
+    fold_table = pd.read_parquet(output / "wind_onshore-folds.parquet")
+    # Onshore wind has no fold in 2023, the gap of its reference.
+    assert fold_table["fit"].tolist() == ["2019", "2020", "2021", "2022", "2024", "2025", "final"]
+    description = json.loads((output / "wind_onshore-calibration.json").read_text())
+    assert [year["year"] for year in description["inputs"]["years"]] == YEARS
+    assert description["fold_years"] == [2019, 2020, 2021, 2022, 2024, 2025]
+    frozen = fits.read(fits_dir / "wind_onshore.json")
+    assert frozen.technology == "wind_onshore"
+    assert sorted(frozen.fold_calibrations) == [2019, 2020, 2021, 2022, 2024, 2025]
+    assert frozen.final.calibration.fit.training_years == (2019, 2020, 2021, 2022, 2024, 2025)
+    assert frozen.git_describe == description["git_describe"]
 
 
 def test_solar_calibration_reports_the_dc_ac_profile(tmp_path: Path) -> None:

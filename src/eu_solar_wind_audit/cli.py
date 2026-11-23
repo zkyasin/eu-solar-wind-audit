@@ -10,7 +10,7 @@ from typing import Any
 
 import pandas as pd
 
-from eu_solar_wind_audit import physics
+from eu_solar_wind_audit import calibrate, dc_ac, fits, physics
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
 from eu_solar_wind_audit.sources import natural_earth, odre, sdes
 
@@ -33,6 +33,21 @@ def main(argv: list[str] | None = None) -> None:
     model.add_argument("end", type=date.fromisoformat, help="day after the last one, UTC")
     model.add_argument("output", type=Path, help="parquet file; the JSON file goes next to it")
     model.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
+    fit = commands.add_parser(
+        "calibrate-france",
+        help="fit the calibrated potential of mainland France leaving one year out of 2019-2025, "
+        "write its tables with a JSON file describing the run, and the frozen fit",
+    )
+    fit.add_argument("technology", choices=["solar", "wind_onshore"])
+    fit.add_argument("output", type=Path, help="directory of the tables and their description")
+    fit.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
+    fit.add_argument("--fits-dir", type=Path, default=fits.FITS_DIR)
+    fit.add_argument(
+        "--replicates",
+        type=int,
+        default=dc_ac.REPLICATES,
+        help="day-bootstrap replicates of the solar DC/AC profile",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "snapshot-realtime":
@@ -51,6 +66,14 @@ def main(argv: list[str] | None = None) -> None:
         sidecar.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
         print(args.output)
         print(sidecar)
+    elif args.command == "calibrate-france":
+        parameters = load_country(args.config)
+        with odre.make_client() as client:
+            calibrated = calibrate.run(
+                client, args.technology, parameters, replicates=args.replicates
+            )
+        for path in calibrate.write(calibrated, args.output, args.fits_dir, git_describe()):
+            print(path)
 
 
 def run_metadata(
@@ -78,6 +101,17 @@ def run_metadata(
         "regions": f"Natural Earth admin-1 {natural_earth.VERSION}",
         "git_commit": git_commit(),
     }
+
+
+def git_describe() -> str | None:
+    """`git describe --always --dirty` of the working tree, or None outside a repository."""
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--always", "--dirty"], capture_output=True, text=True, check=True
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return result.stdout.strip()
 
 
 def git_commit() -> str | None:
