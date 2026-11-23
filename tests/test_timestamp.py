@@ -7,7 +7,12 @@ import pandas as pd
 import pytest
 
 from eu_solar_wind_audit.anomalies.findings import Findings
-from eu_solar_wind_audit.anomalies.timestamp import BIAS_MINUTES, daily_centroids, shifts
+from eu_solar_wind_audit.anomalies.timestamp import (
+    BIAS_MINUTES,
+    clock_change_jumps,
+    daily_centroids,
+    shifts,
+)
 
 FloatArray = npt.NDArray[np.float64]
 
@@ -394,6 +399,93 @@ def test_centroids_out_of_order_give_the_same_claims() -> None:
 
 def test_no_claim_gives_an_empty_valid_frame() -> None:
     found = claims(clear_days([0.0] * 10))
+
+    assert found.empty
+    assert list(found.columns) == list(Findings.to_schema().columns)
+
+
+def jumps(
+    published: pd.DataFrame,
+    modelled: pd.DataFrame | None = None,
+    time_zone: str = "Europe/Paris",
+) -> pd.DataFrame:
+    """Clock-change findings of `published`, with the defaults of `centroids`."""
+    table = centroids(published, modelled)
+    return clock_change_jumps(table, time_zone=time_zone, series=SERIES, provenance=PROVENANCE)
+
+
+def paris_time_as_utc(first_day: str, days: int) -> list[float]:
+    """Offsets in minutes of the days of a source that labels Paris time as UTC: the UTC offset of
+    Paris at noon of each UTC day from `first_day`."""
+    noon = pd.date_range(utc(first_day) + pd.Timedelta(hours=12), periods=days, freq="D")
+    utc_offset = noon.tz_convert("Europe/Paris").tz_localize(None) - noon.tz_localize(None)
+    return [float(minutes) for minutes in utc_offset / pd.Timedelta(minutes=1)]
+
+
+def test_local_time_labelled_as_utc_jumps_at_both_clock_changes() -> None:
+    # Clocks went forward on 27 March 2022 and back on 30 October 2022, at 01:00 UTC.
+    found = jumps(clear_days(paris_time_as_utc("2022-01-01", 365), first_day="2022-01-01"))
+
+    assert spans(found) == [
+        (utc("2022-03-13"), utc("2022-04-11"), 1.0),
+        (utc("2022-10-16"), utc("2022-11-14"), -1.0),
+    ]
+    assert evidence(found)[0] == {
+        "time_zone": "Europe/Paris",
+        "clock_change": "2022-03-27T01:00:00+00:00",
+        "jump_minutes": pytest.approx(60.0),
+        "median_before_minutes": pytest.approx(60.0),
+        "median_after_minutes": pytest.approx(120.0),
+        "valid_days_before": 14,
+        "valid_days_after": 14,
+    }
+    assert found["kind"].unique().tolist() == ["clock_change_jump"]
+    assert not found["provisional"].any()
+
+
+@pytest.mark.parametrize(
+    ("offsets", "time_zone"),
+    [
+        (paris_time_as_utc("2022-01-01", 365), "UTC"),
+        ([0.0] * 365, "Europe/Paris"),
+    ],
+    ids=["no-clock-change", "utc-labels"],
+)
+def test_no_jump_without_a_change_of_offset(offsets: list[float], time_zone: str) -> None:
+    published = clear_days(offsets, first_day="2022-01-01")
+
+    assert jumps(published, time_zone=time_zone).empty
+
+
+def around_spring_change(after_minutes: float) -> pd.DataFrame:
+    """The 14 days before 27 March 2022 without offset, then that day and the 14 days after it
+    moved by `after_minutes`."""
+    return clear_days([0.0] * 14 + [after_minutes] * 15, first_day="2022-03-13")
+
+
+@pytest.mark.parametrize(("after_minutes", "found"), [(25.0, False), (35.0, True), (-35.0, True)])
+def test_a_jump_counts_from_30_minutes(after_minutes: float, found: bool) -> None:
+    assert len(jumps(around_spring_change(after_minutes))) == found
+
+
+@pytest.mark.parametrize(("valid_after", "found"), [(2, False), (3, True)])
+def test_a_jump_needs_three_valid_days_on_each_side(valid_after: int, found: bool) -> None:
+    published = around_spring_change(60.0)
+    modelled = model_of(published)
+    # Days after the change that are too dark to be valid.
+    dark = (published.index >= utc("2022-03-28") + pd.Timedelta(days=valid_after)) & (
+        published.index < utc("2022-04-11")
+    )
+    for curve in (published, modelled):
+        curve.loc[dark, "energy_mwh"] *= 0.3
+
+    assert len(jumps(published, modelled)) == found
+
+
+def test_a_table_without_valid_days_gives_an_empty_valid_frame() -> None:
+    published = clear_days([0.0] * 3).assign(status="realtime")
+
+    found = jumps(published)
 
     assert found.empty
     assert list(found.columns) == list(Findings.to_schema().columns)
