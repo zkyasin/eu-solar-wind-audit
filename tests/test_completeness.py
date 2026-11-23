@@ -427,7 +427,7 @@ def test_national_spring_rows_follow_the_clock_change_convention(tmp_path: Path)
         utc("2025-03-31"),
         step=odre.CONSOLIDATED_STEP,
         label=odre.CONSOLIDATED_LABEL,
-        local_days=odre.TIME_ZONE,
+        local_days=odre.TIMEZONE,
         **eco2mix(odre.NATIONAL_CONSOLIDATED),
     )
 
@@ -456,7 +456,7 @@ def test_realtime_autumn_points_follow_the_clock_change_convention(tmp_path: Pat
         utc("2026-10-26"),
         step=odre.REALTIME_STEP,
         label=odre.REALTIME_LABEL,
-        local_days=odre.TIME_ZONE,
+        local_days=odre.TIMEZONE,
         **eco2mix(odre.NATIONAL_REALTIME),
     )
 
@@ -486,7 +486,7 @@ def test_regional_autumn_rows_follow_the_clock_change_convention(tmp_path: Path)
         utc("2022-10-31"),
         step=odre.CONSOLIDATED_STEP,
         label=odre.CONSOLIDATED_LABEL,
-        local_days=odre.TIME_ZONE,
+        local_days=odre.TIMEZONE,
         **eco2mix(odre.REGIONAL_CONSOLIDATED),
     )
 
@@ -513,7 +513,7 @@ def test_the_empty_row_that_opens_2026_is_a_gap_in_every_regional_series(tmp_pat
         utc("2026-01-01"),
         step=odre.CONSOLIDATED_STEP,
         label=odre.CONSOLIDATED_LABEL,
-        local_days=odre.TIME_ZONE,
+        local_days=odre.TIMEZONE,
         **eco2mix(odre.REGIONAL_CONSOLIDATED),
     )
 

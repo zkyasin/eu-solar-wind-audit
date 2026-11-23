@@ -43,7 +43,7 @@ REALTIME_STEP = pd.Timedelta(minutes=15)
 REALTIME_LABEL: grid.Label = "instant"
 # The specification gives 96 rows for every day in Paris time (section 3.1): in UTC, a
 # clock-change day repeats or lacks the stamps of one hour.
-TIME_ZONE = "Europe/Paris"
+TIMEZONE = "Europe/Paris"
 
 STATUS = {
     "Données définitives": "definitive",
