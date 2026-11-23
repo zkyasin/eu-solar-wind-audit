@@ -1,0 +1,88 @@
+# Germany, the perimeter of the SMARD feed-in of Germany. The model covers onshore units: offshore
+# wind is published apart.
+country = "DE"
+time_zone = "Europe/Berlin"
+perimeter = "germany"
+
+# The Länder span 5.87 E to 15.04 E and 47.27 N to 55.06 N (BKG VG5000, state of 2026-01-01); the
+# box adds at least one 0.25 degree ERA5 cell on each side.
+[era5_box]
+west = 5.5
+south = 47.0
+east = 15.5
+north = 55.5
+
+# Solar units in operation at the end of 2025 in the MaStR export of 2026-10-01: 118.1 GWp of
+# module power for 104.9 GW of power limited by the inverters (mastr.dc_ac_ratio).
+[solar]
+dc_ac_ratio = 1.125
+
+# Shares of the module power by main orientation and tilt class (mastr.solar_fleet), each class at
+# the middle of its range: 5 to 20 degrees at 12.5, 21 to 40 at 30.5, 41 to 60 at 50.5. South
+# faces are split by tilt; the other faces take the mean tilt of their classes. East-west roofs
+# count half east and half west, north-east and north-west faces east and west, and trackers south
+# at 30.5 degrees. Units without an orientation or a tilt (3.5 %) and north faces (0.7 %) are left
+# out, and the shares of the others scaled to 1.
+[[solar.systems]]
+tilt = 30.5
+azimuth = 180.0
+share = 0.277
+
+[[solar.systems]]
+tilt = 12.5
+azimuth = 180.0
+share = 0.2408
+
+[[solar.systems]]
+tilt = 52.5
+azimuth = 180.0
+share = 0.0424
+
+[[solar.systems]]
+tilt = 27.2
+azimuth = 225.0
+share = 0.1195
+
+[[solar.systems]]
+tilt = 26.2
+azimuth = 135.0
+share = 0.0934
+
+[[solar.systems]]
+tilt = 22.0
+azimuth = 270.0
+share = 0.116
+
+[[solar.systems]]
+tilt = 21.2
+azimuth = 90.0
+share = 0.1109
+
+# Onshore wind units in operation at the end of 2025 by commissioning window
+# (mastr.wind_generations): hub heights weighted by capacity, and the curve of wind.turbines()
+# closest in specific power, the capacity over the swept area of the rotors: 399 and 390 W m-2 up
+# to 2012 (EWT 1 MW, 379), 324 in 2013-2016 and 297 from 2021 (V82, 312), 289 in 2017-2020
+# (NREL 8.3 MW, 275).
+[[wind_onshore.generations]]
+turbine = "EWT_DW58_1MW_58"
+hub_height_m = 80.6
+last_commissioning_year = 2005
+
+[[wind_onshore.generations]]
+turbine = "EWT_DW58_1MW_58"
+hub_height_m = 101.0
+last_commissioning_year = 2012
+
+[[wind_onshore.generations]]
+turbine = "VestasV82_1.65MW_82"
+hub_height_m = 122.5
+last_commissioning_year = 2016
+
+[[wind_onshore.generations]]
+turbine = "2023NREL_Bespoke_8.3MW_196"
+hub_height_m = 132.4
+last_commissioning_year = 2020
+
+[[wind_onshore.generations]]
+turbine = "VestasV82_1.65MW_82"
+hub_height_m = 143.2

@@ -11,7 +11,7 @@ from eu_solar_wind_audit.sources.era5 import Box
 
 CONFIG_DIR = Path("config/countries")
 
-Perimeter = Literal["metropolitan_without_corsica"]
+Perimeter = Literal["metropolitan_without_corsica", "germany"]
 
 
 @dataclass(frozen=True)
