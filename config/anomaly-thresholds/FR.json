@@ -1,0 +1,1247 @@
+{
+ "country": "FR",
+ "fixed_on": [
+  2019,
+  2022
+ ],
+ "reference_model": {
+  "parameters_sha256": "10d6d7e566c175f1921323419224bf83e82cfaa0a40438074ee49dc881497782",
+  "sdes_media": {
+   "solar": 9714,
+   "wind_onshore": 9715
+  },
+  "era5_store": {
+   "final": "s3://earthmover-icechunk-era5/icechunkV2, group single/temporal",
+   "recent": "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
+  },
+  "regions": "Natural Earth admin-1 v5.1.2",
+  "git_describe": "eval-plan-v1-382-gad1bfa4"
+ },
+ "timestamp": {
+  "centroid_bias_minutes": -8.382782400751516,
+  "shift_series": [
+   "odre.FR.solar",
+   "odre.FR-11.solar",
+   "odre.FR-24.solar",
+   "odre.FR-27.solar",
+   "odre.FR-28.solar",
+   "odre.FR-32.solar",
+   "odre.FR-44.solar",
+   "odre.FR-52.solar",
+   "odre.FR-53.solar",
+   "odre.FR-75.solar",
+   "odre.FR-76.solar",
+   "odre.FR-84.solar",
+   "odre.FR-93.solar"
+  ]
+ },
+ "residual_thresholds": {
+  "solar": 15.0,
+  "wind": 10.0
+ },
+ "level_break_penalties": {
+  "solar": 300.0,
+  "wind": 150.0,
+  "joint": 300.0
+ },
+ "profiles": {
+  "odre.FR-11.solar": {
+   "coefficients": [
+    -0.4463484101640032,
+    -0.0722253257629885,
+    -0.1291685531589607,
+    -0.02572605525806482,
+    -0.02336550347256703
+   ],
+   "sigma": 0.1985363398263843
+  },
+  "odre.FR-11.wind": {
+   "coefficients": [
+    -0.2033773744578525,
+    -0.06539780052659225,
+    0.01759970956334985,
+    -0.0539893609959881,
+    0.03364772310386158
+   ],
+   "sigma": 0.1760885665639333
+  },
+  "odre.FR-24.solar": {
+   "coefficients": [
+    -0.3472326170922989,
+    -0.15157456096604352,
+    -0.007050579643288062,
+    -0.05665210087481086,
+    0.026773618032860182
+   ],
+   "sigma": 0.14408168643863323
+  },
+  "odre.FR-24.wind": {
+   "coefficients": [
+    -0.28707475159820334,
+    0.008068289391385309,
+    0.04477829011510753,
+    -0.026935759002524352,
+    0.04448471445818557
+   ],
+   "sigma": 0.13014228438716002
+  },
+  "odre.FR-27.solar": {
+   "coefficients": [
+    -0.30286896437526306,
+    -0.1724408290046224,
+    -0.046246942157773974,
+    -0.06255105657115659,
+    0.009332586523282222
+   ],
+   "sigma": 0.15473918340496726
+  },
+  "odre.FR-27.wind": {
+   "coefficients": [
+    -0.0687952820689413,
+    -0.027692963800352802,
+    0.003494360347946292,
+    -0.009843679255453519,
+    0.014519997035350942
+   ],
+   "sigma": 0.14208525937133815
+  },
+  "odre.FR-28.solar": {
+   "coefficients": [
+    -0.3658752146111248,
+    -0.11187384901178776,
+    -0.031026857788998236,
+    -0.04796552686220182,
+    0.012694419272412069
+   ],
+   "sigma": 0.16083007316194214
+  },
+  "odre.FR-28.wind": {
+   "coefficients": [
+    -0.48181956359632494,
+    0.10696029362368951,
+    0.05060312403290708,
+    -0.015279350810379252,
+    0.02139933672152791
+   ],
+   "sigma": 0.1398787251813628
+  },
+  "odre.FR-32.solar": {
+   "coefficients": [
+    -0.5054119652848214,
+    -0.113493859524355,
+    -0.08919261431709316,
+    -0.03661950923373921,
+    0.005053704036995312
+   ],
+   "sigma": 0.16679681371510088
+  },
+  "odre.FR-32.wind": {
+   "coefficients": [
+    -0.47224890514278073,
+    0.06134163117892297,
+    0.06820406095737223,
+    -0.013615625837018214,
+    0.022075054566660215
+   ],
+   "sigma": 0.1421051771880196
+  },
+  "odre.FR-44.solar": {
+   "coefficients": [
+    -0.16377383327187908,
+    -0.13459133748657753,
+    -0.05288539329452062,
+    -0.06120564673951489,
+    -0.0055140944437870685
+   ],
+   "sigma": 0.14710635719627657
+  },
+  "odre.FR-44.wind": {
+   "coefficients": [
+    -0.273811009430997,
+    0.005803502064996925,
+    0.061240401882566166,
+    -0.015464170920310638,
+    0.03083275881026538
+   ],
+   "sigma": 0.13493367162397604
+  },
+  "odre.FR-52.solar": {
+   "coefficients": [
+    -0.3330983409146637,
+    -0.14519300599727106,
+    -0.01332027706287911,
+    -0.04320798718266703,
+    -0.0025312200052926273
+   ],
+   "sigma": 0.1456957152799626
+  },
+  "odre.FR-52.wind": {
+   "coefficients": [
+    -0.3825516754820188,
+    0.051820857023691644,
+    0.07127840656172385,
+    -0.009875901467743768,
+    0.02000715957527307
+   ],
+   "sigma": 0.10599634189599494
+  },
+  "odre.FR-53.solar": {
+   "coefficients": [
+    -0.3982609303941708,
+    -0.09918068514735161,
+    -0.030562742332861752,
+    -0.032460117430828536,
+    0.001807959377799594
+   ],
+   "sigma": 0.1532960612664811
+  },
+  "odre.FR-53.wind": {
+   "coefficients": [
+    -0.5786585716411905,
+    0.05417305105224749,
+    0.07630583054806551,
+    -0.029401082553233055,
+    -0.003798958161632502
+   ],
+   "sigma": 0.15177549486147882
+  },
+  "odre.FR-75.solar": {
+   "coefficients": [
+    -0.22439238033579004,
+    -0.19372816519693933,
+    0.004202045272698876,
+    -0.0361835893101589,
+    0.025135773515993796
+   ],
+   "sigma": 0.11735908736051125
+  },
+  "odre.FR-75.wind": {
+   "coefficients": [
+    -0.24345141064450493,
+    0.04718832850043355,
+    0.046245638599165716,
+    0.02668383982210868,
+    0.03371834339820535
+   ],
+   "sigma": 0.12042086149623216
+  },
+  "odre.FR-76.solar": {
+   "coefficients": [
+    -0.3216642268999963,
+    -0.1953254944102288,
+    -0.0024804149845963452,
+    -0.03395456778192727,
+    0.03173914057963942
+   ],
+   "sigma": 0.09691446260236551
+  },
+  "odre.FR-76.wind": {
+   "coefficients": [
+    0.12493462352931027,
+    0.012125376998027244,
+    0.02049622533885502,
+    0.020325275949666873,
+    0.038097125723538496
+   ],
+   "sigma": 0.14933129097804937
+  },
+  "odre.FR-84.solar": {
+   "coefficients": [
+    -0.40402785136857655,
+    -0.21671383527771945,
+    -0.021594299176752114,
+    -0.05977497364070438,
+    0.03082195488189667
+   ],
+   "sigma": 0.12239602360999415
+  },
+  "odre.FR-84.wind": {
+   "coefficients": [
+    0.21227816252475834,
+    0.03887040684883696,
+    -0.00788423131814333,
+    -0.03094393223207707,
+    -0.01693751022924273
+   ],
+   "sigma": 0.2084137529137225
+  },
+  "odre.FR-93.solar": {
+   "coefficients": [
+    -0.301866340417215,
+    -0.1971959875723936,
+    -0.0021106080438800024,
+    -0.026739887025679563,
+    0.01872336786432368
+   ],
+   "sigma": 0.07992664543046288
+  },
+  "odre.FR-93.wind": {
+   "coefficients": [
+    -0.10572748435635992,
+    -0.011096081865796414,
+    0.05659014456056031,
+    -0.003874917557219345,
+    0.02722106952386807
+   ],
+   "sigma": 0.29410943101395426
+  },
+  "odre.FR.solar": {
+   "coefficients": [
+    -0.30019238442375823,
+    -0.1858356438560559,
+    -0.011491291726039004,
+    -0.04268317838007022,
+    0.02097059459361451
+   ],
+   "sigma": 0.07228068337074216
+  },
+  "odre.FR.wind": {
+   "coefficients": [
+    -0.27436372015372734,
+    0.031874227219406796,
+    0.050015452745919856,
+    -0.006211880697649011,
+    0.01585627358834265
+   ],
+   "sigma": 0.07427878275525308
+  }
+ },
+ "false_alarms": [
+  {
+   "series": "odre.FR.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "odre.FR.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-11.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 1,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-11.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-11.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-11.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 1,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-24.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-24.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-24.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-24.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-27.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-27.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-27.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-27.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-28.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-28.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-28.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 1,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-28.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-32.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-32.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-32.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-32.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-44.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-44.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-44.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-44.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-52.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-52.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-52.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-52.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-53.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-53.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-53.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-53.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-75.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-75.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-75.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-75.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-76.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-76.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-76.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-76.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-84.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-84.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-84.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-84.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-93.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-93.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-93.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-93.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "odre.FR.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-11.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 1,
+   "total": 2
+  },
+  {
+   "series": "odre.FR-11.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-11.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-11.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-24.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-24.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-24.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-24.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-27.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-27.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-27.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-27.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-28.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-28.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-28.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-28.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-32.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-32.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-32.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-32.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-44.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-44.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-44.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-44.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-52.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-52.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-52.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-52.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-53.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-53.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-53.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-53.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-75.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-75.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-75.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-75.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-76.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-76.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-76.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-76.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-84.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "odre.FR-84.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-84.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-84.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-93.wind",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-93.wind",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-93.wind",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "odre.FR-93.wind",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  }
+ ]
+}
