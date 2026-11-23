@@ -239,11 +239,16 @@ def test_every_part_is_added() -> None:
     assert evidence(found)[0]["parts"] == 12
 
 
-def test_series_must_be_on_utc_hours() -> None:
+@pytest.mark.parametrize("naive", ["total", "parts"])
+def test_series_must_be_on_utc_hours(naive: str) -> None:
     total, first, second = (hourly(energy) for energy in split(np.full(HOURS, 1000.0), {}))
+    if naive == "total":
+        total = total.tz_localize(None)
+    else:
+        first, second = first.tz_localize(None), second.tz_localize(None)
 
     with pytest.raises(SchemaError, match="UTC"):
-        check_parts(total.tz_localize(None), first, second)
+        check_parts(total, first, second)
 
 
 # Hours from 2022-01-30 00:00 UTC: hour 47, 2022-01-31 23:00 UTC, is the first of February in
@@ -423,13 +428,18 @@ def test_a_month_where_the_rescaled_series_is_mostly_zero_has_no_factor() -> Non
     assert check_ratio(rescaled, ORIGINAL).empty
 
 
-def test_both_series_must_be_on_utc_hours() -> None:
+@pytest.mark.parametrize("naive", ["rescaled", "original"])
+def test_both_series_must_be_on_utc_hours(naive: str) -> None:
     rescaled, original = hourly(rescale(ORIGINAL)), hourly(ORIGINAL)
+    if naive == "rescaled":
+        rescaled = rescaled.tz_localize(None)
+    else:
+        original = original.tz_localize(None)
 
     with pytest.raises(SchemaError, match="UTC"):
         proportional(
             rescaled,
-            original.tz_localize(None),
+            original,
             time_zone=TIME_ZONE,
             series=SERIES,
             provenance=PROVENANCE,
