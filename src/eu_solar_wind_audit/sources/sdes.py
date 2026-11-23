@@ -10,6 +10,8 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.typing.pandas import Series
 
+from eu_solar_wind_audit import grid
+
 BASE_URL = "https://www.statistiques.developpement-durable.gouv.fr"
 # Each quarterly publication gets new media ids; these are the second quarter 2026 files.
 SOLAR_2026_Q2 = 9714
@@ -25,6 +27,15 @@ SHEETS = {
 # The capacities match AC figures (Eurostat 2024), so they are used as AC without conversion.
 UNIT_ROW = "Unité : puissance en MW"
 CORSICA = ("20", "2A", "2B")
+# The technologies behind each production series of éCO2mix: published wind includes the offshore
+# farms (odre.FIRST_OFFSHORE_POWER).
+SERIES_TECHNOLOGIES = {
+    "solar": ("solar",),
+    "wind": ("wind_onshore", "wind_offshore"),
+    "wind_onshore": ("wind_onshore",),
+    "wind_offshore": ("wind_offshore",),
+}
+DAY = pd.Timedelta(days=1)
 
 
 class Panel(pa.DataFrameModel):
@@ -176,3 +187,40 @@ def monthly_capacity(panel: pd.DataFrame, until: pd.Timestamp | None = None) -> 
     monthly = monthly.merge(names, on=keys, validate="many_to_one")
     columns = ["department_code", "department", "region", "technology", "month_end"]
     return monthly[[*columns, "capacity_mw", "provisional"]]
+
+
+def hourly_capacity(
+    monthly: pd.DataFrame,
+    series: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    region: str | None = None,
+) -> pd.Series:
+    """Capacity in MW behind the éCO2mix production `series`, a key of SERIES_TECHNOLOGIES, at the
+    start of each hour of [start, end), both hour starts in UTC: that of mainland France without
+    Corsica, the perimeter of the national series, or that of its region named `region`.
+
+    `monthly` is a panel of `monthly_capacity` with the technologies of the series. Capacity is
+    linear in time between month ends, as in physics.hourly_capacity.
+    """
+    grid.check_period(start, end)
+    rows = metropolitan_without_corsica(monthly)
+    if region is not None:
+        rows = rows[rows["region"] == region]
+    technologies = list(SERIES_TECHNOLOGIES[series])
+    by_technology = rows.pivot_table(
+        index="month_end", columns="technology", values="capacity_mw", aggfunc="sum"
+    )
+    # Each technology ends at its own last quarter: a month end counts only if all of them have it.
+    month_ends = by_technology.reindex(columns=technologies).dropna()
+    if month_ends.empty:
+        raise ValueError(f"no {series} capacity for {region or 'mainland France'}")
+    # A month-end figure is the capacity at the end of that day.
+    instants = pd.DatetimeIndex(month_ends.index + DAY).tz_localize("UTC").as_unit("ns")
+    hours = pd.date_range(start, end, freq="h", inclusive="left", unit="ns", name="time")
+    total = month_ends.sum(axis="columns").to_numpy()
+    capacity = np.interp(hours.asi8, instants.asi8, total, left=np.nan, right=np.nan)
+    if np.isnan(capacity).any():
+        raise ValueError(f"no capacity for some hours from {start} to {end}")
+    return pd.Series(capacity, index=hours, name="capacity_mw")

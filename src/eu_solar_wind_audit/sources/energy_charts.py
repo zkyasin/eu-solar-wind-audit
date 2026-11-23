@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 import httpx
+import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Series
@@ -31,6 +32,15 @@ RETRY_DELAYS_SECONDS = (10.0, 30.0, 60.0)
 
 TECHNOLOGIES = ("solar_ac", "solar_dc", "wind_onshore", "wind_offshore")
 MW_PER_UNIT = {"MW": 1.0, "GW": 1000.0}
+# /v2/installed_power gives installed solar power twice, in AC and in DC: its series "Solar AC" and
+# "Solar DC" (https://api.energy-charts.info/, read 2026-11-23). Capacities are AC
+# (docs/evaluation-plan.md, Conventions), so solar production goes with "Solar AC".
+SERIES_TECHNOLOGY = {
+    "solar": "solar_ac",
+    "wind_onshore": "wind_onshore",
+    "wind_offshore": "wind_offshore",
+}
+DAY = pd.Timedelta(days=1)
 
 PERIMETERS = {"public_power": "public", "total_power": "total"}
 POWER_SERIES = ("solar", "wind_onshore", "wind_offshore")
@@ -117,6 +127,27 @@ def parse_installed_power(payload: dict[str, Any]) -> DataFrame[InstalledCapacit
     capacity_mw = values[ended] * [MW_PER_UNIT[units[technology]] for technology in technologies]
     tidy = capacity_mw.reset_index().melt(id_vars="month_end", value_name="capacity_mw").dropna()
     return InstalledCapacity.validate(tidy.reset_index(drop=True))
+
+
+def hourly_capacity(
+    capacity: pd.DataFrame, series: str, start: pd.Timestamp, end: pd.Timestamp
+) -> pd.Series:
+    """Installed capacity in MW behind the production `series`, one of POWER_SERIES, at the start
+    of each hour of [start, end), both hour starts in UTC, from a panel of `parse_installed_power`:
+    AC capacity for solar. Capacity is linear in time between month ends."""
+    grid.check_period(start, end)
+    technology = SERIES_TECHNOLOGY[series]
+    monthly = capacity[capacity["technology"] == technology].set_index("month_end")["capacity_mw"]
+    monthly = monthly.sort_index()
+    # A month-end figure is the capacity at the end of that local day.
+    instants = pd.DatetimeIndex(monthly.index + DAY).tz_localize(TIMEZONE).tz_convert("UTC")
+    hours = pd.date_range(start, end, freq="h", inclusive="left", unit="ns", name="time")
+    capacity_mw = np.interp(
+        hours.asi8, instants.as_unit("ns").asi8, monthly.to_numpy(), left=np.nan, right=np.nan
+    )
+    if np.isnan(capacity_mw).any():
+        raise ValueError(f"no {technology} capacity for some hours from {start} to {end}")
+    return pd.Series(capacity_mw, index=hours, name="capacity_mw")
 
 
 def fetch_hourly_power(

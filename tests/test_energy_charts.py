@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import numpy as np
 import pandas as pd
 import pytest
 from pandera.errors import SchemaError
@@ -158,6 +159,81 @@ def test_negative_capacity_is_rejected() -> None:
 
     with pytest.raises(SchemaError, match="capacity_mw"):
         energy_charts.parse_installed_power(payload(data, units={"wind_onshore": None}))
+
+
+def utc(stamp: str) -> pd.Timestamp:
+    return pd.Timestamp(stamp, tz="UTC")
+
+
+def test_hourly_solar_capacity_is_the_ac_capacity(german_payload: dict[str, Any]) -> None:
+    panel = energy_charts.parse_installed_power(german_payload)
+
+    # 23:00 UTC is midnight in Berlin, the end of 31 December 2025.
+    capacity = energy_charts.hourly_capacity(
+        panel, "solar", utc("2025-12-31 23:00"), utc("2026-01-01 00:00")
+    )
+
+    # Published as 107.856 GW AC and 118.147 GW DC.
+    assert capacity.tolist() == pytest.approx([107_856])
+    assert capacity.index.tolist() == [utc("2025-12-31 23:00")]
+    assert capacity.index.name == "time"
+    assert str(capacity.index.dtype) == "datetime64[ns, UTC]"
+
+
+@pytest.mark.parametrize(("series", "mw"), [("wind_onshore", 68_178), ("wind_offshore", 9_733)])
+def test_hourly_wind_capacity_is_that_of_its_own_series(
+    german_payload: dict[str, Any], series: str, mw: float
+) -> None:
+    panel = energy_charts.parse_installed_power(german_payload)
+
+    capacity = energy_charts.hourly_capacity(
+        panel, series, utc("2025-12-31 23:00"), utc("2026-01-01 00:00")
+    )
+
+    assert capacity.tolist() == pytest.approx([mw])
+
+
+def test_hourly_capacity_is_linear_in_time_between_local_month_ends() -> None:
+    # 672 MW added over the 672 hours of February 2025, from midnight to midnight in Berlin.
+    data = [
+        {"timestamp": "2025-01-01T00:00:00+01:00", "values": {"solar_ac": 1.0}},
+        {"timestamp": "2025-02-01T00:00:00+01:00", "values": {"solar_ac": 1.672}},
+    ]
+    panel = energy_charts.parse_installed_power(payload(data, units={"solar_ac": None}))
+
+    capacity = energy_charts.hourly_capacity(
+        panel, "solar", utc("2025-01-31 23:00"), utc("2025-03-01 00:00")
+    )
+
+    assert capacity.to_numpy() == pytest.approx(1_000.0 + np.arange(673.0))
+
+
+def test_hourly_capacity_does_not_depend_on_the_order_of_the_panel(
+    german_payload: dict[str, Any],
+) -> None:
+    panel = energy_charts.parse_installed_power(german_payload)
+    start, end = utc("2024-12-31 23:00"), utc("2025-12-31 23:00")
+
+    pd.testing.assert_series_equal(
+        energy_charts.hourly_capacity(panel.iloc[::-1], "solar", start, end),
+        energy_charts.hourly_capacity(panel, "solar", start, end),
+    )
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [("2025-01-31 22:00", "2025-01-31 23:00"), ("2025-02-28 23:00", "2025-03-01 01:00")],
+    ids=["before", "after"],
+)
+def test_hours_outside_the_month_ends_have_no_capacity(start: str, end: str) -> None:
+    data = [
+        {"timestamp": "2025-01-01T00:00:00+01:00", "values": {"solar_ac": 1.0}},
+        {"timestamp": "2025-02-01T00:00:00+01:00", "values": {"solar_ac": 2.0}},
+    ]
+    panel = energy_charts.parse_installed_power(payload(data, units={"solar_ac": None}))
+
+    with pytest.raises(ValueError, match="no solar_ac capacity"):
+        energy_charts.hourly_capacity(panel, "solar", utc(start), utc(end))
 
 
 @pytest.fixture

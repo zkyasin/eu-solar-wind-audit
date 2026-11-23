@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import httpx
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -310,3 +311,142 @@ def test_until_before_the_last_quarter_cuts_the_months() -> None:
     values = monthly_values(sdes.monthly_capacity(panel, until=pd.Timestamp("2026-01-31")))
 
     assert list(values.index) == [pd.Timestamp("2025-12-31"), pd.Timestamp("2026-01-31")]
+
+
+def utc(stamp: str) -> pd.Timestamp:
+    return pd.Timestamp(stamp, tz="UTC")
+
+
+def month_ends(*rows: tuple[str, str, str, str, float]) -> pd.DataFrame:
+    """Month-end panel, as monthly_capacity returns it, from (department code, region,
+    technology, month end, MW) rows."""
+    columns = ["department_code", "region", "technology", "month_end", "capacity_mw"]
+    panel = pd.DataFrame(list(rows), columns=columns)
+    panel["month_end"] = pd.to_datetime(panel["month_end"])
+    return panel.assign(department=panel["department_code"], provisional=False)
+
+
+def test_hourly_capacity_is_linear_in_time_between_month_ends() -> None:
+    # 696 MW added over the 696 hours of February 2020.
+    monthly = month_ends(
+        ("01", "Auvergne-Rhône-Alpes", "solar", "2020-01-31", 0.0),
+        ("01", "Auvergne-Rhône-Alpes", "solar", "2020-02-29", 696.0),
+    )
+
+    capacity = sdes.hourly_capacity(monthly, "solar", utc("2020-02-01"), utc("2020-03-01 01:00"))
+
+    # The 31 January figure holds at 1 February 00:00, the end of its day.
+    assert capacity.to_numpy() == pytest.approx(np.arange(697.0))
+    assert capacity.index[0] == utc("2020-02-01")
+    assert capacity.index.name == "time"
+    assert str(capacity.index.dtype) == "datetime64[ns, UTC]"
+
+
+def test_published_wind_counts_onshore_and_offshore_capacity() -> None:
+    monthly = month_ends(
+        *[
+            ("44", "Pays de la Loire", technology, month_end, mw)
+            for month_end in ("2022-06-30", "2022-07-31")
+            for technology, mw in (("wind_onshore", 1200.0), ("wind_offshore", 480.0))
+        ]
+    )
+    start, end = utc("2022-07-01"), utc("2022-07-02")
+
+    def capacity(series: str) -> float:
+        return float(sdes.hourly_capacity(monthly, series, start, end).iloc[0])
+
+    assert capacity("wind") == pytest.approx(1680.0)
+    assert capacity("wind_onshore") == pytest.approx(1200.0)
+    assert capacity("wind_offshore") == pytest.approx(480.0)
+
+
+def test_hourly_capacity_of_mainland_france_or_of_one_region() -> None:
+    rows = [
+        ("01", "Auvergne-Rhône-Alpes", 10.0),
+        ("38", "Auvergne-Rhône-Alpes", 20.0),
+        ("13", "Provence-Alpes-Côte d'Azur", 40.0),
+        ("2A", "Corse", 80.0),
+        ("974", "La Réunion", 160.0),
+    ]
+    monthly = month_ends(
+        *[
+            (code, region, "solar", month_end, mw)
+            for code, region, mw in rows
+            for month_end in ("2022-05-31", "2022-06-30")
+        ]
+    )
+    start, end = utc("2022-06-15"), utc("2022-06-16")
+
+    mainland = sdes.hourly_capacity(monthly, "solar", start, end)
+    region = sdes.hourly_capacity(monthly, "solar", start, end, region="Auvergne-Rhône-Alpes")
+
+    assert mainland.to_numpy() == pytest.approx(70.0)
+    assert region.to_numpy() == pytest.approx(30.0)
+
+
+def test_month_ends_that_a_technology_lacks_give_no_capacity() -> None:
+    # Each technology ends at its own last quarter: offshore wind stops a month earlier.
+    monthly = month_ends(
+        ("22", "Bretagne", "wind_onshore", "2026-02-28", 500.0),
+        ("22", "Bretagne", "wind_onshore", "2026-03-31", 500.0),
+        ("22", "Bretagne", "wind_onshore", "2026-04-30", 500.0),
+        ("22", "Bretagne", "wind_offshore", "2026-02-28", 496.0),
+        ("22", "Bretagne", "wind_offshore", "2026-03-31", 496.0),
+    )
+
+    capacity = sdes.hourly_capacity(monthly, "wind", utc("2026-03-31"), utc("2026-04-01 01:00"))
+
+    assert capacity.to_numpy() == pytest.approx(996.0)
+    with pytest.raises(ValueError, match="no capacity for some hours"):
+        sdes.hourly_capacity(monthly, "wind", utc("2026-04-01"), utc("2026-04-01 02:00"))
+    onshore = sdes.hourly_capacity(monthly, "wind_onshore", utc("2026-04-15"), utc("2026-04-16"))
+    assert onshore.to_numpy() == pytest.approx(500.0)
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [("2020-01-31 23:00", "2020-02-01 01:00"), ("2020-03-01 00:00", "2020-03-01 02:00")],
+    ids=["before", "after"],
+)
+def test_hours_outside_the_month_ends_are_refused(start: str, end: str) -> None:
+    monthly = month_ends(
+        ("01", "Auvergne-Rhône-Alpes", "solar", "2020-01-31", 1.0),
+        ("01", "Auvergne-Rhône-Alpes", "solar", "2020-02-29", 2.0),
+    )
+
+    with pytest.raises(ValueError, match="no capacity for some hours"):
+        sdes.hourly_capacity(monthly, "solar", utc(start), utc(end))
+
+
+@pytest.mark.parametrize(
+    ("series", "region"),
+    [("wind", None), ("solar", "Bretagne"), ("solar", "Corse")],
+    ids=["technology", "region", "corsica"],
+)
+def test_a_perimeter_without_capacity_is_refused(series: str, region: str | None) -> None:
+    monthly = month_ends(
+        ("01", "Auvergne-Rhône-Alpes", "solar", "2020-01-31", 1.0),
+        ("2A", "Corse", "solar", "2020-01-31", 1.0),
+    )
+
+    with pytest.raises(ValueError, match=f"no {series} capacity"):
+        sdes.hourly_capacity(monthly, series, utc("2020-01-01"), utc("2020-01-02"), region=region)
+
+
+def test_hourly_wind_capacity_of_a_region_from_the_workbook() -> None:
+    panel = sdes.read_capacity(WIND)
+    quarter = panel[
+        (panel["region"] == "Bretagne") & (panel["quarter_end"] == pd.Timestamp("2026-03-31"))
+    ]
+
+    capacity = sdes.hourly_capacity(
+        sdes.monthly_capacity(panel),
+        "wind",
+        utc("2026-04-01"),
+        utc("2026-04-02"),
+        region="Bretagne",
+    )
+
+    # Onshore and offshore wind of the four departments, with 496 MW offshore in Côtes-d'Armor.
+    assert capacity.iloc[0] == pytest.approx(quarter["capacity_mw"].sum())
+    assert set(quarter["technology"]) == {"wind_onshore", "wind_offshore"}
