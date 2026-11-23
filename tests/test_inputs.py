@@ -7,7 +7,7 @@ import pytest
 from eu_solar_wind_audit import eligibility, grid, physics
 from eu_solar_wind_audit.anomalies import inputs
 from eu_solar_wind_audit.config import CONFIG_DIR, load_country
-from eu_solar_wind_audit.sources import odre, sdes
+from eu_solar_wind_audit.sources import energy_charts, odre, sdes, smard
 
 # The SDES wind dashboard of 2026-11-22 cut to Bretagne, Normandie, Corsica and the overseas
 # departments (tests/test_sdes.py).
@@ -82,6 +82,7 @@ SWITCH = {
     odre.NATIONAL_REALTIME: ODRE / "eco2mix-national-tr_2026-08-31_2026-09-01.parquet",
     odre.REGIONAL_CONSOLIDATED: ODRE / "eco2mix-regional-cons-def_2026-08-31_2026-09-01.parquet",
 }
+ENERGY_CHARTS = Path(__file__).parent / "fixtures" / "energy_charts"
 
 
 def hours_of(start: pd.Timestamp, end: pd.Timestamp) -> pd.DatetimeIndex:
@@ -182,3 +183,67 @@ def test_france_inputs_give_each_series_its_datasets_model_and_offshore_hours(
         ("odre.eco2mix-national-tr", True),
     ]
     assert "mean_price" not in found.price_classes.columns
+
+
+def test_germany_inputs_give_smard_and_energy_charts_series_without_a_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    start, end = utc("2025-06-01 00:00"), utc("2025-06-02 00:00")
+    first, last = start - inputs.MARGIN, end + inputs.MARGIN
+    quarter_hours = pd.date_range(first, last, freq="15min", inclusive="left")
+
+    def feed_in(request: httpx.Request) -> httpx.Response:
+        # One weekly file from the first hour on, with 2.5 MWh in every quarter-hour.
+        first_ms = int(first.timestamp() * 1000)
+        if request.url.path.endswith("index_quarterhour.json"):
+            return httpx.Response(200, json={"timestamps": [first_ms]})
+        series = [[int(stamp.timestamp() * 1000), 2.5] for stamp in quarter_hours]
+        return httpx.Response(200, json={"meta_data": {}, "series": series})
+
+    def power_month(endpoint: str, month: pd.Period, *_: object) -> pd.DataFrame:
+        local = pd.date_range(
+            month.start_time, month.end_time, freq="15min", tz=energy_charts.TIMEZONE
+        )
+        stamps = pd.DatetimeIndex(local.tz_convert("UTC"), name="time")
+        return pd.DataFrame({"solar": 100.0, "wind_onshore": 200.0, "wind_offshore": 50.0}, stamps)
+
+    cache = tmp_path / "energy_charts"
+    cache.mkdir()
+    installed = "installed_power_de_monthly.json"
+    (cache / installed).write_bytes((ENERGY_CHARTS / installed).read_bytes())
+    monkeypatch.setattr(energy_charts, "fetch_power_month", power_month)
+    monkeypatch.setattr(eligibility, "price_classes", reference_classes)
+
+    with httpx.Client(transport=httpx.MockTransport(feed_in)) as client:
+        found = inputs.germany_inputs(
+            client, start, end, smard_cache_dir=tmp_path / "smard", energy_charts_cache_dir=cache
+        )
+
+    smard_series = {
+        f"smard.{area}.{technology}"
+        for area in inputs.SMARD_AREAS
+        for technology in ("solar", "wind_onshore")
+    } | {f"smard.{area}.wind_offshore" for area in smard.OFFSHORE_REGIONS}
+    energy_charts_series = {
+        f"energy_charts.DE.{endpoint}.{technology}"
+        for endpoint in ("public_power", "total_power")
+        for technology in energy_charts.POWER_SERIES
+    }
+    assert set(found.series) == smard_series | energy_charts_series
+    assert all(item.modelled is None and item.offshore is None for item in found.series.values())
+    # Capacity is published for Germany as a whole only.
+    assert found.series["smard.DE.solar"].capacity_mw is not None
+    assert found.series["smard.Amprion.solar"].capacity_mw is None
+    # Quarter-hour energies of 2.5 MWh, and a mean power of 200 MW, over whole hours.
+    (feed_in_part,) = found.series["smard.DE.solar"].published
+    assert feed_in_part.provenance == "Bundesnetzagentur | SMARD.de, filter 4068, region DE"
+    assert (feed_in_part.hourly["energy_mwh"] == 10.0).all()
+    (power_part,) = found.series["energy_charts.DE.public_power.wind_onshore"].published
+    assert (power_part.hourly["energy_mwh"] == 200.0).all()
+    assert [rows.dataset for rows in found.rows] == [
+        "smard.4068",
+        "smard.4067",
+        "smard.1225",
+        "energy_charts.public_power",
+        "energy_charts.total_power",
+    ]

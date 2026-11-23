@@ -26,7 +26,7 @@ from pandera.typing import DataFrame
 from eu_solar_wind_audit import eligibility, grid, physics
 from eu_solar_wind_audit.anomalies import completeness
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import odre, sdes, smard
+from eu_solar_wind_audit.sources import energy_charts, odre, sdes, smard
 
 # The windowed statistics of a day reach 15 days away from it: the 31-day windows centred on the
 # day and the 14-day windows around a clock change (detector design).
@@ -38,6 +38,9 @@ AREAS: dict[str, str | None] = {"FR": None} | {
 }
 # Published from odre.WIND_SPLIT_START on.
 SPLIT: tuple[odre.RegionalSeries, ...] = ("wind_onshore", "wind_offshore")
+
+# Germany and its four control areas on SMARD. Offshore wind is published where farms connect.
+SMARD_AREAS: tuple[smard.Region, ...] = ("DE", "50Hertz", "Amprion", "TenneT", "TransnetBW")
 
 # Saint-Nazaire, the first French offshore farm (odre.FIRST_OFFSHORE_POWER), is in Pays de la Loire.
 FIRST_FARM_REGION = "52"
@@ -180,6 +183,133 @@ def france_inputs(
     classes = eligibility.price_classes(first, last, client=client, cache_dir=smard_cache_dir)
     return DetectionInputs(
         "FR", start, end, hours, tuple(rows), series, classes.drop(columns="mean_price")
+    )
+
+
+def germany_inputs(
+    client: httpx.Client,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    smard_cache_dir: Path = smard.CACHE_DIR,
+    energy_charts_cache_dir: Path = energy_charts.CACHE_DIR,
+) -> DetectionInputs:
+    """Inputs of a detection run over the hours [start, end) of Germany, both hour starts in UTC:
+    the feed-in of Germany and its four control areas from SMARD, `smard.<area>.<technology>`,
+    and the public and total power of Germany from Energy-Charts,
+    `energy_charts.DE.<endpoint>.<technology>`, with the price classes of the DE-LU bidding zone.
+
+    There is no German model yet, so no series has a modelled output or an offshore mask. The
+    series of Germany as a whole get the Energy-Charts installed capacity of their technology; the
+    control areas get none, since no capacity is published for them.
+    """
+    grid.check_period(start, end)
+    hours = pd.date_range(
+        start - MARGIN, end + MARGIN, freq="h", inclusive="left", unit="ns", name="time"
+    )
+    first, last = hours[0], hours[-1] + grid.HOUR
+    installed = energy_charts.fetch_installed_capacity(
+        "de", client=client, cache_dir=energy_charts_cache_dir
+    )
+
+    def capacity_mw(technology: str) -> pd.Series:
+        return energy_charts.hourly_capacity(installed, technology, first, last)
+
+    rows: list[Rows] = []
+    series: dict[str, SeriesInputs] = {}
+    for technology, filter_id in smard.FEED_IN.items():
+        dataset = f"smard.{filter_id}"
+        values: dict[str, pd.Series] = {}
+        for area in SMARD_AREAS:
+            if technology == "wind_offshore" and area not in smard.OFFSHORE_REGIONS:
+                continue
+            series_id = f"smard.{area}.{technology}"
+            energy = smard.fetch_series(
+                filter_id,
+                area,
+                "quarterhour",
+                first,
+                last,
+                client=client,
+                cache_dir=smard_cache_dir,
+            )
+            values[series_id] = energy
+            hourly = grid.hourly_from_period_start_energy(
+                completeness.on_grid(energy, smard.FEED_IN_STEP)
+            )
+            provenance = f"Bundesnetzagentur | SMARD.de, filter {filter_id}, region {area}"
+            series[series_id] = SeriesInputs(
+                technology=technology,
+                published=(
+                    Published(series_id, provenance, False, _on_hours(hourly, first, last)),
+                ),
+                modelled=None,
+                capacity_mw=capacity_mw(technology) if area == "DE" else None,
+                offshore=None,
+            )
+        provenance = f"Bundesnetzagentur | SMARD.de, filter {filter_id}"
+        rows.append(
+            Rows(
+                dataset,
+                provenance,
+                False,
+                smard.FEED_IN_STEP,
+                smard.FEED_IN_LABEL,
+                None,
+                first,
+                last,
+                values,
+            )
+        )
+
+    local_first = first.tz_convert(energy_charts.TIMEZONE).tz_localize(None)
+    local_last = (last - grid.HOUR).tz_convert(energy_charts.TIMEZONE).tz_localize(None)
+    months = pd.period_range(local_first, local_last, freq="M")
+    for endpoint in energy_charts.PERIMETERS:
+        power = pd.concat(
+            [
+                energy_charts.fetch_power_month(endpoint, month, client, energy_charts_cache_dir)
+                for month in months
+            ]
+        )
+        power = power[(power.index >= first) & (power.index < last)]
+        provenance = f"Energy-Charts.info, Fraunhofer ISE, {endpoint}"
+        values = {}
+        for power_series in energy_charts.POWER_SERIES:
+            series_id = f"energy_charts.DE.{endpoint}.{power_series}"
+            values[series_id] = power[power_series]
+            kept = completeness.on_grid(power[power_series], energy_charts.QUARTER_HOUR)
+            hourly = grid.hourly_from_period_start_energy(
+                kept * (energy_charts.QUARTER_HOUR / grid.HOUR)
+            )
+            series[series_id] = SeriesInputs(
+                technology=power_series,
+                published=(
+                    Published(series_id, provenance, False, _on_hours(hourly, first, last)),
+                ),
+                modelled=None,
+                capacity_mw=capacity_mw(power_series),
+                offshore=None,
+            )
+        rows.append(
+            Rows(
+                f"energy_charts.{endpoint}",
+                provenance,
+                False,
+                energy_charts.QUARTER_HOUR,
+                energy_charts.POWER_LABEL,
+                None,
+                first,
+                last,
+                values,
+            )
+        )
+
+    classes = eligibility.price_classes(
+        first, last, zone="DE-LU", client=client, cache_dir=smard_cache_dir
+    )
+    return DetectionInputs(
+        "DE", start, end, hours, tuple(rows), series, classes.drop(columns="mean_price")
     )
 
 
@@ -343,6 +473,10 @@ def _mainland(regional: dict[str, DataFrame[physics.Modelled]]) -> DataFrame[phy
             energy_mwh=total, complete=total.notna(), capacity_mw=capacity.sum(axis="columns")
         )
     )
+
+
+def _on_hours(hourly: pd.DataFrame, first: pd.Timestamp, last: pd.Timestamp) -> pd.DataFrame:
+    return grid.Hourly.validate(grid.on_hours(hourly, first, last))
 
 
 def _offshore(hours: pd.DatetimeIndex, start: pd.Timestamp | None) -> pd.Series:
