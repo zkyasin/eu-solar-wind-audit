@@ -86,13 +86,18 @@ def scores(
     modelled: pd.DataFrame,
     technology: Technology,
     classes: pd.DataFrame | None = None,
+    offshore: pd.Series | None = None,
 ) -> pd.DataFrame:
-    """Residual scores with every hour in the reference class, unless `classes` are given."""
+    """Residual scores with every hour in the reference class and, for wind, no offshore output,
+    unless `classes` or `offshore` are given."""
+    if technology == "wind" and offshore is None:
+        offshore = pd.Series(False, index=published.index)
     return residual_scores(
         published,
         modelled,
         reference(published.index) if classes is None else classes,
         technology=technology,
+        offshore=offshore,
     )
 
 
@@ -230,6 +235,37 @@ def test_hours_without_the_reference_price_class_are_left_out(regime: str | None
     assert not table.loc[noon, "usable"].any()
     assert table.loc[noon, ["residual", "score"]].isna().all(axis=None)
     assert table.loc[on_day(MIDDLE), "score"].notna().sum() == 9
+
+
+def test_wind_hours_with_offshore_output_are_left_out() -> None:
+    modelled = modelled_frame(breeze(DAYS))
+    published = noisy(modelled)
+    # Offshore output from noon of the middle day on.
+    offshore = pd.Series(published.index >= on_day(MIDDLE)[12], index=published.index)
+
+    table = scores(published, modelled, "wind", offshore=offshore)
+
+    assert table["usable"].tolist() == (~offshore).tolist()
+    assert table.loc[on_day(MIDDLE), "score"].notna().tolist() == [hour < 12 for hour in range(24)]
+
+
+def test_a_wind_series_needs_its_hours_with_offshore_output() -> None:
+    modelled = modelled_frame(breeze(DAYS))
+    published = noisy(modelled)
+
+    with pytest.raises(ValueError, match="offshore output"):
+        residual_scores(published, modelled, reference(published.index), technology="wind")
+
+
+@pytest.mark.parametrize("naive", [False, True])
+def test_an_offshore_mask_needs_every_hour_of_the_series(naive: bool) -> None:
+    modelled = modelled_frame(breeze(DAYS))
+    published = noisy(modelled)
+    offshore = pd.Series(False, index=published.index)
+    offshore = offshore.tz_localize(None) if naive else offshore.iloc[1:]
+
+    with pytest.raises(ValueError, match="offshore flag"):
+        scores(published, modelled, "wind", offshore=offshore)
 
 
 def test_hours_without_both_final_values_or_a_capacity_are_left_out() -> None:

@@ -16,7 +16,8 @@ finite; an hour where y + 0.01 C is not positive has no residual.
 Usable hours are complete in the published and the modelled series, from consolidated or
 definitive rows, with the reference price class (evaluation plan, Deviations) and a positive
 modelled capacity; solar hours also need a modelled capacity factor of SOLAR_FACTOR_FROM or more
-(detector design).
+(detector design). Wind hours that contain offshore output, which the onshore model does not
+cover, are left out (evaluation plan, Deviations).
 
 The level of a day is final once the inputs cover the 31 days centred on it. Its scale is final
 once every residual of its window has a final level, that is once the inputs cover the 61 days
@@ -87,12 +88,14 @@ def residual_scores(
     price_classes: pd.DataFrame,
     *,
     technology: Technology,
+    offshore: pd.Series | None = None,
 ) -> DataFrame[ResidualScores]:
     """`ResidualScores` of each hour of `published`, a series of `technology` on the grid of
     grid.Hourly or, with the status of each hour, of odre.Hourly.
 
     `modelled` is the physics.Modelled output of the same perimeter, from the uncalibrated model,
-    and `price_classes` gives the `regime` of each UTC hour, as regimes.classify_hours does.
+    and `price_classes` gives the `regime` of each UTC hour, as regimes.classify_hours does. A wind
+    series needs `offshore`, which is True at each of its hours that contains offshore output.
     """
     published, realtime = _published(published)
     model = physics.Modelled.validate(modelled)
@@ -100,6 +103,8 @@ def residual_scores(
     # Classes on other hours would leave every hour out without an error.
     if not isinstance(regime.index, pd.DatetimeIndex) or str(regime.index.tz) != "UTC":
         raise ValueError("expected price classes on a DatetimeIndex in UTC")
+    if technology == "wind" and offshore is None:
+        raise ValueError("expected the hours of the wind series that contain offshore output")
     hours = pd.DatetimeIndex(published.index).sort_values()
     if hours.empty:
         return ResidualScores.empty()
@@ -117,6 +122,11 @@ def residual_scores(
     usable = with_values & (capacity_mw > 0) & regime.reindex(on_days).eq("reference")
     if technology == "solar":
         usable &= modelled_mwh >= SOLAR_FACTOR_FROM * capacity_mw
+    if offshore is not None:
+        with_offshore = offshore.reindex(hours)
+        if with_offshore.isna().any():
+            raise ValueError("expected an offshore flag at every hour of the published series")
+        usable &= ~with_offshore.astype(bool).reindex(on_days, fill_value=False)
 
     covered = on_days[with_values.to_numpy()]
     # Both are NaT, which covers no day, when no hour has both values.
