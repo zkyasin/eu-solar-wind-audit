@@ -384,14 +384,20 @@ def level_breaks(
     The daily ratios start by FIRST_DAY and reach MARGIN_DAYS past `end`, except that a wind
     series needs no day from WIND_SWITCH when `end` is not after it, since no search spans that
     day. Raises ValueError otherwise: the breaks of the period are then deferred to a run with more
-    days. The evidence gives the step as a log ratio, as a relative change and in sigmas, the
-    adjacent segments, the search, and the junction or the joint break behind the reason.
+    days. The search starts on FIRST_DAY, as when the penalties were fixed, whatever days the
+    ratios hold before it. The evidence gives the step as a log ratio, as a relative change and in
+    sigmas, the adjacent segments, the search, and the junction or the joint break behind the
+    reason.
     """
     grid.check_period(start, end)
     if set(ratios) != set(TECHNOLOGIES):
         raise ValueError("expected the ratios of a solar and a wind series")
     for technology, searched in ratios.items():
         _check_window(searched.daily, series[technology], technology, end)
+    ratios = {
+        technology: searched._replace(daily=searched.daily[searched.daily.index >= FIRST_DAY])
+        for technology, searched in ratios.items()
+    }
     nearby = Junctions.validate(junctions)
     junction_days = nearby.assign(day=nearby["time"].dt.floor("D"))
 
