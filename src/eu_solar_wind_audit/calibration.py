@@ -116,11 +116,11 @@ def fit_solar(
     eligible: pd.Series,
     parameters: PVParameters,
 ) -> SolarCalibration:
-    """Solar calibration on the eligible hours of `arrays`, which cover consecutive periods such
-    as the UTC years that precompute.solar gives. `published_mwh` and the boolean `eligible` are
-    indexed on the hours of the arrays, in the same order. `parameters` are the PV parameters the
-    arrays were computed with: the potential takes their DC/AC ratio, and the effective gain their
-    DC losses.
+    """Solar calibration on the eligible hours of `arrays`, which cover distinct periods, not
+    necessarily consecutive, such as the UTC years that precompute.solar gives for the training
+    years of a fold. `published_mwh` and the boolean `eligible` are indexed on the hours of the
+    arrays, in the same order. `parameters` are the PV parameters the arrays were computed with:
+    the potential takes their DC/AC ratio, and the effective gain their DC losses.
 
     Raises ValueError if an hour lies outside evaluation.TRAINING_YEARS, if the inputs are not on
     the same hours, or if an eligible hour has no published energy, potential or capacity.
@@ -169,9 +169,10 @@ def fit_solar(
 def fit_wind(
     arrays: Sequence[precompute.WindArrays], published_mwh: pd.Series, eligible: pd.Series
 ) -> WindCalibration:
-    """Onshore wind calibration on the eligible hours of `arrays`, which cover consecutive periods
-    such as the UTC years that precompute.wind_onshore gives. `published_mwh` and the boolean
-    `eligible` are indexed on the hours of the arrays, in the same order.
+    """Onshore wind calibration on the eligible hours of `arrays`, which cover distinct periods,
+    not necessarily consecutive, such as the UTC years that precompute.wind_onshore gives for the
+    training years of a fold. `published_mwh` and the boolean `eligible` are indexed on the hours
+    of the arrays, in the same order.
 
     Raises ValueError as `fit_solar` does.
     """
