@@ -387,3 +387,67 @@ def test_level_inputs_are_checked(change: Callable[[Training], Training], error:
         strata.annual_levels(given.published_mwh, given.potential_mwh, given.eligible)
     with pytest.raises(ValueError, match=error):
         strata.cross_fitted_levels(given.published_mwh, given.potential_mwh, given.eligible)
+
+
+def test_composition_counts_the_eligible_hours_of_each_year_by_group() -> None:
+    hours = utc_stamps(
+        [
+            # Monday 3 and Saturday 8 June 2019, then New Year's Day 2020.
+            "2019-06-03 10:00",
+            "2019-06-03 11:00",
+            "2019-06-08 10:00",
+            "2019-06-08 11:00",
+            "2020-01-01 10:00",
+        ]
+    )
+    hour_strata = pd.DataFrame(
+        {
+            "elevation_band": ["40-50", "50+", "40-50", "40-50", "10-20"],
+            "decile": pd.array([9, 10, 9, 9, 2], dtype="Int64"),
+            "day_type": [
+                "working_day",
+                "working_day",
+                "saturday",
+                "saturday",
+                "sunday_or_holiday",
+            ],
+        },
+        index=hours,
+    )
+    sky_classes = pd.Series(["clear", "clear", None, None, "overcast"], index=hours, dtype="str")
+    eligible = pd.Series([True, True, True, False, True], index=hours)
+
+    found = strata.composition(hour_strata, sky_classes, eligible)
+
+    # The hour without a sky class is counted apart, in a null group.
+    expected = pd.DataFrame(
+        [
+            (2019, "elevation_band", "40-50", 2),
+            (2019, "elevation_band", "50+", 1),
+            (2019, "sky_class", "clear", 2),
+            (2019, "sky_class", None, 1),
+            (2019, "day_type", "working_day", 2),
+            (2019, "day_type", "saturday", 1),
+            (2019, "stratum", "40-50/9/working_day", 1),
+            (2019, "stratum", "40-50/9/saturday", 1),
+            (2019, "stratum", "50+/10/working_day", 1),
+            (2020, "elevation_band", "10-20", 1),
+            (2020, "sky_class", "overcast", 1),
+            (2020, "day_type", "sunday_or_holiday", 1),
+            (2020, "stratum", "10-20/2/sunday_or_holiday", 1),
+        ],
+        columns=["year", "grouping", "group", "eligible_hours"],
+    ).astype({"group": "str"})
+    pd.testing.assert_frame_equal(found, expected)
+
+
+def test_composition_needs_boolean_eligibility_on_the_hours_of_the_strata() -> None:
+    hours = utc_hours("2021-06-01 10:00", 3)
+    hour_strata = strata.classify_hours(pd.Series(50.0, index=hours), covariates(hours), EDGES)
+    sky_classes = pd.Series("clear", index=hours, dtype="str")
+    eligible = pd.Series(True, index=hours)
+
+    with pytest.raises(ValueError, match="not on the same hours"):
+        strata.composition(hour_strata, sky_classes.iloc[1:], eligible)
+    with pytest.raises(ValueError, match="must be boolean"):
+        strata.composition(hour_strata, sky_classes, eligible.astype(int))

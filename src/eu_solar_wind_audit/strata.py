@@ -22,6 +22,9 @@ shrunk ratio of the stratum of each hour.
 The annual level of a UTC year is the published energy over the potential with strata, both summed
 over the eligible hours of the year. Cross-fitted within the year, the hours of a week take the
 level of the other weeks of their year.
+
+The composition of the eligible hours of each year, by elevation band, sky class, day type and
+stratum, shows which strata the training years inform.
 """
 
 from collections.abc import Sequence
@@ -50,6 +53,8 @@ STRATA = pd.MultiIndex.from_product([ELEVATION_BANDS, DECILES, days.DAY_TYPES], 
 SHRINKAGE_DAYS = 7
 # Weeks of the cross-fitted level: blocks of 7 days from 1 January 00:00 UTC.
 WEEK_DAYS = 7
+GROUPINGS = ["elevation_band", "sky_class", "day_type", "stratum"]
+STRATUM_LABELS = [f"{band}/{decile}/{day_type}" for band, decile, day_type in STRATA]
 
 
 class HourStrata(pa.DataFrameModel):
@@ -88,6 +93,21 @@ class StratumTable(pa.DataFrameModel):
     class Config:
         strict = True
         unique: ClassVar[list[str]] = STRATUM
+
+
+class Composition(pa.DataFrameModel):
+    """Eligible hours of a UTC year in one group of a grouping: an elevation band, a sky class of
+    days.sky_classes, null for the hours of a day without one, a day type, or a stratum labelled
+    `<elevation band>/<decile>/<day type>`. Groups without eligible hours have no row."""
+
+    year: Series[int]
+    grouping: Series[str] = pa.Field(isin=GROUPINGS)
+    group: Series[str] = pa.Field(nullable=True)
+    eligible_hours: Series[int] = pa.Field(gt=0)
+
+    class Config:
+        strict = True
+        unique: ClassVar[list[str]] = ["year", "grouping", "group"]
 
 
 @dataclass(frozen=True)
@@ -230,6 +250,46 @@ def cross_fitted_levels(
     level = other_weeks["published_mwh"] / other_weeks["potential_mwh"]
     by_hour = level.reindex(pd.MultiIndex.from_arrays(weeks)).to_numpy()
     return pd.Series(by_hour, index=hours, name="level")
+
+
+def composition(
+    strata: pd.DataFrame, sky_classes: pd.Series, eligible: pd.Series
+) -> DataFrame[Composition]:
+    """Eligible hours of each UTC year by elevation band, sky class, day type and stratum, in the
+    order of these groupings and of their groups, from `strata`, an HourStrata frame, the
+    `sky_classes` of days.sky_classes and the boolean `eligible`, all on the same hours. Hours
+    without a sky class are counted apart, in a null group."""
+    HourStrata.validate(strata)
+    hours = pd.DatetimeIndex(strata.index)
+    if not (sky_classes.index.equals(hours) and eligible.index.equals(hours)):
+        raise ValueError("the inputs are not on the same hours")
+    if eligible.dtype != bool:
+        raise ValueError("eligibility must be boolean")
+    mask = eligible.to_numpy()
+    counted = strata[mask]
+    stratum = (
+        counted["elevation_band"]
+        + "/"
+        + counted["decile"].astype("str")
+        + "/"
+        + counted["day_type"]
+    )
+    groupings = {
+        "elevation_band": (counted["elevation_band"], ELEVATION_BANDS),
+        "sky_class": (sky_classes[mask], evaluation.SKY_CLASSES),
+        "day_type": (counted["day_type"], days.DAY_TYPES),
+        "stratum": (stratum, STRATUM_LABELS),
+    }
+    year = pd.DatetimeIndex(counted.index).year.rename("year")
+    tables = []
+    for grouping, (values, order) in groupings.items():
+        group = pd.Series(pd.Categorical(values, categories=order), index=values.index)
+        counts = group.groupby([year, group.rename("group")], observed=True, dropna=False).size()
+        tables.append(counts.reset_index(name="eligible_hours").assign(grouping=grouping))
+    table = pd.concat(tables, ignore_index=True).sort_values("year", kind="stable")
+    table = table.astype({"year": "int64", "group": "str"})
+    columns = ["year", "grouping", "group", "eligible_hours"]
+    return Composition.validate(table[columns].reset_index(drop=True))
 
 
 def _eligible_sums(
