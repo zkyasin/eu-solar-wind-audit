@@ -374,6 +374,13 @@ def test_separate_days_of_one_spacing_are_separate_changes_of_resolution() -> No
     assert evidence(changes) == [{"step_minutes": 15, "days": 1}] * 2
 
 
+def test_values_left_around_a_long_gap_are_not_a_change_of_resolution() -> None:
+    # Three values two hours apart, and nothing else on the day.
+    found = check(rows("2022-06-01 10:00", "2022-06-01 14:00", step="2h"))
+
+    assert spans(found) == [("gap", utc(DAY_START), utc(DAY_END), 24.0)]
+
+
 # Exports from https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/<dataset>/exports/parquet
 # with the select of each fetch function and where=odre.utc_days(first day, last day), retrieved
 # 2026-11-22.

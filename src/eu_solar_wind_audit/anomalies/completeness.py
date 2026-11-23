@@ -211,8 +211,12 @@ def _resolution_changes(
     # A spacing belongs to the day of the first hour that the later value covers.
     first, _ = layout.hours(stamps[1:])
     spacing = pd.Series(stamps[1:] - stamps[:-1], index=first.floor("D"))
-    modal = spacing.groupby(level=0).agg(lambda day: day.mode().min())
-    changed = modal[modal != layout.step]
+    by_day = spacing.groupby(level=0)
+    modal = by_day.agg(lambda day: day.mode().min())
+    # A spacing is a resolution only on a day that its values fill: the few values left around a
+    # long gap are not one.
+    filled = by_day.size() + 1 >= DAY / modal
+    changed = modal[(modal != layout.step) & filled]
     hours = pd.date_range(layout.start, layout.end, freq="h", inclusive="left", unit="ns")
     records: list[dict[str, object]] = []
     for observed, days in changed.groupby(changed):
