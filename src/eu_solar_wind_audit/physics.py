@@ -1,5 +1,5 @@
-"""Uncalibrated physics model of the solar and onshore wind output of mainland France, from ERA5,
-the SDES capacity per department and the PV and wind modules.
+"""Uncalibrated physics model of the solar and onshore wind output of mainland France and of its
+12 éCO2mix regions, from ERA5, the SDES capacity per department and the PV and wind modules.
 
 Output is energy in MWh for each hour [t, t + 1 h), labelled t in UTC: the sum over ERA5 cells of
 capacity factor times capacity in MW.
@@ -215,6 +215,60 @@ def model(
     )
     fleet = fleet_cells(technology, weather, parameters, monthly, regions)
     return _modelled(fleet, _capacity_factors(technology, fleet.cells, parameters))
+
+
+def model_regions(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    monthly: pd.DataFrame,
+    regions: gpd.GeoDataFrame,
+    cache_dir: Path = ERA5_CACHE_DIR,
+) -> dict[str, DataFrame[Modelled]]:
+    """Hourly modelled output of each éCO2mix region for hours [start, end), both hour starts in
+    UTC, keyed by the codes of odre.REGIONS in its order: the output of `model` for the capacity
+    of the departments of the region. `monthly` and `regions` are as for `model`; the regions of
+    `monthly` are named as in odre.REGIONS.
+
+    The weather is read and the capacity factors of the mainland cells are computed once: regions
+    differ only in their capacity, and they add up to the output of `model`. A region without
+    capacity has zero output at every hour.
+    """
+    grid.check_period(start, end)
+    unknown = set(sdes.metropolitan_without_corsica(monthly)["region"]) - set(odre.REGIONS.values())
+    if unknown:
+        # Their capacity would be in the mainland and in no region.
+        raise ValueError(f"mainland regions not in odre.REGIONS: {sorted(unknown)}")
+    # ERA5 times are naive UTC. Loaded once, as every region selects its cells from it.
+    weather = read_weather(
+        parameters.country,
+        parameters.era5_box,
+        INPUTS[technology],
+        start.tz_convert(None),
+        end.tz_convert(None),
+        cache_dir,
+    ).load()
+    cells = fleet_cells(technology, weather, parameters, monthly, regions).cells
+    factors = list(_capacity_factors(technology, cells, parameters))
+    mainland = _cell_index(cells)
+    by_region = {}
+    for code, name in odre.REGIONS.items():
+        # Other regions keep their rows at zero capacity, so that a region needs no rows of its
+        # own to get a fleet.
+        capacity_mw = monthly["capacity_mw"].where(monthly["region"] == name, 0.0)
+        fleet = fleet_cells(
+            technology, weather, parameters, monthly.assign(capacity_mw=capacity_mw), regions
+        )
+        # A cell with capacity in the region has capacity in the mainland too.
+        positions = mainland.get_indexer(_cell_index(fleet.cells))
+        by_region[code] = _modelled(fleet, [factor.isel(cell=positions) for factor in factors])
+    return by_region
+
+
+def _cell_index(cells: xr.Dataset) -> pd.MultiIndex:
+    """Latitude and longitude of each cell of a Fleet."""
+    return pd.MultiIndex.from_arrays([cells["latitude"].to_numpy(), cells["longitude"].to_numpy()])
 
 
 def _capacity_factors(
