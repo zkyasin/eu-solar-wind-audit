@@ -1,6 +1,5 @@
-"""Residual scores of a published hourly series against its model (evaluation plan, axis 2): how
-far the published output of each hour is from the modelled output at the local level of the
-series.
+"""Residual outliers of a published hourly series against its model (evaluation plan, axis 2):
+hours whose published output is far from the modelled output at the local level of the series.
 
 For an hour of the UTC day d, with y the published and m the modelled energy in MWh and C the
 modelled capacity in MW at the start of the hour, the residual and the score are
@@ -25,6 +24,12 @@ centred on the day; until then, the score of the day is deferred. The inputs cov
 whose hours all lie between the first and the last hour with both a published value from
 consolidated or definitive rows and a modelled value, so a detection run that loads 30 days before
 and after its period scores all of it.
+
+`residual_scores` gives the score of every hour, and `residual_outliers` reports the hours whose
+score reaches the threshold of the technology: runs of these hours are one finding when less than
+24 hours separate them. This is a statistical detector: its thresholds rest on 2019-2022, and its
+findings count in the false-alarm budget (evaluation plan, Deviations). Real-time hours are left
+out, so no finding is provisional. Score: the score of the flagged hour farthest from zero.
 """
 
 import numpy as np
@@ -33,6 +38,8 @@ import pandera.pandas as pa
 from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import grid, physics
+from eu_solar_wind_audit.anomalies import findings
+from eu_solar_wind_audit.anomalies.findings import Findings
 from eu_solar_wind_audit.anomalies.outliers import Technology
 from eu_solar_wind_audit.sources import odre
 
@@ -53,6 +60,8 @@ NORMAL_SCALE = 1.4826
 # week of each, as in the measurements of the detector design.
 LEVEL_MIN_DAYS = 7
 SCALE_MIN_HOURS = 7 * HOURS_PER_DAY
+# Runs of flagged hours less than 24 hours apart form one finding (detector design).
+MERGE_GAP = pd.Timedelta(hours=24)
 
 
 class ResidualScores(pa.DataFrameModel):
@@ -175,6 +184,46 @@ def residual_scores(
         index=on_days,
     )
     return ResidualScores.validate(table.reindex(hours))
+
+
+def residual_outliers(
+    scores: pd.DataFrame, *, series: str, provenance: str, threshold: float
+) -> DataFrame[Findings]:
+    """Residual outliers of the series `series`, whose rows come from `provenance`, from the
+    `ResidualScores` of the hours to report: the hours whose score reaches `threshold` in absolute
+    value, in runs that MERGE_GAP joins. The detector design gives a threshold of 15 for solar and
+    10 for wind; the thresholds file fixes them on 2019-2022.
+
+    The evidence gives the threshold, the number of flagged hours, and the hour of the finding with
+    the score farthest from zero, with its published and expected energy, residual, scale and
+    score.
+    """
+    table = ResidualScores.validate(scores).sort_index()
+    score = table["score"]
+    flagged = pd.DatetimeIndex(table.index[(score.abs() >= threshold).to_numpy()])
+    records: list[dict[str, object]] = []
+    for start, end, flagged_hours in findings.runs(flagged, MERGE_GAP).itertuples(index=False):
+        run = score[start : end - grid.HOUR].dropna()
+        peak = pd.DatetimeIndex(run.index)[int(run.abs().argmax())]
+        values = table.loc[peak, ["published_mwh", "expected_mwh", "residual", "scale", "score"]]
+        records.append(
+            {
+                "series": series,
+                "provenance": provenance,
+                "provisional": False,
+                "start": start,
+                "end": end,
+                "kind": "residual_outlier",
+                "score": score[peak],
+                "evidence": {
+                    "threshold": threshold,
+                    "flagged_hours": int(flagged_hours),
+                    "peak_hour": peak.isoformat(),
+                    **values.to_dict(),
+                },
+            }
+        )
+    return findings.from_records(records)
 
 
 def _published(published: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:

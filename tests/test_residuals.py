@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 
 import numpy as np
@@ -5,17 +6,24 @@ import numpy.typing as npt
 import pandas as pd
 import pytest
 
+from eu_solar_wind_audit.anomalies.findings import Findings
 from eu_solar_wind_audit.anomalies.outliers import Technology
 from eu_solar_wind_audit.anomalies.residuals import (
     CAPACITY_SHARE,
     NORMAL_SCALE,
     SOLAR_FACTOR_FROM,
     ResidualScores,
+    residual_outliers,
     residual_scores,
 )
 
 FloatArray = npt.NDArray[np.float64]
 
+SERIES = "test.FR.solar"
+PROVENANCE = "Producer, test dataset"
+# Thresholds of the detector design.
+THRESHOLDS: dict[Technology, float] = {"solar": 15.0, "wind": 10.0}
+HOUR = pd.Timedelta(hours=1)
 FIRST_DAY = "2022-03-01"
 CAPACITY_MW = 1000.0
 # Standard deviation of the log noise of the published output.
@@ -352,3 +360,123 @@ def test_a_series_without_hours_gives_an_empty_valid_table() -> None:
 
     assert table.empty
     assert list(table.columns) == list(ResidualScores.to_schema().columns)
+
+
+def outliers(table: pd.DataFrame, threshold: float) -> pd.DataFrame:
+    return residual_outliers(table, series=SERIES, provenance=PROVENANCE, threshold=threshold)
+
+
+def zero_output(published: pd.DataFrame, hours: pd.DatetimeIndex) -> pd.DataFrame:
+    """`published` without output at `hours`."""
+    energy_mwh = published["energy_mwh"].mask(published.index.isin(hours), 0.0)
+    return published.assign(energy_mwh=energy_mwh)
+
+
+def spans(found: pd.DataFrame) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    return list(found[["start", "end"]].itertuples(index=False, name=None))
+
+
+def test_a_three_hour_zero_run_in_a_noisy_bell_is_flagged() -> None:
+    modelled = modelled_frame(bell(DAYS))
+    run = on_day(MIDDLE, range(11, 14))
+    table = scores(zero_output(noisy(modelled), run), modelled, "solar")
+
+    found = outliers(table, THRESHOLDS["solar"])
+
+    assert spans(found) == [(run[0], run[-1] + HOUR)]
+    assert (found["score"] < -2 * THRESHOLDS["solar"]).all()
+    peak = run[int(table.loc[run, "score"].abs().argmax())]
+    values = table.loc[peak, ["published_mwh", "expected_mwh", "residual", "scale", "score"]]
+    assert found["score"].tolist() == [values["score"]]
+    assert json.loads(found["evidence"].iloc[0]) == {
+        "threshold": THRESHOLDS["solar"],
+        "flagged_hours": 3,
+        "peak_hour": peak.isoformat(),
+        **values.to_dict(),
+    }
+    assert found[["series", "provenance", "kind"]].values.tolist() == [
+        [SERIES, PROVENANCE, "residual_outlier"]
+    ]
+    assert not found["provisional"].any()
+
+
+@pytest.mark.parametrize(("technology", "shape"), [("solar", bell), ("wind", breeze)])
+def test_noise_alone_gives_no_finding_at_the_design_thresholds(
+    technology: Technology, shape: Callable[[int], FloatArray]
+) -> None:
+    modelled = modelled_frame(shape(80))
+    table = scores(noisy(modelled, seed=1), modelled, technology)
+
+    found = outliers(table, THRESHOLDS[technology])
+
+    assert found.empty
+    assert list(found.columns) == list(Findings.to_schema().columns)
+    # The largest score of the noise is flagged by a threshold of its own size only.
+    largest = float(table["score"].abs().max())
+    assert 2 < largest < 5
+    assert len(outliers(table, largest)) == 1
+
+
+@pytest.mark.parametrize(("hours_between", "joined"), [(23, True), (24, False)])
+def test_runs_of_flagged_hours_less_than_24_hours_apart_are_one_finding(
+    hours_between: int, joined: bool
+) -> None:
+    modelled = modelled_frame(breeze(80))
+    first = on_day(35)[0]
+    second = first + (hours_between + 1) * HOUR
+    published = zero_output(noisy(modelled), pd.DatetimeIndex([first, second]))
+
+    found = outliers(scores(published, modelled, "wind"), THRESHOLDS["wind"])
+
+    if joined:
+        assert spans(found) == [(first, second + HOUR)]
+        assert json.loads(found["evidence"].iloc[0])["flagged_hours"] == 2
+    else:
+        assert spans(found) == [(first, first + HOUR), (second, second + HOUR)]
+
+
+def test_zero_output_in_hours_with_offshore_output_gives_no_finding() -> None:
+    modelled = modelled_frame(breeze(80))
+    run = on_day(35, range(10, 13))
+    published = zero_output(noisy(modelled), run)
+    offshore = pd.Series(published.index.isin(run), index=published.index)
+
+    assert len(outliers(scores(published, modelled, "wind"), THRESHOLDS["wind"])) == 1
+    found = outliers(scores(published, modelled, "wind", offshore=offshore), THRESHOLDS["wind"])
+    assert found.empty
+
+
+def test_zero_output_in_hours_of_negative_prices_gives_no_finding() -> None:
+    # Output cut while prices are negative is modulation, which the reference class leaves out.
+    modelled = modelled_frame(bell(80))
+    run = on_day(35, range(11, 14))
+    published = zero_output(noisy(modelled), run)
+    classes = reference(published.index)
+    classes.loc[run, "regime"] = "negative"
+
+    assert len(outliers(scores(published, modelled, "solar"), THRESHOLDS["solar"])) == 1
+    assert outliers(scores(published, modelled, "solar", classes), THRESHOLDS["solar"]).empty
+
+
+def test_a_zero_run_near_the_end_of_the_inputs_waits_for_later_inputs() -> None:
+    modelled = modelled_frame(bell(100))
+    published = zero_output(noisy(modelled), on_day(60, range(11, 14)))
+    # Day 60 is 20 days from the end of the first 80 days.
+    first_80_days = published.index < on_day(80)[0]
+
+    earlier = scores(published[first_80_days], modelled[first_80_days], "solar")
+    later = scores(published, modelled, "solar")
+
+    assert earlier.loc[on_day(60), "deferred"].all()
+    assert outliers(earlier, THRESHOLDS["solar"]).empty
+    assert spans(outliers(later, THRESHOLDS["solar"])) == [(on_day(60)[11], on_day(60)[14])]
+
+
+def test_scores_out_of_order_give_the_same_findings() -> None:
+    modelled = modelled_frame(bell(DAYS))
+    run = on_day(MIDDLE, range(11, 14))
+    table = scores(zero_output(noisy(modelled), run), modelled, "solar")
+
+    pd.testing.assert_frame_equal(
+        outliers(table.iloc[::-1], THRESHOLDS["solar"]), outliers(table, THRESHOLDS["solar"])
+    )
