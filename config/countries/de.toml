@@ -13,9 +13,10 @@ east = 15.5
 north = 55.5
 
 # Solar units in operation at the end of 2025 in the MaStR export of 2026-10-01: 118.1 GWp of
-# module power for 104.9 GW of power limited by the inverters (mastr.dc_ac_ratio).
+# module power for 104.9 GW of power limited by the inverters, a ratio of 1.125 (mastr.dc_ac_ratio)
+# taken to the 0.01 steps of precompute.DC_AC_GRID.
 [solar]
-dc_ac_ratio = 1.125
+dc_ac_ratio = 1.13
 
 # Shares of the module power by main orientation and tilt class (mastr.solar_fleet), each class at
 # the middle of its range: 5 to 20 degrees at 12.5, 21 to 40 at 30.5, 41 to 60 at 50.5. South
