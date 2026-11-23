@@ -1,10 +1,12 @@
-"""Outliers of a published hourly series (evaluation plan, axis 2): negative values.
+"""Outliers of a published hourly series (evaluation plan, axis 2): negative values and values
+above 1.05 times the capacity.
 
 These rules state facts about the published values, so they use no thresholds file and no
 false-alarm budget (evaluation plan, Deviations). The detectors read one series on the grid of
 `grid`, as a `grid.Hourly` frame or, with the publication status of each hour, an `odre.Hourly`
 frame, and look at its complete hours only. Findings on real-time hours are provisional, and no
-finding spans real-time and other hours. Scores: `negative`, the lowest value in MWh.
+finding spans real-time and other hours. Scores: `negative`, the lowest value in MWh;
+`above_capacity`, the highest ratio of a value to the capacity.
 """
 
 from typing import NamedTuple
@@ -17,8 +19,11 @@ from eu_solar_wind_audit.anomalies import findings
 from eu_solar_wind_audit.anomalies.findings import Findings
 from eu_solar_wind_audit.sources import odre
 
-# Runs of flagged hours closer than a week form one finding, since negative values recur every
-# night. A choice of the detector design: the plan sets no merge gap.
+# Values above 1.05 times the AC capacity (evaluation plan, axis 2).
+CAPACITY_LIMIT = 1.05
+# Runs of negative values, or of values above the capacity, closer than a week form one finding,
+# since negative values recur every night. A choice of the detector design: the plan sets no merge
+# gap.
 MERGE_GAP = pd.Timedelta(days=7)
 
 
@@ -55,6 +60,48 @@ def negative_values(
                 hours=run.flagged_hours,
                 lowest_hour=pd.DatetimeIndex(values.index)[lowest].isoformat(),
                 lowest_mwh=values.iloc[lowest],
+            )
+        )
+    return findings.from_records(records)
+
+
+def above_capacity(
+    published: pd.DataFrame, capacity_mw: pd.Series, *, series: str, provenance: str
+) -> DataFrame[Findings]:
+    """Runs of complete hours of `published` whose energy exceeds CAPACITY_LIMIT times the capacity
+    at the start of the hour; runs closer than MERGE_GAP are joined. `published` is the hourly
+    series `series`, whose rows come from `provenance`.
+
+    `capacity_mw` is the AC capacity in MW of the published perimeter at each hour start, as
+    sdes.hourly_capacity and energy_charts.hourly_capacity give it; it must be positive at every
+    complete hour. The evidence gives the number of hours above the limit and, at the hour with
+    the highest ratio, the energy, the capacity and their ratio.
+    """
+    published, realtime = _hours(published)
+    energy = published["energy_mwh"]
+    complete = published["complete"]
+    capacity = capacity_mw.reindex(published.index)
+    if not (capacity[complete] > 0).all():
+        raise ValueError("expected a positive capacity at every complete hour")
+    flagged = complete & (energy > CAPACITY_LIMIT * capacity)
+    ratio = energy / capacity
+    records = []
+    for run in _runs(flagged, realtime):
+        ratios = ratio[run.start : run.end - grid.HOUR].dropna()
+        highest = int(ratios.argmax())
+        hour = pd.DatetimeIndex(ratios.index)[highest]
+        records.append(
+            _record(
+                series,
+                provenance,
+                run,
+                "above_capacity",
+                ratios.iloc[highest],
+                hours=run.flagged_hours,
+                highest_hour=hour.isoformat(),
+                energy_mwh=energy[hour],
+                capacity_mw=capacity[hour],
+                ratio=ratios.iloc[highest],
             )
         )
     return findings.from_records(records)
