@@ -114,6 +114,21 @@ def test_the_transit_is_that_of_the_centroid_of_each_array() -> None:
     assert sample.index[sample.to_numpy()].equals(utc_hours("2022-06-14", list(range(9, 17))))
 
 
+def test_hours_are_near_transit_by_their_middle() -> None:
+    # Transit comes at 12:20 UTC at 5 W: the hour from 09:00 UTC has its middle within 3 h of it
+    # but not its start, and the hour from 15:00 UTC its start but not its middle.
+    hours = paris_hours("2022-06-14", "2022-06-16")
+    arrays = sky_arrays(hours, 0.95, centroid=(46.0, -5.0))
+    prices = pd.Series(50.0, index=hours)
+    prices.loc[[utc("2022-06-14 09:00"), utc("2022-06-15 15:00")]] = 2.0
+    classes = regimes.classify_hours(prices)
+
+    sample = dc_ac.sample_hours([arrays], classes["regime"] == "reference", classes)
+
+    expected = utc_hours("2022-06-15", [8, 9, 10, 11, 12, 13, 14, 16])
+    assert sample.index[sample.to_numpy()].equals(expected)
+
+
 def test_the_sample_needs_inputs_on_the_hours_of_the_arrays() -> None:
     hours = paris_hours("2022-06-14", "2022-06-15")
     arrays = sky_arrays(hours, 0.95)
