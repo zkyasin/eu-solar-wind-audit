@@ -8,6 +8,7 @@ import pytest
 from synthetic import PV, solar_year
 
 from eu_solar_wind_audit import calibration, cli, eligibility, fits, folds, modulation, strata
+from eu_solar_wind_audit.sources import odre
 
 YEARS = (2019, 2020, 2021)
 
@@ -131,7 +132,14 @@ def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
     ) -> eligibility.YearInputs:
         return solar_year(year)
 
+    def national_hourly(
+        client: object, series: str, start: pd.Timestamp, end: pd.Timestamp, **_: object
+    ) -> pd.DataFrame:
+        hours = pd.date_range(start, end, freq="h", inclusive="left", name="time")
+        return pd.DataFrame({"energy_mwh": 50e3, "complete": True}, index=hours)
+
     monkeypatch.setattr(eligibility, "year_inputs", year_inputs)
+    monkeypatch.setattr(odre, "national_hourly", national_hourly)
     fits.write(tmp_path / "fits" / "solar.json", fit)
     rte = Path(__file__).parents[1] / "references" / "rte"
 
@@ -159,6 +167,8 @@ def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
         "solar-modulation-intervals.parquet",
         "solar-modulation-intervals-dc-ac-sensitivity.parquet",
         "solar-verdict-years.parquet",
+        "solar-placebo-years.parquet",
+        "solar-placebo-pairs.parquet",
         "solar-modulation.json",
     }
     summary = json.loads((tmp_path / "out" / "solar-modulation.json").read_text())
@@ -168,6 +178,8 @@ def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
     # detectable effect, and no year is conclusive.
     assert summary["mde_gwh"] == {str(year): None for year in range(2019, 2026)}
     assert summary["verdict"] == "inconclusive"
+    # No synthetic hour is priced 5 to 15 EUR/MWh, so no N hour has a placebo.
+    assert summary["placebo"]["matched_hours"] == 0
     intervals = pd.read_parquet(tmp_path / "out" / "solar-modulation-intervals.parquet")
     assert intervals.columns.tolist() == ["low_gwh", "high_gwh", "estimate_gwh"]
     assert {"2019", "2020", "2021"} <= set(intervals.index)
