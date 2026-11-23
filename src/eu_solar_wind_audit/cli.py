@@ -3,6 +3,7 @@
 import argparse
 import dataclasses
 import json
+import math
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -10,7 +11,15 @@ from typing import Any
 
 import pandas as pd
 
-from eu_solar_wind_audit import calibrate, dc_ac, fits, physics
+from eu_solar_wind_audit import (
+    calibrate,
+    dc_ac,
+    eligibility,
+    evaluation,
+    fits,
+    modulation,
+    physics,
+)
 from eu_solar_wind_audit.anomalies import inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
 from eu_solar_wind_audit.sources import natural_earth, odre, sdes
@@ -49,6 +58,16 @@ def main(argv: list[str] | None = None) -> None:
         default=dc_ac.REPLICATES,
         help="day-bootstrap replicates of the solar DC/AC profile",
     )
+    estimate = commands.add_parser(
+        "estimate-modulation",
+        help="estimate the output of mainland France modulated during negative prices with the "
+        "frozen fit, and compare it with the volumes published by RTE",
+    )
+    estimate.add_argument("technology", choices=["solar", "wind_onshore"])
+    estimate.add_argument("output", type=Path, help="directory of the tables and their summary")
+    estimate.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
+    estimate.add_argument("--fits-dir", type=Path, default=fits.FITS_DIR)
+    estimate.add_argument("--references", type=Path, default=Path("references/rte"))
     fix = commands.add_parser(
         "fix-anomaly-thresholds",
         help="fix the thresholds of the statistical anomaly detectors of mainland France on "
@@ -81,6 +100,15 @@ def main(argv: list[str] | None = None) -> None:
                 client, args.technology, parameters, replicates=args.replicates
             )
         for path in calibrate.write(calibrated, args.output, args.fits_dir, git_describe()):
+            print(path)
+    elif args.command == "estimate-modulation":
+        for path in estimate_modulation(
+            args.technology,
+            args.output,
+            load_country(args.config),
+            fits.read(args.fits_dir / f"{args.technology}.json"),
+            args.references,
+        ):
             print(path)
     elif args.command == "fix-anomaly-thresholds":
         parameters = load_country(args.config)
@@ -122,6 +150,59 @@ def run_metadata(
         "regions": f"Natural Earth admin-1 {natural_earth.VERSION}",
         "git_commit": git_commit(),
     }
+
+
+def estimate_modulation(
+    technology: physics.Technology,
+    output: Path,
+    parameters: Country,
+    fit: fits.Fit,
+    reference_dir: Path,
+) -> list[Path]:
+    """Estimate the modulation of `technology` over every year of evaluation.TRAINING_YEARS with
+    the frozen `fit`, compare it with the RTE volumes of `reference_dir`, and write the tables
+    and a JSON summary to `output`. Gives the paths written."""
+    # The reference series are imported here only, so that calibrate-france never loads them.
+    from eu_solar_wind_audit import comparison, references
+
+    with odre.make_client() as client:
+        years = [
+            eligibility.year_inputs(client, technology, year, parameters)
+            for year in evaluation.TRAINING_YEARS
+        ]
+    hours = modulation.negative_hours(years, fit)
+    months = modulation.months(hours)
+    references.verify_manifest(reference_dir)
+    found = comparison.compare(months, references.load_rte_modulation(reference_dir), technology)
+
+    output.mkdir(parents=True, exist_ok=True)
+    tables: dict[str, pd.DataFrame] = {
+        "modulation-hours": hours,
+        "modulation-months": months,
+        "rte-months": found.months,
+        "rte-years": found.years,
+    }
+    written = []
+    for name, table in tables.items():
+        path = output / f"{technology}-{name}.parquet"
+        table.to_parquet(path)
+        written.append(path)
+    summary = {
+        "technology": technology,
+        "git_describe": git_describe(),
+        "fit_git_describe": fit.git_describe,
+        "log_error": _finite(found.log_error),
+        "baseline_log_error": _finite(found.baseline_log_error),
+        "spearman": _finite(found.spearman),
+        "tests": found.tests,
+    }
+    path = output / f"{technology}-modulation.json"
+    path.write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8")
+    return [*written, path]
+
+
+def _finite(value: float) -> float | None:
+    return value if math.isfinite(value) else None
 
 
 def git_describe() -> str | None:

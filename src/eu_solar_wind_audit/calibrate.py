@@ -182,29 +182,13 @@ def _composition(
     years: Sequence[eligibility.YearInputs], final: folds.Potential
 ) -> DataFrame[strata.Composition]:
     """Eligible hours of each year by group, with the strata of the potential of `final`."""
-    potential = pd.concat([_potential(inputs.arrays, final.calibration) for inputs in years])
+    potential = pd.concat(
+        [calibration.potential_mwh(inputs.arrays, final.calibration) for inputs in years]
+    )
     covariates = pd.concat([inputs.arrays.covariates for inputs in years])
     hour_strata = strata.classify_hours(potential, covariates, final.ratios.decile_edges)
     eligible = pd.concat([inputs.eligibility["eligible"] for inputs in years])
     return strata.composition(hour_strata, days.sky_classes(covariates), eligible)
-
-
-def _potential(
-    arrays: precompute.SolarArrays | precompute.WindArrays, fitted: folds.Calibration
-) -> pd.Series:
-    if isinstance(fitted, calibration.SolarCalibration):
-        if not isinstance(arrays, precompute.SolarArrays):
-            raise ValueError("a solar calibration needs the arrays of precompute.solar")
-        return precompute.solar_energy(
-            arrays,
-            fitted.dc_ac_ratio,
-            level=fitted.level,
-            horizontal_share=fitted.horizontal_share,
-            seasonal_amplitude=fitted.seasonal_amplitude,
-        )
-    if not isinstance(arrays, precompute.WindArrays):
-        raise ValueError("a wind calibration needs the arrays of precompute.wind_onshore")
-    return precompute.wind_energy(arrays, fitted.speed_scale)
 
 
 def _fold_table(report: folds.Report) -> pd.DataFrame:
