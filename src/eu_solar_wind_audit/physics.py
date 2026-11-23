@@ -334,6 +334,28 @@ def model_france(
     return Modelled.validate(pd.concat(years))
 
 
+def model_france_regions(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    cache_dir: Path = ERA5_CACHE_DIR,
+) -> dict[str, DataFrame[Modelled]]:
+    """Hourly modelled output of each éCO2mix region for hours [start, end), both hour starts in
+    UTC, keyed by the codes of odre.REGIONS, computed one calendar year at a time; see
+    `model_regions` and `model_france`."""
+    grid.check_period(start, end)
+    monthly = load_monthly_capacity(technology, end - grid.HOUR)
+    regions = natural_earth.load_admin1("FR")
+    years = [
+        model_regions(technology, first, stop, parameters, monthly, regions, cache_dir)
+        for first, stop in _calendar_years(start, end)
+    ]
+    return {
+        code: Modelled.validate(pd.concat(year[code] for year in years)) for code in odre.REGIONS
+    }
+
+
 def _calendar_years(
     start: pd.Timestamp, end: pd.Timestamp
 ) -> Iterator[tuple[pd.Timestamp, pd.Timestamp]]:
