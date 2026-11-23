@@ -7,9 +7,10 @@ last days are complete where the data exist; the thresholds of 2019-2022 are fix
 Each published series has an id, `<source>.<area>.<quantity>`, and comes in parts, one per dataset
 of its rows: a part cites the producer and the dataset of its rows as its provenance, and
 says whether they are real-time values, which their producer replaces later. The raw rows of each
-dataset, as fetched, go to the completeness detector; the hourly series are converted from the rows
-that completeness.on_grid keeps, so that a value off the grid of its dataset is reported instead of
-stopping the run. Prices enter only as the classes of regimes.classify_hours.
+dataset, as fetched, go to the completeness detector, up to the last complete hour of a consolidated
+dataset (odre.complete_end); the hourly series are converted from the rows that completeness.on_grid
+keeps, so that a value off the grid of its dataset is reported instead of stopping the run. Prices
+enter only as the classes of regimes.classify_hours.
 
 The physics model covers onshore wind only, so the detectors that compare published wind with it
 skip the hours that contain offshore output (evaluation plan, Deviations). `offshore_starts` dates
@@ -29,9 +30,10 @@ from eu_solar_wind_audit.anomalies import completeness
 from eu_solar_wind_audit.config import Country
 from eu_solar_wind_audit.sources import energy_charts, odre, sdes, smard
 
-# The windowed statistics of a day reach 15 days away from it: the 31-day windows centred on the
-# day and the 14-day windows around a clock change (detector design).
-MARGIN = pd.Timedelta(days=15)
+# The windowed statistics of a day reach 30 days away from it: the scale of its residual score
+# takes the residuals of the 31 days centred on it, each at the level of the 31 days centred on
+# its own day (anomalies.residuals).
+MARGIN = pd.Timedelta(days=30)
 
 # Mainland France, then the 12 éCO2mix regions, with their names on the SDES panel.
 AREAS: dict[str, str | None] = {"FR": None} | {
@@ -389,7 +391,7 @@ def _eco2mix(
                 for technology in ("solar", "wind")
             },
             first,
-            switches["solar"],
+            odre.complete_end(consolidated["solar"][1], first),
         ),
         _rows(
             odre.REGIONAL_CONSOLIDATED,
@@ -401,7 +403,7 @@ def _eco2mix(
                 for technology in _published_from(technologies, first)
             },
             first,
-            odre.consolidated_end(
+            odre.complete_end(
                 odre.sum_of_regions(odre.regional_from_rows(regional_kept, "solar", first, last)),
                 first,
             ),

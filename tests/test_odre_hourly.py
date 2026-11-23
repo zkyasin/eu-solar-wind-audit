@@ -450,3 +450,22 @@ def test_a_wrong_period_is_rejected_before_any_download(
             odre.onshore_hourly(client, start, end, cache_dir=tmp_path)
 
     assert not requests
+
+
+def test_rows_are_complete_up_to_the_hour_of_their_last_full_hour() -> None:
+    # The rows stop with the half-hour ending at 23:30 in Paris, 22:30 UTC.
+    hours = pd.date_range("2025-12-31 20:00", periods=4, freq="h", tz="UTC", unit="ns", name="time")
+    hourly = odre.Hourly.validate(
+        pd.DataFrame(
+            {
+                "energy_mwh": [1.0, 2.0, np.nan, np.nan],
+                "complete": [True, True, False, False],
+                "status": ["definitive", "definitive", "definitive", None],
+            },
+            index=hours,
+        )
+    )
+
+    assert odre.consolidated_end(hourly, hours[0]) == hours[3]
+    assert odre.complete_end(hourly, hours[0]) == hours[2]
+    assert odre.complete_end(hourly.iloc[2:], hours[2]) == hours[2]

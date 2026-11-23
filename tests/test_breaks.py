@@ -236,6 +236,20 @@ def test_only_breaks_of_the_period_are_reported() -> None:
     assert found.unattributed.empty
 
 
+def test_days_before_the_first_day_are_not_searched() -> None:
+    # The days of December 2018 sit 50 % below the rest, as a margin before the period could.
+    step = np.log(2.0)
+    ratios: dict[breaks.Technology, Ratios] = {
+        technology: flat(daily("2018-12-01", "2021-03-01", {"2019-01-01": step}, seed=seed))
+        for seed, technology in enumerate(breaks.TECHNOLOGIES)
+    }
+
+    found = detect(ratios, no_junctions(), "2019-01-01")
+
+    assert found.findings.empty
+    assert found.unattributed.empty
+
+
 def test_daily_ratios_must_reach_15_days_past_the_period() -> None:
     ratios: dict[breaks.Technology, Ratios] = {
         technology: flat(daily("2019-01-01", "2021-01-10", seed=seed))
