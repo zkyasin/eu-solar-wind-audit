@@ -81,10 +81,12 @@ def with_errors(potential: pd.Series, rng: np.random.Generator) -> pd.Series:
     return pd.Series(values, index=potential.index)
 
 
-def solar_case(truth: tuple[float, float, float] = SOLAR_TRUTH) -> SolarCase:
+def solar_case(
+    truth: tuple[float, float, float] = SOLAR_TRUTH, dc_ac_ratio: float = 1.2
+) -> SolarCase:
     rng = np.random.default_rng(2019)
     arrays = [solar_year(year, rng) for year in (2019, 2020)]
-    potential = pd.concat([precompute.solar_energy(part, 1.2, *truth) for part in arrays])
+    potential = pd.concat([precompute.solar_energy(part, dc_ac_ratio, *truth) for part in arrays])
     return arrays, with_errors(potential, rng), pd.Series(True, index=potential.index)
 
 
@@ -112,6 +114,19 @@ def test_solar_parameters_are_recovered_despite_gross_errors() -> None:
     assert fitted.fit.status > 0
     assert fitted.fit.eligible_hours == len(published_mwh)
     assert fitted.fit.training_years == (2019, 2020)
+
+
+def test_the_solar_potential_takes_the_dc_ac_ratio_of_the_parameters() -> None:
+    arrays, published_mwh, eligible = solar_case(dc_ac_ratio=1.35)
+
+    fitted = calibration.fit_solar(
+        arrays, published_mwh, eligible, dataclasses.replace(PV, dc_ac_ratio=1.35)
+    )
+
+    estimates = (fitted.level, fitted.horizontal_share, fitted.seasonal_amplitude)
+    assert estimates == pytest.approx(SOLAR_TRUTH, abs=0.005)
+    assert fitted.dc_ac_ratio == 1.35
+    assert fitted.effective_gain == pytest.approx(fitted.level * 1.35 * (1 - PV.dc_losses))
 
 
 def test_wind_speed_scale_is_recovered_despite_gross_errors() -> None:
