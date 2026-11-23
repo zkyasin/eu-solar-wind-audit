@@ -100,19 +100,21 @@ def price_classes(
     start: pd.Timestamp,
     end: pd.Timestamp,
     *,
+    zone: str = "FR",
     client: httpx.Client | None = None,
     cache_dir: Path = smard.CACHE_DIR,
 ) -> pd.DataFrame:
-    """regimes.classify_hours of the French day-ahead prices for each hour of [start, end), both
-    hour starts in UTC. Prices are read from SMARD every quarter-hour (filter 254, which repeats
-    the hourly price before October 2025); a quarter-hour without a price makes its hour missing.
+    """regimes.classify_hours of the day-ahead prices of the bidding `zone`, a key of
+    smard.PRICES, for each hour of [start, end), both hour starts in UTC. Prices are read from
+    SMARD every quarter-hour (for France, filter 254, which repeats the hourly price before October
+    2025); a quarter-hour without a price makes its hour missing.
 
     The hours just before and after the period are classified with it, then left out: a negative
     or missing neighbour keeps an hour out of the reference class.
     """
     grid.check_period(start, end)
     first, stop = start - grid.HOUR, end + grid.HOUR
-    filter_id, region = smard.PRICES["FR"]
+    filter_id, region = smard.PRICES[zone]
     prices = smard.fetch_series(
         filter_id, region, "quarterhour", first, stop, client=client, cache_dir=cache_dir
     )

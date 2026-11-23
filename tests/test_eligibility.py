@@ -15,7 +15,7 @@ from shapely.geometry import box
 from eu_solar_wind_audit import eligibility, physics, precompute, regimes
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import era5, natural_earth, odre
+from eu_solar_wind_audit.sources import era5, natural_earth, odre, smard
 
 SHARED_RULES = [
     "consolidated_or_definitive",
@@ -197,9 +197,10 @@ def test_eligible_must_meet_every_rule() -> None:
         eligibility.Eligibility.validate(found)
 
 
-def smard_files(prices: pd.Series) -> dict[str, bytes]:
-    """SMARD chart files that publish `prices`, in EUR/MWh on UTC quarter-hours, as the French
-    day-ahead price in a single file; NaN is published as null."""
+def smard_files(prices: pd.Series, zone: str = "FR") -> dict[str, bytes]:
+    """SMARD chart files that publish `prices`, in EUR/MWh on UTC quarter-hours, as the day-ahead
+    price of the bidding `zone` in a single file; NaN is published as null."""
+    filter_id, region = smard.PRICES[zone]
     stamps = [int(stamp.timestamp() * 1000) for stamp in prices.index]
     rows = [
         [stamp, None if np.isnan(value) else value]
@@ -207,7 +208,7 @@ def smard_files(prices: pd.Series) -> dict[str, bytes]:
     ]
     return {
         "index_quarterhour.json": json.dumps({"timestamps": [stamps[0]]}).encode(),
-        f"254_DE_quarterhour_{stamps[0]}.json": json.dumps({"series": rows}).encode(),
+        f"{filter_id}_{region}_quarterhour_{stamps[0]}.json": json.dumps({"series": rows}).encode(),
     }
 
 
@@ -256,6 +257,26 @@ def test_a_quarter_hour_without_a_price_makes_its_hour_missing(tmp_path: Path) -
 
     expected = ["reference", "buffer", "missing", "buffer", "reference", "reference"]
     assert classes["regime"].tolist() == expected
+
+
+def test_price_classes_of_another_zone_come_from_its_own_prices(tmp_path: Path) -> None:
+    requests: list[str] = []
+    prices = pd.Series(50.0, index=quarter_hours("2022-02-28 23:00", "2022-03-01 07:00"))
+    prices[prices.index >= pd.Timestamp("2022-03-01 03:00", tz="UTC")] = -5.0
+    start, end = pd.Timestamp("2022-03-01", tz="UTC"), pd.Timestamp("2022-03-01 06:00", tz="UTC")
+
+    with serving(smard_files(prices, "DE-LU"), requests) as client:
+        classes = eligibility.price_classes(
+            start, end, zone="DE-LU", client=client, cache_dir=tmp_path
+        )
+
+    expected = ["reference", "reference", "buffer", "negative", "negative", "negative"]
+    assert classes["regime"].tolist() == expected
+    week_ms = int(prices.index[0].timestamp() * 1000)
+    assert requests == [
+        "/app/chart_data/4169/DE-LU/index_quarterhour.json",
+        f"/app/chart_data/4169/DE-LU/4169_DE-LU_quarterhour_{week_ms}.json",
+    ]
 
 
 def test_prices_that_smard_does_not_publish_are_missing(tmp_path: Path) -> None:
