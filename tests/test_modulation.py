@@ -1,11 +1,13 @@
 import dataclasses
+import json
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 from synthetic import PV, solar_year
 
-from eu_solar_wind_audit import calibration, eligibility, fits, folds, modulation, strata
+from eu_solar_wind_audit import calibration, cli, eligibility, fits, folds, modulation, strata
 
 YEARS = (2019, 2020, 2021)
 
@@ -119,3 +121,39 @@ def test_a_year_without_negative_prices_adds_no_hour(
     without = dataclasses.replace(inputs, price_classes=classes)
 
     assert modulation.negative_hours([without], fit).empty
+
+
+def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fit: fits.Fit
+) -> None:
+    def year_inputs(
+        client: object, technology: str, year: int, parameters: object
+    ) -> eligibility.YearInputs:
+        return solar_year(year)
+
+    monkeypatch.setattr(eligibility, "year_inputs", year_inputs)
+    fits.write(tmp_path / "fits" / "solar.json", fit)
+    rte = Path(__file__).parents[1] / "references" / "rte"
+
+    cli.main(
+        [
+            "estimate-modulation",
+            "solar",
+            str(tmp_path / "out"),
+            "--fits-dir",
+            str(tmp_path / "fits"),
+            "--references",
+            str(rte),
+        ]
+    )
+
+    names = {path.name for path in (tmp_path / "out").iterdir()}
+    assert names == {
+        "solar-modulation-hours.parquet",
+        "solar-modulation-months.parquet",
+        "solar-rte-months.parquet",
+        "solar-rte-years.parquet",
+        "solar-modulation.json",
+    }
+    summary = json.loads((tmp_path / "out" / "solar-modulation.json").read_text())
+    assert set(summary["tests"]) == {"annual_ratio", "monthly_detail", "monthly_rates"}
