@@ -1,3 +1,5 @@
+import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -296,8 +298,19 @@ def test_a_minimum_at_an_end_of_the_grid_is_flagged(
 
 
 def test_the_scale_and_the_fit_at_the_configured_ratio_are_those_of_calibration() -> None:
-    arrays, published_mwh, sample = clipping_case(1.37)
-    # A sample that leaves out some hours of the arrays.
+    case, published_mwh, sample = clipping_case(1.37)
+    # A capacity that changes from hour to hour, the energies unchanged, and a sample that leaves
+    # out some hours of the arrays.
+    rng = np.random.default_rng(2)
+    arrays = [
+        dataclasses.replace(
+            part,
+            covariates=precompute.Covariates.validate(
+                part.covariates.assign(capacity_mw=rng.uniform(50.0, 150.0, len(part.covariates)))
+            ),
+        )
+        for part in case
+    ]
     sample[pd.DatetimeIndex(sample.index).hour == 12] = False
 
     found = dc_ac.profile(arrays, published_mwh, sample, PV)
