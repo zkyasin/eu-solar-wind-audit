@@ -318,6 +318,23 @@ def test_the_rows_on_the_grid_convert_to_hours() -> None:
     assert hourly["complete"].all()
 
 
+def test_the_rows_of_a_dataset_on_the_grid_keep_all_their_columns() -> None:
+    # The stamp at 00:30 comes twice, as on a spring clock-change day.
+    stamps = pd.DatetimeIndex(
+        [utc("2022-06-01 00:00"), utc("2022-06-01 00:05"), utc("2022-06-01 00:30")]
+    )[[0, 1, 2, 2]]
+    published = pd.DataFrame(
+        {"status": ["definitive"] * 3 + ["consolidated"], "solar_mw": [1.0, 2.0, 3.0, 4.0]},
+        index=stamps,
+    )
+
+    kept = on_grid(published, pd.Timedelta("30min"))
+
+    assert kept.index.equals(stamps[[0, 2, 3]])
+    assert kept["status"].tolist() == ["definitive", "definitive", "consolidated"]
+    assert kept["solar_mw"].tolist() == [1.0, 3.0, 4.0]
+
+
 def test_a_day_of_finer_values_is_a_change_of_resolution() -> None:
     published = pd.concat(
         [

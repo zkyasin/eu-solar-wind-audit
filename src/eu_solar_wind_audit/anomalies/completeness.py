@@ -176,9 +176,10 @@ def completeness(
     return findings.from_records({**record, "provisional": provisional} for record in records)
 
 
-def on_grid(values: pd.Series, step: pd.Timedelta) -> pd.Series:
-    """The rows of `values` stamped on the `step` grid: the hourly conversions of `grid` refuse
-    the others, which `completeness` reports as `off_grid`."""
+def on_grid[Rows: (pd.Series, pd.DataFrame)](values: Rows, step: pd.Timedelta) -> Rows:
+    """The rows of `values`, the values of one series or the rows of a whole dataset, stamped on
+    the `step` grid: the hourly conversions of `grid` refuse the others, which `completeness`
+    reports as `off_grid`."""
     return values[_on_step(pd.DatetimeIndex(values.index), step)]
 
 
