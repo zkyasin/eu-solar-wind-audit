@@ -181,6 +181,24 @@ def test_raw_ratios_are_shrunk_by_the_distinct_days_in_paris() -> None:
     assert one_day["shrunk_ratio"] == pytest.approx(1 / 8 * 0.5 + 7 / 8 * POOLED)
 
 
+def test_stratum_and_pooled_ratios_are_ratios_of_sums() -> None:
+    # Monday 20 June 2022, all with a capacity factor of 0.2, so in the last decile: two hours at
+    # 35 degrees with hourly ratios of 2 and 1, one at 15 degrees with a ratio of 0.5.
+    hours = utc_hours("2022-06-20 10:00", 3)
+    given = covariates(hours, [35.0, 35.0, 15.0]).assign(capacity_mw=[50.0, 150.0, 100.0])
+
+    ratios = strata.fit_ratios(
+        pd.Series([20.0, 30.0, 10.0], index=hours),
+        pd.Series([10.0, 30.0, 20.0], index=hours),
+        given,
+        pd.Series(True, index=hours),
+    )
+
+    # The means of the hourly ratios would be 3.5 / 3 and 1.5.
+    assert ratios.pooled_ratio == pytest.approx(60 / 60)
+    assert row(ratios, "30-40", 10, "working_day")["raw_ratio"] == pytest.approx(50 / 40)
+
+
 def test_the_table_holds_every_stratum_once() -> None:
     ratios = strata.fit_ratios(*two_strata())
 
