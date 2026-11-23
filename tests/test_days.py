@@ -1,7 +1,9 @@
+import numpy as np
 import pandas as pd
 import pytest
+from numpy.typing import ArrayLike
 
-from eu_solar_wind_audit import days
+from eu_solar_wind_audit import days, evaluation
 
 FIXED_HOLIDAYS = ["01-01", "05-01", "05-08", "07-14", "08-15", "11-01", "11-11", "12-25"]
 # Easter Monday, Ascension Day and Whit Monday. Easter Sunday fell on 21 April 2019, 12 April
@@ -16,6 +18,35 @@ EASTER_HOLIDAYS = {
 
 def utc_hours(start: str, end: str) -> pd.DatetimeIndex:
     return pd.date_range(start, end, freq="h", inclusive="left", tz="UTC", unit="ns", name="time")
+
+
+def paris_hours(first_day: str, end_day: str) -> pd.DatetimeIndex:
+    """UTC hours of the Europe/Paris days from `first_day` to the day before `end_day`."""
+    start, end = (pd.Timestamp(day, tz=days.TIME_ZONE) for day in (first_day, end_day))
+    hours = pd.date_range(start, end, freq="h", inclusive="left", unit="ns", name="time")
+    return hours.tz_convert("UTC")
+
+
+def covariates(
+    hours: pd.DatetimeIndex, ghi: ArrayLike, clear_sky_ghi: ArrayLike = 100.0
+) -> pd.DataFrame:
+    """precompute.Covariates on `hours` with the given global and clear-sky irradiance."""
+    return pd.DataFrame(
+        {
+            "complete": True,
+            "capacity_mw": 100.0,
+            "capacity_provisional": False,
+            "era5_source": "ERA5",
+            "sun_elevation_deg": 10.0,
+            "ghi_w_m2": ghi,
+            "clear_sky_ghi_w_m2": clear_sky_ghi,
+        },
+        index=hours,
+    )
+
+
+def sky(hours: pd.DatetimeIndex, classes: list[str | None]) -> pd.Series:
+    return pd.Series(classes, index=hours, name="sky_class", dtype="str")
 
 
 @pytest.mark.parametrize("year", [2019, 2020, 2021, 2022])
@@ -78,3 +109,84 @@ def test_day_types_need_utc_hours() -> None:
 
     with pytest.raises(ValueError, match="UTC"):
         days.day_types(hours)
+
+
+@pytest.mark.parametrize(
+    ("ghi", "sky_class"),
+    [
+        (120.0, "clear"),
+        (90.0, "clear"),
+        (89.99, "mixed"),
+        (60.0, "mixed"),
+        (59.99, "overcast"),
+        (0.0, "overcast"),
+    ],
+)
+def test_sky_class_edges(ghi: float, sky_class: str) -> None:
+    hours = paris_hours("2022-06-15", "2022-06-16")
+
+    classes = days.sky_classes(covariates(hours, ghi))
+
+    pd.testing.assert_series_equal(classes, sky(hours, [sky_class] * 24))
+    assert sky_class in evaluation.SKY_CLASSES
+
+
+def test_only_whole_local_days_get_a_sky_class() -> None:
+    # Saturday 26 to Monday 28 March 2022 in Paris, with an hour of the days before and after.
+    # The Sunday has 23 hours.
+    hours = utc_hours("2022-03-25 22:00", "2022-03-28 23:00")
+    day = days.local_days(hours)
+    ghi = day.day.map({25: 95.0, 26: 95.0, 27: 70.0, 28: 30.0, 29: 95.0})
+
+    found = covariates(hours, ghi)
+
+    index = days.clear_sky_index(found)
+    assert index.index.equals(pd.DatetimeIndex(["2022-03-26", "2022-03-27", "2022-03-28"]))
+    np.testing.assert_allclose(index, [0.95, 0.70, 0.30])
+    expected = [None] + ["clear"] * 24 + ["mixed"] * 23 + ["overcast"] * 24 + [None]
+    pd.testing.assert_series_equal(days.sky_classes(found), sky(hours, expected))
+
+
+def test_a_day_with_a_missing_hour_gets_no_sky_class() -> None:
+    hours = paris_hours("2022-03-26", "2022-03-28")
+    kept = hours.drop([pd.Timestamp("2022-03-27 12:00", tz="UTC")])
+
+    classes = days.sky_classes(covariates(kept, 95.0))
+
+    pd.testing.assert_series_equal(classes, sky(kept, ["clear"] * 24 + [None] * 22))
+
+
+def test_a_day_without_clear_sky_irradiance_gets_no_sky_class() -> None:
+    hours = paris_hours("2022-06-15", "2022-06-17")
+    clear_sky_ghi = np.where(hours < pd.Timestamp("2022-06-15 22:00", tz="UTC"), 0.0, 100.0)
+
+    found = covariates(hours, np.where(clear_sky_ghi > 0, 50.0, 0.0), clear_sky_ghi)
+
+    assert np.isnan(days.clear_sky_index(found).iloc[0])
+    pd.testing.assert_series_equal(
+        days.sky_classes(found), sky(hours, [None] * 24 + ["overcast"] * 24)
+    )
+
+
+def test_a_day_with_a_missing_irradiance_gets_no_sky_class() -> None:
+    hours = paris_hours("2022-06-15", "2022-06-17")
+    ghi = np.full(hours.size, 95.0)
+    ghi[30] = np.nan
+
+    classes = days.sky_classes(covariates(hours, ghi))
+
+    pd.testing.assert_series_equal(classes, sky(hours, ["clear"] * 24 + [None] * 24))
+
+
+def test_years_are_joined_to_classify_new_year_day() -> None:
+    # 1 January 2022 in Paris starts at 23:00 UTC on 31 December.
+    last_year = covariates(utc_hours("2021-12-31 00:00", "2022-01-01 00:00"), 95.0)
+    this_year = covariates(utc_hours("2022-01-01 00:00", "2022-01-02 00:00"), 95.0)
+
+    alone = days.sky_classes(this_year)
+    joined = days.sky_classes(pd.concat([last_year, this_year]))
+
+    assert alone.isna().all()
+    new_year_day = utc_hours("2021-12-31 23:00", "2022-01-01 23:00")
+    assert joined[joined.notna()].index.equals(new_year_day)
+    assert set(joined.dropna()) == {"clear"}
