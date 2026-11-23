@@ -51,6 +51,25 @@ class Months(pa.DataFrameModel):
         strict = True
 
 
+def calibrated_potential(inputs: eligibility.YearInputs, fit: fits.Fit) -> "pd.Series[float]":
+    """p* on every hour of the yearly `inputs`: the potential of the frozen `fit` times the ratio
+    of its stratum and the annual level of its year, estimated on the eligible hours of the year.
+    NaN at an hour without a stratum.
+
+    Raises ValueError if the year has no eligible hour to give its annual level.
+    """
+    final = fit.final
+    published = inputs.published["energy_mwh"]
+    potential = calibration.potential_mwh(inputs.arrays, final.calibration)
+    with_strata = strata.apply_ratios(final.ratios, potential, inputs.arrays.covariates)
+    levels = strata.annual_levels(published, with_strata, inputs.eligibility["eligible"])
+    year = pd.DatetimeIndex(published.index)[0].year
+    if not levels.get(year, 0.0) > 0:
+        raise ValueError(f"{year} has no eligible hour to give its annual level")
+    p_star: pd.Series[float] = (with_strata * levels[year]).rename("potential_mwh")
+    return p_star
+
+
 def negative_hours(
     years: Sequence[eligibility.YearInputs], fit: fits.Fit
 ) -> DataFrame[NegativeHours]:
@@ -66,21 +85,17 @@ def negative_hours(
         negative = eligibility.negative_price_hours(inputs)
         if not negative.any():
             continue
-        covariates = inputs.arrays.covariates
         published = inputs.published["energy_mwh"]
+        p_star = calibrated_potential(inputs, fit)
         potential = calibration.potential_mwh(inputs.arrays, final.calibration)
-        with_strata = strata.apply_ratios(final.ratios, potential, covariates)
-        levels = strata.annual_levels(published, with_strata, inputs.eligibility["eligible"])
-        year = pd.DatetimeIndex(published.index)[0].year
-        if year not in levels.index:
-            raise ValueError(f"{year} has negative-price hours but no eligible hour")
-        hour_strata = strata.classify_hours(potential, covariates, final.ratios.decile_edges)
+        hour_strata = strata.classify_hours(
+            potential, inputs.arrays.covariates, final.ratios.decile_edges
+        )
         thin = (
             hour_strata.reset_index()
             .merge(thin_strata, on=strata.STRATUM_KEY, how="left", indicator=True)["_merge"]
             .eq("both")
         )
-        p_star = with_strata * levels[year]
         frames.append(
             pd.DataFrame(
                 {
