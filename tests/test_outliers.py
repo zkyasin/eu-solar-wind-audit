@@ -99,6 +99,22 @@ def test_negative_runs_are_never_joined_across_real_time_hours() -> None:
     ]
 
 
+def test_an_hour_without_rows_never_splits_real_time_runs() -> None:
+    # Like the hour that éCO2mix leaves out at each autumn clock change.
+    realtime = with_status(hourly([-1.0, np.nan, -2.0]), START)
+    changing = with_status(hourly([-1.0, np.nan, -2.0]), "2022-06-01 01:00")
+    for published in (realtime, changing):
+        published.loc[utc("2022-06-01 01:00"), "status"] = None
+
+    assert spans(negatives(realtime)) == [
+        ("negative", utc(START), utc("2022-06-01 03:00"), -2.0, True)
+    ]
+    assert spans(negatives(changing)) == [
+        ("negative", utc(START), utc("2022-06-01 01:00"), -1.0, False),
+        ("negative", utc("2022-06-01 02:00"), utc("2022-06-01 03:00"), -2.0, True),
+    ]
+
+
 def test_a_series_without_status_gives_findings_that_are_not_provisional() -> None:
     found = negatives(hourly([-1.0]))
 

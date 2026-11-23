@@ -5,9 +5,9 @@ These rules state facts about the published values, so they use no thresholds fi
 false-alarm budget (evaluation plan, Deviations). The detectors read one series on the grid of
 `grid`, as a `grid.Hourly` frame or, with the publication status of each hour, an `odre.Hourly`
 frame, and look at its complete hours only. Findings on real-time hours are provisional, and no
-finding spans real-time and other hours. Scores: `negative`, the lowest value in MWh;
-`above_capacity`, the highest ratio of a value to the capacity; `frozen`, the length of the run in
-hours.
+finding spans real-time hours and consolidated or definitive ones. Scores: `negative`, the lowest
+value in MWh; `above_capacity`, the highest ratio of a value to the capacity; `frozen`, the length
+of the run in hours.
 """
 
 from typing import Literal, NamedTuple
@@ -47,8 +47,8 @@ Technology = Literal["solar", "wind"]
 
 
 class Run(NamedTuple):
-    """Hours [start, end) of one finding, `flagged_hours` of them flagged, all real-time or none
-    (`provisional`)."""
+    """Hours [start, end) of one finding, `flagged_hours` of them flagged, whose published rows are
+    all real-time or none (`provisional`)."""
 
     start: pd.Timestamp
     end: pd.Timestamp
@@ -194,14 +194,17 @@ def _hours(published: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     """`published`, validated and in time order, and whether each of its hours is real-time."""
     if "status" in published.columns:
         with_status = odre.Hourly.validate(published).sort_index()
-        return with_status, with_status["status"].eq("realtime")
+        # An hour without rows, such as the hour that éCO2mix leaves out at each autumn clock
+        # change, has no status. It takes the status of the hour before it, so that it never
+        # splits a run of real-time hours.
+        return with_status, with_status["status"].ffill().eq("realtime")
     hours = grid.Hourly.validate(published).sort_index()
     return hours, pd.Series(False, index=hours.index)
 
 
 def _runs(flagged: pd.Series, realtime: pd.Series) -> list[Run]:
     """Runs of the flagged hours, as findings.runs gives them with MERGE_GAP, never joined across a
-    change between real-time and other hours."""
+    change between real-time hours and consolidated or definitive ones."""
     # Blocks of consecutive hours that are all real-time, or all not.
     block = realtime.ne(realtime.shift()).cumsum()
     runs = []
