@@ -393,6 +393,15 @@ def consolidated_end(hourly: pd.DataFrame, start: pd.Timestamp) -> pd.Timestamp:
     return start if covered.empty else covered[-1] + grid.HOUR
 
 
+def complete_end(hourly: pd.DataFrame, start: pd.Timestamp) -> pd.Timestamp:
+    """The hour after the last complete hour of `hourly`, the consolidated and definitive hours of
+    a series from `start`, or `start` without one. Rows that stop at a date leave their last hour
+    incomplete: each value is labelled at the end of its half-hour, so the last half-hour of a day
+    has the date of the next one."""
+    complete = hourly.index[hourly["complete"].to_numpy()]
+    return start if complete.empty else complete[-1] + grid.HOUR
+
+
 def snapshot_realtime(client: httpx.Client, directory: Path) -> Snapshot:
     """Save the full current real-time export, with a JSON file holding its retrieval time and
     SHA-256 checksum."""
