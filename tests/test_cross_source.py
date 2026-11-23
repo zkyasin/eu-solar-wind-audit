@@ -163,6 +163,20 @@ def test_evidence_gives_the_largest_gap_and_the_largest_share_of_the_total() -> 
     ]
 
 
+def test_each_finding_gives_the_gaps_of_its_own_hours() -> None:
+    # Two days apart: 20 MWh on a total of 100 MWh, then 60 MWh on a total of 3000 MWh.
+    total = np.full(HOURS, 3000.0)
+    total[10] = 100.0
+
+    found = check_split(total, {10: 20.0, 60: 60.0})
+
+    assert found["score"].tolist() == [20.0, 60.0]
+    assert evidence(found) == [
+        {"parts": 2, "hours": 1, "largest_gap_mwh": 20.0, "largest_relative_gap": 0.2},
+        {"parts": 2, "hours": 1, "largest_gap_mwh": 60.0, "largest_relative_gap": 0.02},
+    ]
+
+
 @pytest.mark.parametrize(("total_mwh", "relative_gap"), [(0.0, None), (-12.0, 11 / 12)])
 def test_the_relative_gap_is_a_share_of_the_size_of_the_total(
     total_mwh: float, relative_gap: float | None
@@ -375,6 +389,31 @@ def test_a_finding_over_two_months_gives_the_factor_of_each() -> None:
         "2022-01": pytest.approx(1.10),
         "2022-02": pytest.approx(0.95),
     }
+
+
+def test_each_finding_gives_the_factor_and_departures_of_its_own_hours() -> None:
+    rescaled = rescale(ORIGINAL)
+    rescaled[10] *= 1.05
+    rescaled[[80, 82]] *= [1.02, 1.03]
+
+    found = check_ratio(rescaled, ORIGINAL)
+
+    assert spans(found) == [(month_hour(10), month_hour(11)), (month_hour(80), month_hour(83))]
+    assert found["score"].tolist() == [pytest.approx(0.05), pytest.approx(0.03)]
+    assert evidence(found) == [
+        {
+            "time_zone": TIME_ZONE,
+            "monthly_factors": {"2022-01": pytest.approx(1.10)},
+            "hours": 1,
+            "largest_departure": pytest.approx(0.05),
+        },
+        {
+            "time_zone": TIME_ZONE,
+            "monthly_factors": {"2022-02": pytest.approx(0.95)},
+            "hours": 2,
+            "largest_departure": pytest.approx(0.03),
+        },
+    ]
 
 
 def test_a_month_where_the_rescaled_series_is_mostly_zero_has_no_factor() -> None:
