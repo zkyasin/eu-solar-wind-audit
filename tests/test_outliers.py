@@ -365,6 +365,13 @@ def test_a_model_out_of_order_judges_zeros_the_same() -> None:
 
 
 @pytest.mark.parametrize("technology", ["solar", "wind"])
+def test_zeros_are_not_frozen_where_the_model_has_no_capacity(technology: Technology) -> None:
+    model = modelled_hours([0.0] * 24, capacity_mw=0.0)
+
+    assert frozen(hourly([0.0] * 24), technology, model).empty
+
+
+@pytest.mark.parametrize("technology", ["solar", "wind"])
 def test_frozen_values_other_than_zero_need_no_model(technology: Technology) -> None:
     found = frozen(hourly([3.0] * 24), technology, calm(0.0))
 
