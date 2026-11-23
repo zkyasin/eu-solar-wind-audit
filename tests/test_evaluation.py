@@ -62,6 +62,10 @@ def test_hours_that_are_not_eligible_may_lack_values() -> None:
     Predictions.validate(frame)
 
 
+def test_eligible_hours_may_lack_a_sky_class() -> None:
+    Predictions.validate(without(["sky_class"], 1))
+
+
 @pytest.mark.parametrize(
     ("frame", "error"),
     [
@@ -91,11 +95,6 @@ def test_hours_that_are_not_eligible_may_lack_values() -> None:
             without(["fitted_mwh"], 2),
             "eligible_hours_have_every_value",
             id="eligible-without-a-model",
-        ),
-        pytest.param(
-            without(["sky_class"], 1),
-            "eligible_hours_have_every_value",
-            id="eligible-without-sky-class",
         ),
         pytest.param(
             valid_predictions().assign(capacity_mw=[100.0, 0.0, 100.0]),
@@ -380,6 +379,19 @@ def test_bias_by_season_and_sky_class() -> None:
     # Groups without eligible hours, such as spring here, get no row.
     hours = table[table["metric"] == "bias"].set_index("group")["hours"]
     assert hours.to_dict() == {"all": 4, "DJF": 2, "JJA": 2, "clear": 1, "overcast": 3}
+
+
+def test_hours_without_a_sky_class_count_in_the_year_only() -> None:
+    frame = two_seasons()
+    frame["sky_class"] = [None, "overcast", "overcast", "overcast"]
+
+    table = metrics(frame, "solar")
+
+    assert value(table, "model", "bias") == pytest.approx(780 / 800 - 1)
+    assert value(table, "model", "bias", "DJF") == pytest.approx(0.2)
+    assert value(table, "model", "bias", "overcast") == pytest.approx(660 / 700 - 1)
+    hours = table[table["metric"] == "bias"].set_index("group")["hours"]
+    assert hours.to_dict() == {"all": 4, "DJF": 2, "JJA": 2, "overcast": 3}
 
 
 def test_group_biases_relative_to_the_bias_of_the_year() -> None:
