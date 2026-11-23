@@ -29,9 +29,10 @@ from eu_solar_wind_audit.anomalies import completeness
 from eu_solar_wind_audit.config import Country
 from eu_solar_wind_audit.sources import energy_charts, odre, sdes, smard
 
-# The windowed statistics of a day reach 15 days away from it: the 31-day windows centred on the
-# day and the 14-day windows around a clock change (detector design).
-MARGIN = pd.Timedelta(days=15)
+# The windowed statistics of a day reach 30 days away from it: the scale of its residual score
+# takes the residuals of the 31 days centred on it, each at the level of the 31 days centred on
+# its own day (anomalies.residuals).
+MARGIN = pd.Timedelta(days=30)
 
 # Mainland France, then the 12 éCO2mix regions, with their names on the SDES panel.
 AREAS: dict[str, str | None] = {"FR": None} | {
