@@ -55,6 +55,8 @@ select = ["E", "W", "F", "I", "N", "B", "UP", "SIM", "PT", "RUF"]
 [tool.mypy]
 strict = true
 files = ["src", "tests"]
+# matplotlib.dates has no type hints.
+untyped_calls_exclude = ["matplotlib.dates"]
 
 [[tool.mypy.overrides]]
 # pvlib and ruptures have no type hints.
