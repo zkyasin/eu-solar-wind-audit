@@ -135,6 +135,13 @@ class YearInputs:
     eligibility: DataFrame[Eligibility]
 
 
+def negative_price_hours(inputs: YearInputs) -> pd.Series:
+    """Whether each hour of `inputs` has the negative price class and meets every other rule of
+    `Eligibility`: the hours of axis 4, which never enter a fit."""
+    other_rules = inputs.eligibility.drop(columns=["reference_price", "eligible"])
+    return other_rules.all(axis="columns") & (inputs.price_classes["regime"] == "negative")
+
+
 def year_inputs(
     client: httpx.Client,
     technology: physics.Technology,

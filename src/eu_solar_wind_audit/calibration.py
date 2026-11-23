@@ -112,6 +112,26 @@ class WindCalibration:
     fit: HuberFit
 
 
+def potential_mwh(
+    arrays: precompute.SolarArrays | precompute.WindArrays,
+    fitted: SolarCalibration | WindCalibration,
+) -> pd.Series:
+    """Potential in MWh on the hours of `arrays` with the parameters of `fitted`."""
+    if isinstance(fitted, SolarCalibration):
+        if not isinstance(arrays, precompute.SolarArrays):
+            raise ValueError("a solar calibration needs the arrays of precompute.solar")
+        return precompute.solar_energy(
+            arrays,
+            fitted.dc_ac_ratio,
+            level=fitted.level,
+            horizontal_share=fitted.horizontal_share,
+            seasonal_amplitude=fitted.seasonal_amplitude,
+        )
+    if not isinstance(arrays, precompute.WindArrays):
+        raise ValueError("a wind calibration needs the arrays of precompute.wind_onshore")
+    return precompute.wind_energy(arrays, fitted.speed_scale)
+
+
 def fit_solar(
     arrays: Sequence[precompute.SolarArrays],
     published_mwh: pd.Series,

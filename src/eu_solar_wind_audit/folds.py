@@ -244,7 +244,7 @@ def _report[Arrays: precompute.SolarArrays | precompute.WindArrays, Fitted: Cali
     final_fit = learn(fold_years)
     final = Potential(final_fit, learn_strata(final_fit, fold_years))
     early_fit = learn([year for year in fold_years if year <= SENSITIVITY_LAST_YEAR])
-    negative = pd.concat([_negative_price_hours(inputs) for inputs in years])
+    negative = pd.concat([eligibility.negative_price_hours(inputs) for inputs in years])
     by_year = pd.DataFrame(
         {
             "hours": negative,
@@ -278,10 +278,3 @@ def _calendar_years(years: Sequence[eligibility.YearInputs]) -> list[int]:
         first, last = evaluation.TRAINING_YEARS[0], evaluation.TRAINING_YEARS[-1]
         raise ValueError(f"{outside[0]} lies outside the training years {first}-{last}")
     return calendar
-
-
-def _negative_price_hours(inputs: eligibility.YearInputs) -> pd.Series:
-    """Whether each hour of `inputs` has the negative price class and meets every other rule of
-    eligibility.Eligibility."""
-    other_rules = inputs.eligibility.drop(columns=["reference_price", "eligible"])
-    return other_rules.all(axis="columns") & (inputs.price_classes["regime"] == "negative")
