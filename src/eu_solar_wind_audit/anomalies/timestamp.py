@@ -10,8 +10,8 @@ days, sunny enough and mostly usable, are judged.
 residual for jumps at the clock changes of the time zone of the source. Both are statistical
 detectors: their thresholds rest on 2019-2022, and their findings count in the false-alarm budget
 (evaluation plan, Deviations). Real-time hours are left out, so no finding is provisional. Scores:
-`timestamp_shift`, the median residual of the finding in hours; `clock_change_jump`, the jump of
-the residual in hours.
+`timestamp_shift`, the median residual in hours of the days that size the shift, which can be
+fewer than the days of the finding; `clock_change_jump`, the jump of the residual in hours.
 """
 
 import numpy as np
