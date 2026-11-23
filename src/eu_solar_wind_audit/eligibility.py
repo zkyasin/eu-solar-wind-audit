@@ -1,11 +1,12 @@
 """Hours on which the calibrated potential of France is fitted and evaluated (evaluation plan,
-"Scope", "Two model objects", "Axis 1" and Deviations), and the price classes they are chosen
-with.
+"Scope", "Two model objects", "Axis 1" and Deviations), and the inputs they are chosen from, one
+UTC year at a time.
 
 Each rule of `Eligibility` has its own column, so that a report can count the hours that each one
 leaves out.
 """
 
+from dataclasses import dataclass
 from pathlib import Path
 
 import httpx
@@ -14,7 +15,8 @@ import pandera.pandas as pa
 from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import evaluation, grid, physics, precompute, regimes
-from eu_solar_wind_audit.sources import odre, smard
+from eu_solar_wind_audit.config import Country
+from eu_solar_wind_audit.sources import natural_earth, odre, smard
 
 FINAL_STATUSES = ["definitive", "consolidated"]
 
@@ -117,3 +119,46 @@ def price_classes(
     quarter_hours = pd.date_range(first, stop, freq="15min", inclusive="left", unit="ns")
     classes = regimes.classify_hours(prices.reindex(quarter_hours))
     return classes.loc[start : end - grid.HOUR].rename_axis("time")
+
+
+@dataclass(frozen=True)
+class YearInputs:
+    """Calibration inputs of one technology on the hours of one UTC year, all on the same hours:
+    the published series, its price classes, the precompute arrays with their covariates, and the
+    rules of `Eligibility`."""
+
+    published: DataFrame[odre.Hourly]
+    price_classes: pd.DataFrame
+    arrays: precompute.SolarArrays | precompute.WindArrays
+    eligibility: DataFrame[Eligibility]
+
+
+def year_inputs(
+    client: httpx.Client,
+    technology: physics.Technology,
+    year: int,
+    parameters: Country,
+    *,
+    odre_cache_dir: Path = odre.CACHE_DIR,
+    smard_cache_dir: Path = smard.CACHE_DIR,
+    era5_cache_dir: Path = physics.ERA5_CACHE_DIR,
+) -> YearInputs:
+    """Calibration inputs of `technology` on the hours of the UTC year `year`: national solar or
+    the onshore wind of odre.onshore_hourly, the `price_classes` of these hours, and the arrays of
+    precompute.solar or precompute.wind_onshore, from the SDES capacity and the department
+    polygons loaded as physics.model_france loads them for that year.
+    """
+    start = pd.Timestamp(year, 1, 1, tz="UTC")
+    end = pd.Timestamp(year + 1, 1, 1, tz="UTC")
+    classes = price_classes(start, end, client=client, cache_dir=smard_cache_dir)
+    monthly = physics.load_monthly_capacity(technology, end - grid.HOUR)
+    regions = natural_earth.load_admin1(parameters.country)
+    arrays: precompute.SolarArrays | precompute.WindArrays
+    if technology == "solar":
+        published = odre.national_hourly(client, "solar", start, end, cache_dir=odre_cache_dir)
+        arrays = precompute.solar(start, end, parameters, monthly, regions, era5_cache_dir)
+    else:
+        published = odre.onshore_hourly(client, start, end, cache_dir=odre_cache_dir)
+        arrays = precompute.wind_onshore(start, end, parameters, monthly, regions, era5_cache_dir)
+    rules = eligible_hours(technology, published, arrays.covariates, classes)
+    return YearInputs(published, classes, arrays, rules)
