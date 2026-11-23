@@ -12,6 +12,7 @@ from typing import Any
 import pandas as pd
 
 from eu_solar_wind_audit import (
+    bootstrap,
     calibrate,
     dc_ac,
     eligibility,
@@ -68,6 +69,12 @@ def main(argv: list[str] | None = None) -> None:
     estimate.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
     estimate.add_argument("--fits-dir", type=Path, default=fits.FITS_DIR)
     estimate.add_argument("--references", type=Path, default=Path("references/rte"))
+    estimate.add_argument(
+        "--replicates",
+        type=int,
+        default=bootstrap.REPLICATES,
+        help="bootstrap replicates of the 90 %% interval, none with 0",
+    )
     fix = commands.add_parser(
         "fix-anomaly-thresholds",
         help="fix the thresholds of the statistical anomaly detectors of mainland France on "
@@ -108,6 +115,7 @@ def main(argv: list[str] | None = None) -> None:
             load_country(args.config),
             fits.read(args.fits_dir / f"{args.technology}.json"),
             args.references,
+            args.replicates,
         ):
             print(path)
     elif args.command == "fix-anomaly-thresholds":
@@ -158,10 +166,13 @@ def estimate_modulation(
     parameters: Country,
     fit: fits.Fit,
     reference_dir: Path,
+    replicates: int,
 ) -> list[Path]:
     """Estimate the modulation of `technology` over every year of evaluation.TRAINING_YEARS with
-    the frozen `fit`, compare it with the RTE volumes of `reference_dir`, and write the tables
-    and a JSON summary to `output`. Gives the paths written."""
+    the frozen `fit`, its 90 % interval from `replicates` bootstrap replicates (none with 0), and,
+    for solar, the interval with the DC/AC ratios of the sensitivity; compare the estimate with
+    the RTE volumes of `reference_dir`, and write the tables and a JSON summary to `output`. Gives
+    the paths written."""
     # The reference series are imported here only, so that calibrate-france never loads them.
     from eu_solar_wind_audit import comparison, references
 
@@ -182,6 +193,21 @@ def estimate_modulation(
         "rte-months": found.months,
         "rte-years": found.years,
     }
+    if replicates > 0:
+        estimate = months["modulation_gwh"]
+        by_year = estimate.groupby(estimate.index.str[:4]).sum()
+        estimates = pd.concat([estimate, by_year]).rename("estimate_gwh")
+        ratios = {"intervals": bootstrap.DC_AC_RATIOS}
+        if technology == "solar":
+            ratios["intervals-dc-ac-sensitivity"] = bootstrap.DC_AC_SENSITIVITY
+        for name, dc_ac_ratios in ratios.items():
+            replicated = bootstrap.replicates(
+                years, technology, parameters.solar, count=replicates, dc_ac_ratios=dc_ac_ratios
+            )
+            interval = bootstrap.intervals(replicated).join(estimates)
+            tables[f"modulation-{name}"] = interval
+            if name == "intervals":
+                tables["modulation-replicates"] = replicated
     written = []
     for name, table in tables.items():
         path = output / f"{technology}-{name}.parquet"
@@ -195,6 +221,12 @@ def estimate_modulation(
         "baseline_log_error": _finite(found.baseline_log_error),
         "spearman": _finite(found.spearman),
         "tests": found.tests,
+        "bootstrap": {
+            "replicates": replicates,
+            "seed": bootstrap.SEED,
+            "mean_block_days": bootstrap.MEAN_BLOCK_DAYS,
+            "percentiles": list(bootstrap.PERCENTILES),
+        },
     }
     path = output / f"{technology}-modulation.json"
     path.write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8")
