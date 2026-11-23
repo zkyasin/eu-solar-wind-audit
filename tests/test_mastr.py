@@ -224,6 +224,25 @@ def test_solar_gross_power_is_dc_and_net_power_is_ac(units: pd.DataFrame) -> Non
     assert row["net_kw"] == 70.0
 
 
+def test_solar_units_have_their_orientation_tilt_and_feed_in(units: pd.DataFrame) -> None:
+    row = unit(units, "SEE983469276431")
+
+    assert row["feed_in"] == "partial"
+    assert row["orientation"] == "east_west"
+    assert row["tilt"] == "5_to_20"
+    assert row["feed_in_limit"] == "none"
+    assert pd.isna(row["hub_height_m"])
+
+
+def test_wind_units_have_their_hub_height_and_rotor_diameter(units: pd.DataFrame) -> None:
+    row = unit(units, "SEE940146675093")
+
+    assert row["feed_in"] == "full"
+    assert row["hub_height_m"] == pytest.approx(149.08)
+    assert row["rotor_diameter_m"] == pytest.approx(115.71)
+    assert pd.isna(row["orientation"])
+
+
 def test_decommissioning_and_temporary_shutdown_dates(units: pd.DataFrame) -> None:
     decommissioned = unit(units, "SEE946913378938")
     resumed = unit(units, "SEE913926374813")
@@ -288,8 +307,9 @@ def test_offshore_units_have_a_sea_and_cluster_but_no_district(units: pd.DataFra
     assert on_land[["sea", "cluster"]].isna().all().all()
 
 
-def test_a_changed_catalogue_is_refused(tmp_path: Path) -> None:
-    export = export_with(tmp_path, mastr.CATALOGUE_MEMBER, "In Betrieb", "Aktiv")
+@pytest.mark.parametrize(("old", "new"), [("In Betrieb", "Aktiv"), ("Ost-West", "Ost/West")])
+def test_a_changed_catalogue_is_refused(tmp_path: Path, old: str, new: str) -> None:
+    export = export_with(tmp_path, mastr.CATALOGUE_MEMBER, old, new)
 
     with pytest.raises(ValueError, match="catalogue values changed"):
         mastr.read_units(export)
