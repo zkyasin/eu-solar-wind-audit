@@ -1,3 +1,5 @@
+import dataclasses
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -106,3 +108,27 @@ def test_intervals_take_the_percentiles_of_months_and_of_their_yearly_sums() -> 
     assert found.loc["2024-05"].to_numpy() == pytest.approx([5.0, 95.0])
     assert found.loc["2024"].to_numpy() == pytest.approx([15.0, 285.0])
     assert found.loc["2025"].to_numpy() == pytest.approx([7.0, 7.0])
+
+
+def test_target_hours_leave_the_fit(solar_years: list[eligibility.YearInputs]) -> None:
+    hours = pd.DatetimeIndex(pd.concat([inputs.arrays.covariates for inputs in solar_years]).index)
+    eligible = pd.concat([inputs.eligibility["eligible"] for inputs in solar_years])
+    targets = eligible & pd.Series(np.arange(hours.size) % 50 == 7, index=hours)
+    unchanged = bootstrap.Draw(
+        weights=pd.Series(1, index=hours),
+        dc_ac_ratio=PV.dc_ac_ratio,
+        capacity_factors=pd.Series(1.0, index=hours),
+    )
+    lowered = []
+    for inputs in solar_years:
+        published = inputs.published.copy()
+        published.loc[targets.reindex(published.index).to_numpy(), "energy_mwh"] -= 10.0
+        lowered.append(dataclasses.replace(inputs, published=published))
+
+    before = bootstrap.replicate(solar_years, "solar", PV, unchanged, targets)
+    after = bootstrap.replicate(lowered, "solar", PV, unchanged, targets)
+
+    # Outside the fit, 10 MWh less published at each target hour is 10 MWh more estimated.
+    month = pd.DatetimeIndex(hours[targets.to_numpy()]).tz_convert("Europe/Paris").strftime("%Y-%m")
+    expected = pd.Series(10.0, index=month).groupby(level=0).sum() / 1000
+    assert (after - before).to_numpy() == pytest.approx(expected.to_numpy())

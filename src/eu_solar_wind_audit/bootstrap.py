@@ -84,20 +84,27 @@ def replicate(
     technology: physics.Technology,
     pv: PVParameters,
     drawn: Draw,
+    targets: pd.Series | None = None,
 ) -> pd.Series:
-    """M-hat in GWh of each Europe/Paris month, `YYYY-MM`, with N hours in `years`, the yearly
-    inputs of `technology`, for `drawn`. `pv` are the PV parameters of the solar arrays, at the
-    ratio that `drawn` gives; onshore wind ignores them.
+    """M-hat in GWh of each Europe/Paris month, `YYYY-MM`, with estimated hours in `years`, the
+    yearly inputs of `technology`, for `drawn`. `pv` are the PV parameters of the solar arrays, at
+    the ratio that `drawn` gives; onshore wind ignores them. `targets`, on the hours of `years`,
+    flags the estimated hours, the N hours without it: they leave the fit, the strata and the
+    annual levels.
 
-    Raises ValueError if a year has N hours but no eligible hour of positive weight to give its
-    annual level.
+    Raises ValueError if a year has estimated hours but no eligible hour of positive weight to give
+    its annual level.
     """
     arrays = [inputs.arrays for inputs in years]
     covariates = pd.concat([part.covariates for part in arrays])
     hours = pd.DatetimeIndex(covariates.index)
     published = pd.concat([inputs.published["energy_mwh"] for inputs in years])
-    eligible = pd.concat([inputs.eligibility["eligible"] for inputs in years])
-    negative = pd.concat([eligibility.negative_price_hours(inputs) for inputs in years])
+    estimated = (
+        pd.concat([eligibility.negative_price_hours(inputs) for inputs in years])
+        if targets is None
+        else targets
+    )
+    eligible = pd.concat([inputs.eligibility["eligible"] for inputs in years]) & ~estimated
     fitted_on = eligible & hours.year.isin(folds.FOLD_YEARS[technology])
     factor = drawn.capacity_factors
 
@@ -120,10 +127,10 @@ def replicate(
     with_strata = strata.apply_ratios(ratios, potential, scaled)
     levels = strata.annual_levels(published, with_strata, eligible, weights=drawn.weights)
     level = levels.reindex(hours.year).to_numpy()
-    unleveled = hours[negative.to_numpy() & np.isnan(level)]
+    unleveled = hours[estimated.to_numpy() & np.isnan(level)]
     if not unleveled.empty:
-        raise ValueError(f"{unleveled[0].year} has negative-price hours but no eligible hour")
-    gap = (with_strata * level - published)[negative.to_numpy()]
+        raise ValueError(f"{unleveled[0].year} has estimated hours but no eligible hour")
+    gap = (with_strata * level - published)[estimated.to_numpy()]
     local = pd.DatetimeIndex(gap.index).tz_convert(modulation.TIMEZONE)
     month = pd.Index(local.strftime("%Y-%m"), name="month")
     by_month: pd.Series = gap.groupby(month).sum() / modulation.MWH_PER_GWH
@@ -138,15 +145,17 @@ def replicates(
     count: int = REPLICATES,
     seed: int = SEED,
     dc_ac_ratios: npt.NDArray[np.float64] = DC_AC_RATIOS,
+    targets: pd.Series | None = None,
 ) -> pd.DataFrame:
-    """M-hat in GWh of each month in `count` replicates of `replicate`, one row each, drawn from
-    the generator seeded with `seed`, with the DC/AC ratio of each replicate in a last column."""
+    """M-hat in GWh of each month in `count` replicates of `replicate` on the hours of `targets`,
+    one row each, drawn from the generator seeded with `seed`, with the DC/AC ratio of each
+    replicate in a last column."""
     hours = pd.DatetimeIndex(pd.concat([inputs.arrays.covariates for inputs in years]).index)
     rng = np.random.default_rng(seed)
     rows = []
     for _ in range(count):
         drawn = draw(hours, rng, dc_ac_ratios)
-        rows.append(replicate(years, technology, pv, drawn).rename(None))
+        rows.append(replicate(years, technology, pv, drawn, targets).rename(None))
         rows[-1]["dc_ac_ratio"] = drawn.dc_ac_ratio
     table = pd.DataFrame(rows).reset_index(drop=True)
     table.index.name = "replicate"
