@@ -198,6 +198,18 @@ def test_each_pass_takes_its_scale_from_the_residuals_at_its_start(
     )
 
 
+def test_a_pass_that_does_not_converge_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    def limited(
+        fun: Callable[[FloatArray], FloatArray], x0: FloatArray, **options: Any
+    ) -> OptimizeResult:
+        return least_squares(fun, x0, **{**options, "max_nfev": 1})
+
+    monkeypatch.setattr(calibration, "least_squares", limited)
+
+    with pytest.raises(RuntimeError, match="did not converge"):
+        calibration.fit_solar(*solar_case(), PV)
+
+
 def with_hourly_capacity(case: SolarCase) -> SolarCase:
     """`case` with an AC capacity that changes from hour to hour, the energies unchanged."""
     arrays, published_mwh, eligible = case

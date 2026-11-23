@@ -26,7 +26,9 @@ XTOL and GTOL. The scale comes from the residuals, in two passes:
 4. x2 minimises F(x; c1), starting from x1.
 
 The calibration is x2, with the scale c1 and the cost F(x2; c1). The constant 1.345 gives the
-Huber estimator 95 % efficiency when the errors are normal (Huber 1981, Robust Statistics).
+Huber estimator 95 % efficiency when the errors are normal (Huber 1981, Robust Statistics). Each
+pass must end on a convergence test of least_squares: a pass stopped by its evaluation limit raises
+RuntimeError.
 
 Solar: x = (level, horizontal share, seasonal amplitude) of precompute.solar_energy, at the
 configured DC/AC ratio. Onshore wind: x = (speed scale) of precompute.wind_energy, without speed
@@ -234,6 +236,8 @@ def _huber_fit(
             loss="huber",
             f_scale=f_scale,
         )
+        if not result.success:
+            raise RuntimeError(f"the Huber fit did not converge: {result.message}")
         x = result.x
 
     at_bound = (x - np.array(lower) <= AT_BOUND) | (np.array(upper) - x <= AT_BOUND)
