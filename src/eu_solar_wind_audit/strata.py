@@ -1,5 +1,6 @@
-"""Strata of the calibrated potential (evaluation plan, "Two model objects", item 2, and
-Deviations): the published output over the potential is estimated in each stratum of hours.
+"""Strata and annual level of the calibrated potential (evaluation plan, "Two model objects",
+item 2, and Deviations): the published output over the potential is estimated in each stratum of
+hours, then over each year.
 
 The stratum of an hour is the band of its sun elevation, the decile of the capacity factor of the
 potential and the type of its Europe/Paris day (days.day_types). The elevation is the
@@ -17,6 +18,9 @@ ratio of a stratum is
 with n the number of distinct Europe/Paris days with eligible hours in the stratum; a stratum
 without such hours takes the pooled ratio. The potential with strata is the potential times the
 shrunk ratio of the stratum of each hour.
+
+The annual level of a UTC year is the published energy over the potential with strata, both summed
+over the eligible hours of the year.
 """
 
 from collections.abc import Sequence
@@ -188,6 +192,40 @@ def apply_ratios(
     shrunk = ratios.table.set_index(STRATUM)["shrunk_ratio"]
     ratio = shrunk.reindex(pd.MultiIndex.from_frame(strata[STRATUM])).to_numpy()
     return pd.Series(potential_mwh.to_numpy() * ratio, index=strata.index, name="energy_mwh")
+
+
+def annual_levels(
+    published_mwh: pd.Series, potential_mwh: pd.Series, eligible: pd.Series
+) -> "pd.Series[float]":
+    """Annual level of each UTC year of the hours of `eligible`: the published energy over the
+    potential with strata of `apply_ratios`, both in MWh and summed over the eligible hours of the
+    year. NaN for a year without eligible hours. Indexed by year.
+
+    Raises ValueError unless the inputs are on the same UTC hours, `eligible` is boolean with an
+    eligible hour, and every eligible hour has both energies.
+    """
+    sums = _eligible_sums(published_mwh, potential_mwh, eligible)
+    by_year = sums.groupby(pd.DatetimeIndex(sums.index).year.rename("year")).sum()
+    return (by_year["published_mwh"] / by_year["potential_mwh"]).rename("annual_level")
+
+
+def _eligible_sums(
+    published_mwh: pd.Series, potential_mwh: pd.Series, eligible: pd.Series
+) -> pd.DataFrame:
+    """Both energies at the eligible hours, zero at the others, after the checks of
+    `annual_levels`."""
+    hours = eligible.index
+    if not isinstance(hours, pd.DatetimeIndex) or str(hours.tz) != "UTC":
+        raise ValueError("expected a DatetimeIndex in UTC")
+    mask = _eligible_hours(
+        eligible, {"published energy": published_mwh, "potential": potential_mwh}
+    )
+    return pd.DataFrame(
+        {
+            "published_mwh": published_mwh.where(mask, 0.0),
+            "potential_mwh": potential_mwh.where(mask, 0.0),
+        }
+    )
 
 
 def _eligible_hours(eligible: pd.Series, values: dict[str, pd.Series]) -> BoolArray:

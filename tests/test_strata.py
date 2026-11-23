@@ -293,3 +293,57 @@ def test_fit_inputs_are_checked(change: Callable[[Training], Training], error: s
 
     with pytest.raises(ValueError, match=error):
         strata.fit_ratios(*given)
+
+
+def test_the_annual_level_is_a_ratio_of_sums_over_the_eligible_hours() -> None:
+    hours = utc_stamps(
+        [
+            "2019-03-01 10:00",
+            "2019-07-01 10:00",
+            "2019-07-01 11:00",
+            "2020-05-01 10:00",
+            "2020-05-01 11:00",
+            "2021-05-01 10:00",
+        ]
+    )
+    published_mwh = pd.Series([10.0, 60.0, 500.0, 30.0, np.nan, 20.0], index=hours)
+    potential_mwh = pd.Series([20.0, 40.0, 1.0, 20.0, 10.0, 10.0], index=hours)
+    eligible = pd.Series([True, True, False, True, False, False], index=hours)
+
+    levels = strata.annual_levels(published_mwh, potential_mwh, eligible)
+
+    # 70 / 60 in 2019, where the mean of the hourly ratios would be 1; no eligible hour in 2021.
+    np.testing.assert_allclose(levels, [70 / 60, 1.5, np.nan])
+    assert levels.index.tolist() == [2019, 2020, 2021]
+    assert levels.index.name == "year"
+
+
+def levels_off_the_hours(given: Training) -> Training:
+    return given._replace(potential_mwh=given.potential_mwh.iloc[1:])
+
+
+def levels_in_paris_time(given: Training) -> Training:
+    return Training(
+        given.published_mwh.tz_convert("Europe/Paris"),
+        given.potential_mwh.tz_convert("Europe/Paris"),
+        given.covariates,
+        given.eligible.tz_convert("Europe/Paris"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (levels_off_the_hours, "not on the same hours"),
+        (levels_in_paris_time, "DatetimeIndex in UTC"),
+        (eligibility_as_numbers, "must be boolean"),
+        (nothing_eligible, "no eligible hours"),
+        (eligible_without_published_energy, "has no published energy"),
+        (eligible_without_potential, "has no potential"),
+    ],
+)
+def test_level_inputs_are_checked(change: Callable[[Training], Training], error: str) -> None:
+    given = change(two_strata())
+
+    with pytest.raises(ValueError, match=error):
+        strata.annual_levels(given.published_mwh, given.potential_mwh, given.eligible)
