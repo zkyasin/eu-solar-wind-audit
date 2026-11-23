@@ -471,3 +471,24 @@ def test_composition_needs_boolean_eligibility_on_the_hours_of_the_strata() -> N
         strata.composition(hour_strata, sky_classes.iloc[1:], eligible)
     with pytest.raises(ValueError, match="must be boolean"):
         strata.composition(hour_strata, sky_classes, eligible.astype(int))
+
+
+def test_levels_and_composition_count_each_hour_in_its_utc_year() -> None:
+    # 22:00 UTC on Tuesday 31 December 2019, then 23:00, already New Year's Day in Paris, and
+    # 00:00 UTC on 1 January 2020.
+    hours = utc_hours("2019-12-31 22:00", 3)
+    eligible = pd.Series(True, index=hours)
+
+    levels = strata.annual_levels(
+        pd.Series([10.0, 30.0, 10.0], index=hours), pd.Series(10.0, index=hours), eligible
+    )
+    hour_strata = strata.classify_hours(pd.Series(50.0, index=hours), covariates(hours), EDGES)
+    found = strata.composition(hour_strata, pd.Series("clear", index=hours, dtype="str"), eligible)
+
+    np.testing.assert_allclose(levels, [40 / 20, 10 / 10])
+    by_day_type = found.loc[found["grouping"] == "day_type", ["year", "group", "eligible_hours"]]
+    assert list(by_day_type.itertuples(index=False, name=None)) == [
+        (2019, "working_day", 1),
+        (2019, "sunday_or_holiday", 1),
+        (2020, "sunday_or_holiday", 1),
+    ]
