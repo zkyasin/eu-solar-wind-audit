@@ -12,7 +12,7 @@ from pandas.tseries.offsets import Day, Easter
 
 from eu_solar_wind_audit import grid, precompute
 
-TIME_ZONE = "Europe/Paris"
+TIMEZONE = "Europe/Paris"
 
 # The 11 public holidays of the Code du travail, article L3133-1. Alsace and Moselle have two
 # more, Good Friday and 26 December, which are left out.
@@ -66,7 +66,7 @@ def clear_sky_index(covariates: pd.DataFrame) -> "pd.Series[float]":
     sums = by_day.sum(skipna=False)
     days = pd.DatetimeIndex(sums.index)
     # 23, 24 or 25 hours.
-    length = (days + pd.Timedelta(days=1)).tz_localize(TIME_ZONE) - days.tz_localize(TIME_ZONE)
+    length = (days + pd.Timedelta(days=1)).tz_localize(TIMEZONE) - days.tz_localize(TIMEZONE)
     whole = by_day.size() == pd.Series(length / grid.HOUR, index=days)
     clear_sky = sums["clear_sky_ghi_w_m2"]
     index = sums["ghi_w_m2"] / clear_sky.where(clear_sky > 0)
@@ -94,4 +94,4 @@ def local_days(hours: pd.DatetimeIndex) -> pd.DatetimeIndex:
     """Europe/Paris day of each of `hours`, in UTC, as a naive date."""
     if str(hours.tz) != "UTC":
         raise ValueError("expected a DatetimeIndex in UTC")
-    return hours.tz_convert(TIME_ZONE).tz_localize(None).normalize()
+    return hours.tz_convert(TIMEZONE).tz_localize(None).normalize()

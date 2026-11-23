@@ -22,7 +22,7 @@ def utc_hours(start: str, end: str) -> pd.DatetimeIndex:
 
 def paris_hours(first_day: str, end_day: str) -> pd.DatetimeIndex:
     """UTC hours of the Europe/Paris days from `first_day` to the day before `end_day`."""
-    start, end = (pd.Timestamp(day, tz=days.TIME_ZONE) for day in (first_day, end_day))
+    start, end = (pd.Timestamp(day, tz=days.TIMEZONE) for day in (first_day, end_day))
     hours = pd.date_range(start, end, freq="h", inclusive="left", unit="ns", name="time")
     return hours.tz_convert("UTC")
 
