@@ -570,3 +570,33 @@ def test_export_date_comes_from_the_file_name() -> None:
     assert mastr.export_date_of(EXPORT) == pd.Timestamp("2026-10-01")
     with pytest.raises(ValueError, match="not an export file name"):
         mastr.export_date_of(Path("Gesamtdatenexport.zip"))
+
+
+END_OF_2025 = pd.Timestamp("2025-12-31")
+
+
+def test_the_solar_fleet_sums_the_module_power_by_orientation_and_tilt(
+    units: pd.DataFrame,
+) -> None:
+    fleet = mastr.solar_fleet(units, END_OF_2025).set_index(["orientation", "tilt"])
+
+    # Planned units and units decommissioned by then do not count; a shut down unit does.
+    assert fleet.loc[("east_west", "5_to_20"), "capacity_mw_dc"] == pytest.approx(0.83688)
+    assert fleet.loc[("south", "5_to_20"), "capacity_mw_dc"] == pytest.approx(0.01976)
+    assert fleet.loc[("south_west", "21_to_40"), "capacity_mw_dc"] == pytest.approx(0.0008)
+    assert fleet["share"].sum() == pytest.approx(1.0)
+
+
+def test_the_dc_ac_ratio_is_the_module_over_the_inverter_power(units: pd.DataFrame) -> None:
+    assert mastr.dc_ac_ratio(units, END_OF_2025) == pytest.approx(885.44 / 852.36)
+
+
+def test_wind_generations_weight_hub_heights_by_capacity(units: pd.DataFrame) -> None:
+    found = mastr.wind_generations(units, END_OF_2025, [2012, None])
+
+    assert found["last_commissioning_year"].tolist() == [2012, pd.NA]
+    assert found["capacity_mw"].tolist() == pytest.approx([0.606, 23.72])
+    # A 600 kW turbine at 77.5 m and a 6 kW one at 19 m, with rotors of 43 m and 6 m.
+    assert found["hub_height_m"].iloc[0] == pytest.approx((600 * 77.5 + 6 * 19) / 606)
+    swept = np.pi * (21.5**2 + 3**2)
+    assert found["specific_power_w_m2"].iloc[0] == pytest.approx(606_000 / swept)

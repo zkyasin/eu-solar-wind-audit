@@ -17,12 +17,14 @@ import json
 import re
 import time
 import zipfile
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 from xml.etree import ElementTree
 
 import httpx
+import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Series
@@ -208,6 +210,78 @@ class OffshoreWind(pa.DataFrameModel):
         strict = True
 
 
+class SolarFleet(pa.DataFrameModel):
+    """DC capacity in MW of solar units by main orientation and tilt class of their modules, and
+    its share of the total; units without an orientation or a tilt are in null groups."""
+
+    orientation: Series[str] = pa.Field(nullable=True)
+    tilt: Series[str] = pa.Field(nullable=True)
+    capacity_mw_dc: Series[float] = pa.Field(ge=0)
+    share: Series[float] = pa.Field(ge=0, le=1)
+
+    class Config:
+        strict = True
+
+
+class WindGenerations(pa.DataFrameModel):
+    """Onshore wind units commissioned up to the end of `last_commissioning_year`, after the
+    previous row, null in the last row: their capacity in MW, their hub height in m weighted by
+    capacity, and their specific power, the capacity over the area swept by their rotors."""
+
+    last_commissioning_year: Series[pd.Int64Dtype] = pa.Field(nullable=True)
+    capacity_mw: Series[float] = pa.Field(ge=0)
+    hub_height_m: Series[float]
+    specific_power_w_m2: Series[float]
+
+    class Config:
+        strict = True
+
+
+def solar_fleet(units: pd.DataFrame, as_of: pd.Timestamp) -> DataFrame[SolarFleet]:
+    """`SolarFleet` of the solar units in operation at `as_of`, by their gross power."""
+    active = _active(units, "solar", as_of)
+    capacity = active.groupby(["orientation", "tilt"], dropna=False)["gross_kw"].sum() / 1000
+    table = capacity.rename("capacity_mw_dc").reset_index()
+    table["share"] = table["capacity_mw_dc"] / table["capacity_mw_dc"].sum()
+    table = table.sort_values("capacity_mw_dc", ascending=False, ignore_index=True)
+    return SolarFleet.validate(table.astype({"orientation": "str", "tilt": "str"}))
+
+
+def dc_ac_ratio(units: pd.DataFrame, as_of: pd.Timestamp) -> float:
+    """Gross over net power of the solar units in operation at `as_of` that have both: their
+    module power over their inverter-limited power."""
+    active = _active(units, "solar", as_of).dropna(subset=["gross_kw", "net_kw"])
+    return float(active["gross_kw"].sum() / active["net_kw"].sum())
+
+
+def wind_generations(
+    units: pd.DataFrame, as_of: pd.Timestamp, last_years: Sequence[int | None]
+) -> DataFrame[WindGenerations]:
+    """`WindGenerations` of the onshore wind units in operation at `as_of`, one row per window of
+    `last_years`, the last of which is None. Hub heights and rotor diameters count where given."""
+    active = _active(units, "wind_onshore", as_of)
+    year = active["commissioned"].dt.year.to_numpy()
+    ends = [np.inf if last is None else float(last) for last in last_years]
+    rows = []
+    for last, low, high in zip(last_years, [-np.inf, *ends], ends, strict=False):
+        window = active[(year > low) & (year <= high)]
+        with_hub = window.dropna(subset=["hub_height_m"])
+        with_rotor = window.dropna(subset=["rotor_diameter_m"])
+        swept_m2 = np.pi * (with_rotor["rotor_diameter_m"] / 2) ** 2
+        rows.append(
+            {
+                "last_commissioning_year": last,
+                "capacity_mw": window["net_kw"].sum() / 1000,
+                "hub_height_m": float(
+                    np.average(with_hub["hub_height_m"], weights=with_hub["net_kw"])
+                ),
+                "specific_power_w_m2": float(with_rotor["net_kw"].sum() * 1000 / swept_m2.sum()),
+            }
+        )
+    table = pd.DataFrame(rows).astype({"last_commissioning_year": "Int64"})
+    return WindGenerations.validate(table)
+
+
 def download_export(client: httpx.Client, cache_dir: Path = CACHE_DIR) -> Path:
     """Path of the pinned export zip, downloaded and checked unless already cached.
 
@@ -305,10 +379,7 @@ def monthly_capacity(
 def offshore_wind(units: pd.DataFrame, as_of: pd.Timestamp) -> DataFrame[OffshoreWind]:
     """Offshore wind units in operation at `as_of`, by sea, development plan cluster and ERA5 cell
     (coordinates rounded to the nearest 0.25 degree)."""
-    offshore = _countable(units[units["technology"].eq("wind_offshore")])
-    active = offshore[
-        (offshore["commissioned"] <= as_of) & ~(offshore["decommissioned"] <= as_of)
-    ].assign(
+    active = _active(units, "wind_offshore", as_of).assign(
         cell_latitude=lambda frame: _to_cell(frame["latitude"]),
         cell_longitude=lambda frame: _to_cell(frame["longitude"]),
         commissioning_month=lambda frame: frame["commissioned"] + pd.offsets.MonthEnd(0),
@@ -539,6 +610,13 @@ def _decode(codes: "pd.Series[str]", table: dict[int, tuple[str, str]]) -> "pd.S
     if unknown:
         raise ValueError(f"unknown codes: {sorted(unknown)}")
     return codes.map(names)
+
+
+def _active(units: pd.DataFrame, technology: str, as_of: pd.Timestamp) -> pd.DataFrame:
+    """Units of `technology` in operation at `as_of`: commissioned, and not decommissioned, by
+    then."""
+    counted = _countable(units[units["technology"].eq(technology)])
+    return counted[(counted["commissioned"] <= as_of) & ~(counted["decommissioned"] <= as_of)]
 
 
 def _countable(units: pd.DataFrame) -> pd.DataFrame:
