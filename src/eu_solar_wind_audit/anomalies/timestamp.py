@@ -5,15 +5,25 @@ over the usable hours of each UTC day: hours complete in both curves, from conso
 definitive rows, with the reference price class (evaluation plan, Deviations). The residual of a
 day is the published minus the modelled centroid, minus the centroid bias of the model. Only valid
 days, sunny enough and mostly usable, are judged.
+
+`shifts` claims shifts of the timestamps by one hour or more. It is a statistical detector: its
+thresholds rest on 2019-2022, and its findings count in the false-alarm budget (evaluation plan,
+Deviations). Real-time hours are left out, so no finding is provisional. Score of a
+`timestamp_shift`: the median residual of the finding, in hours.
 """
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import grid
+from eu_solar_wind_audit.anomalies import findings
+from eu_solar_wind_audit.anomalies.findings import Findings
 from eu_solar_wind_audit.sources import odre
 
+DAY = pd.Timedelta(days=1)
 HOURS_PER_DAY = 24
 
 # Centroid bias of the uncalibrated physics model: the median residual of éCO2mix national solar
@@ -26,6 +36,15 @@ BIAS_MINUTES = -8.4
 USABLE_SHARE_FROM = 0.8
 PEAK_SHARE_FROM = 0.5
 PEAK_WINDOW_DAYS = 31
+# A shift is decided on two consecutive valid days off by 30 minutes or more with the same sign
+# (detector design), and claimed only when these days are off by 45 minutes or more on average
+# (evaluation plan, Deviations).
+DECIDE_FROM_MINUTES = 30.0
+CLAIM_FROM_MINUTES = 45.0
+# Runs of days off with one sign and at most 3 valid days between them are one finding, whose size
+# is the median residual of its first 7 days off (detector design).
+MERGE_GAP_DAYS = 3
+SIZE_DAYS = 7
 
 
 class Centroids(pa.DataFrameModel):
@@ -126,6 +145,69 @@ def daily_centroids(
     return Centroids.validate(table)
 
 
+def shifts(
+    centroids: pd.DataFrame,
+    *,
+    series: str,
+    provenance: str,
+    decide_from_minutes: float = DECIDE_FROM_MINUTES,
+    claim_from_minutes: float = CLAIM_FROM_MINUTES,
+) -> DataFrame[Findings]:
+    """Timestamp shifts of one hour or more in the solar series `series`, whose rows come from
+    `provenance`, from its `Centroids`.
+
+    The valid days are read in time order. A day is off when its residual reaches
+    `decide_from_minutes` in absolute value. Consecutive days off with one sign form a run, and
+    runs of one sign with at most MERGE_GAP_DAYS valid days between them form one finding, from its
+    first to its last day off. The finding is claimed when two consecutive days off in it average
+    `claim_from_minutes` or more in absolute value, and when the median residual of its first
+    SIZE_DAYS days off does too: that median, rounded to whole hours, is the size of the shift.
+    Smaller offsets stay in the centroid table only. The evidence gives the size in hours, the
+    median residual, the two days that decide the claim with their mean residual, and the number
+    of days off.
+    """
+    table = Centroids.validate(centroids).sort_index()
+    valid = table[table["valid"]]
+    residual = valid["residual_minutes"].to_numpy()
+    days = pd.DatetimeIndex(valid.index)
+    groups = [
+        (sign, positions)
+        for sign in (1, -1)
+        for positions in _groups(np.flatnonzero(sign * residual >= decide_from_minutes))
+    ]
+    records: list[dict[str, object]] = []
+    for sign, positions in sorted(groups, key=lambda group: int(group[1][0])):
+        consecutive = np.diff(positions) == 1
+        pair_means = (residual[positions[:-1]] + residual[positions[1:]]) / 2
+        deciding = np.flatnonzero(consecutive & (sign * pair_means >= claim_from_minutes))
+        median = float(np.median(residual[positions[:SIZE_DAYS]]))
+        if deciding.size == 0 or sign * median < claim_from_minutes:
+            continue
+        first = deciding[0]
+        records.append(
+            {
+                "series": series,
+                "provenance": provenance,
+                "provisional": False,
+                "start": days[positions[0]],
+                "end": days[positions[-1]] + DAY,
+                "kind": "timestamp_shift",
+                "score": median / 60,
+                "evidence": {
+                    "shift_hours": round(median / 60),
+                    "median_residual_minutes": median,
+                    "deciding_days": [
+                        days[positions[first]].date().isoformat(),
+                        days[positions[first + 1]].date().isoformat(),
+                    ],
+                    "deciding_mean_minutes": float(pair_means[first]),
+                    "days_off": int(positions.size),
+                },
+            }
+        )
+    return findings.from_records(records)
+
+
 def _published(published: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
     """`published` validated, and whether each of its hours is real-time."""
     if "status" in published.columns:
@@ -133,6 +215,15 @@ def _published(published: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
         return with_status, with_status["status"].eq("realtime")
     hours = grid.Hourly.validate(published)
     return hours, pd.Series(False, index=hours.index)
+
+
+def _groups(off: npt.NDArray[np.intp]) -> list[npt.NDArray[np.intp]]:
+    """The positions `off` of the valid days off with one sign, in groups that more than
+    MERGE_GAP_DAYS valid days separate; groups of a single day are left out, since a claim needs
+    two."""
+    valid_days_between = np.diff(off) - 1
+    groups = np.split(off, np.flatnonzero(valid_days_between > MERGE_GAP_DAYS) + 1)
+    return [positions for positions in groups if positions.size > 1]
 
 
 def _centroid(energy: pd.Series, position: pd.Series, day: pd.DatetimeIndex) -> pd.Series:
