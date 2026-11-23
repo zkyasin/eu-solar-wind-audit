@@ -7,7 +7,8 @@ is empty in the national dataset, on a 30-minute grid in the regional one. Real-
 autumn days it has no rows for the repeated local hour.
 
 `national_hourly` and `regional_hourly` put these series on the common grid of `grid`, with the
-publication status of each hour. `onshore_hourly` gives onshore wind on the hours where the
+publication status of each hour; `consolidated_hourly`, `realtime_hourly` and `regional_from_rows`
+do the same with rows already fetched. `onshore_hourly` gives onshore wind on the hours where the
 published series tell it apart from offshore wind.
 """
 
@@ -276,16 +277,15 @@ def national_hourly(
     first, last = _days(start, end)
     if series in ("wind_onshore", "wind_offshore"):
         regional = regional_hourly(client, series, start, end, cache_dir=cache_dir)
-        hourly = _sum_of_regions(regional)
+        hourly = sum_of_regions(regional)
     else:
         published = fetch_national_consolidated(client, first, last, cache_dir=cache_dir)
-        hourly = _consolidated_hourly(published[f"{series}_mw"], published["status"], start, end)
+        hourly = consolidated_hourly(published[f"{series}_mw"], published["status"], start, end)
 
-    covered = hourly.index[hourly["status"].notna()]
-    if covered.empty or covered[-1] < end - grid.HOUR:
-        after = start if covered.empty else covered[-1] + grid.HOUR
+    after = consolidated_end(hourly, start)
+    if after < end:
         realtime = fetch_national_realtime(client, after.date(), last, cache_dir=cache_dir)
-        later = _realtime_hourly(realtime[f"{series}_mw"], after, end)
+        later = realtime_hourly(realtime[f"{series}_mw"], after, end)
         hourly = pd.concat([hourly[hourly.index < after], later])
     return Hourly.validate(hourly)
 
@@ -302,16 +302,7 @@ def regional_hourly(
     consolidated and definitive values only. Keyed by region code, in `REGIONS` order."""
     first, last = _days(start, end)
     published = fetch_regional_consolidated(client, first, last, cache_dir=cache_dir)
-    by_region: dict[str, DataFrame[Hourly]] = {}
-    for code in REGIONS:
-        rows = published[published["region_code"] == code]
-        hourly = _consolidated_hourly(rows[f"{series}_mw"], rows["status"], start, end)
-        if series in ("wind_onshore", "wind_offshore"):
-            unpublished = hourly.index < WIND_SPLIT_START
-            hourly.loc[unpublished, "energy_mwh"] = np.nan
-            hourly.loc[unpublished, "complete"] = False
-        by_region[code] = Hourly.validate(hourly)
-    return by_region
+    return regional_from_rows(published, series, start, end)
 
 
 def onshore_hourly(
@@ -337,6 +328,69 @@ def onshore_hourly(
         )
     hourly = pd.concat(parts) if parts else Hourly.empty()
     return Hourly.validate(grid.on_hours(hourly, start, end))
+
+
+def regional_from_rows(
+    published: pd.DataFrame, series: RegionalSeries, start: pd.Timestamp, end: pd.Timestamp
+) -> dict[str, DataFrame[Hourly]]:
+    """`regional_hourly` from `published`, rows of `fetch_regional_consolidated`."""
+    by_region: dict[str, DataFrame[Hourly]] = {}
+    for code in REGIONS:
+        rows = published[published["region_code"] == code]
+        hourly = consolidated_hourly(rows[f"{series}_mw"], rows["status"], start, end)
+        if series in ("wind_onshore", "wind_offshore"):
+            unpublished = hourly.index < WIND_SPLIT_START
+            hourly.loc[unpublished, "energy_mwh"] = np.nan
+            hourly.loc[unpublished, "complete"] = False
+        by_region[code] = Hourly.validate(hourly)
+    return by_region
+
+
+def consolidated_hourly(
+    power_mw: pd.Series, status: pd.Series, start: pd.Timestamp, end: pd.Timestamp
+) -> pd.DataFrame:
+    """Every hour of [start, end), both hour starts in UTC, of the consolidated and definitive
+    values `power_mw` of one series, with the status of each hour from the `status` of the rows,
+    both as fetched. The result is not validated."""
+    hourly = grid.hourly_from_period_end_means(power_mw)
+    # Same shift as the values: a row labelled 00:00 belongs to the hour starting at 23:00.
+    rank = status.map(STATUS_ORDER.index).shift(-1, freq="30min").resample("h").max()
+    hourly["status"] = rank.reindex(hourly.index).map(dict(enumerate(STATUS_ORDER)))
+    return grid.on_hours(hourly, start, end)
+
+
+def realtime_hourly(power_mw: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
+    """Every hour of [start, end), both hour starts in UTC, of the real-time values `power_mw` of
+    one series as fetched; the hours with rows have the status realtime. The result is not
+    validated."""
+    hourly = grid.hourly_from_instantaneous(power_mw)
+    published = hourly.index.isin(pd.DatetimeIndex(power_mw.index).floor("h"))
+    hourly["status"] = pd.Series("realtime", index=hourly.index).where(published)
+    return grid.on_hours(hourly, start, end)
+
+
+def sum_of_regions(regional: dict[str, DataFrame[Hourly]]) -> pd.DataFrame:
+    """National hours as the sum of the regional `Hourly` frames of `regional`: complete when
+    every region is, with the least final status of the regions. The result is not validated."""
+    stacked = pd.concat(regional.values())
+    by_hour = stacked.groupby(level="time")
+    complete = by_hour["complete"].all()
+    rank = stacked["status"].map(STATUS_ORDER.index, na_action="ignore")
+    return pd.DataFrame(
+        {
+            "energy_mwh": by_hour["energy_mwh"].sum().where(complete),
+            "complete": complete,
+            "status": rank.groupby(level="time").max().map(dict(enumerate(STATUS_ORDER))),
+        }
+    )
+
+
+def consolidated_end(hourly: pd.DataFrame, start: pd.Timestamp) -> pd.Timestamp:
+    """The hour after the last hour with rows in `hourly`, the consolidated and definitive hours
+    of a series from `start`, or `start` when no hour has rows. Real-time values fill the hours
+    from it."""
+    covered = hourly.index[hourly["status"].notna()]
+    return start if covered.empty else covered[-1] + grid.HOUR
 
 
 def snapshot_realtime(client: httpx.Client, directory: Path) -> Snapshot:
@@ -400,37 +454,6 @@ def _days(start: pd.Timestamp, end: pd.Timestamp) -> tuple[date, date]:
     download."""
     grid.check_period(start, end)
     return start.date(), (end - grid.HOUR).date()
-
-
-def _consolidated_hourly(
-    power_mw: pd.Series, status: pd.Series, start: pd.Timestamp, end: pd.Timestamp
-) -> pd.DataFrame:
-    hourly = grid.hourly_from_period_end_means(power_mw)
-    # Same shift as the values: a row labelled 00:00 belongs to the hour starting at 23:00.
-    rank = status.map(STATUS_ORDER.index).shift(-1, freq="30min").resample("h").max()
-    hourly["status"] = rank.reindex(hourly.index).map(dict(enumerate(STATUS_ORDER)))
-    return grid.on_hours(hourly, start, end)
-
-
-def _realtime_hourly(power_mw: pd.Series, start: pd.Timestamp, end: pd.Timestamp) -> pd.DataFrame:
-    hourly = grid.hourly_from_instantaneous(power_mw)
-    published = hourly.index.isin(pd.DatetimeIndex(power_mw.index).floor("h"))
-    hourly["status"] = pd.Series("realtime", index=hourly.index).where(published)
-    return grid.on_hours(hourly, start, end)
-
-
-def _sum_of_regions(regional: dict[str, DataFrame[Hourly]]) -> pd.DataFrame:
-    stacked = pd.concat(regional.values())
-    by_hour = stacked.groupby(level="time")
-    complete = by_hour["complete"].all()
-    rank = stacked["status"].map(STATUS_ORDER.index, na_action="ignore")
-    return pd.DataFrame(
-        {
-            "energy_mwh": by_hour["energy_mwh"].sum().where(complete),
-            "complete": complete,
-            "status": rank.groupby(level="time").max().map(dict(enumerate(STATUS_ORDER))),
-        }
-    )
 
 
 def _tidy(path: Path, fields: dict[str, str]) -> pd.DataFrame:
