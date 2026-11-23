@@ -332,29 +332,48 @@ def test_hours_of_2026_are_never_profiled() -> None:
         )
 
 
+def clear_day_course(hours: pd.DatetimeIndex) -> FloatArray:
+    """DC output per unit of DC capacity over a clear day, from 05:00 to 19:00 UTC."""
+    course: FloatArray = np.sin(np.pi * (hours.hour.to_numpy() + 0.5 - 5) / 14).clip(0.0)
+    return course
+
+
+def shared_course_arrays(covariates: DataFrame[precompute.Covariates]) -> precompute.SolarArrays:
+    """Arrays on the hours of `covariates` whose systems and horizontal modules all follow
+    clear_day_course, so that the clipping of one day tells its ratio."""
+    dc = clear_day_course(pd.DatetimeIndex(covariates.index))
+    on_grid = np.stack([ac_output(dc, float(ratio)) for ratio in DC_AC_GRID], axis=-1)
+    return precompute.SolarArrays(
+        fleet_mwh=CAPACITY_MW * np.stack([on_grid, on_grid], axis=1),
+        horizontal_mwh=CAPACITY_MW * on_grid,
+        shares=np.array([system.share for system in PV.fleet]),
+        covariates=covariates,
+        centroid=CENTROID,
+    )
+
+
+def published_at(hours: pd.DatetimeIndex, ratio: float, seed: int) -> FloatArray:
+    """Published output of shared_course_arrays at `ratio`, with the level of TRUTH and a noise
+    of 0.002 in capacity factor."""
+    output = TRUTH[0] * ac_output(clear_day_course(hours), ratio)
+    noise = np.random.default_rng(seed).normal(0.0, 0.002, hours.size)
+    published: FloatArray = CAPACITY_MW * (output + noise)
+    return published
+
+
 def two_clear_days(first_ratio: float, second_ratio: float) -> Case:
-    """Arrays on the hours from 06:00 to 18:00 UTC of 14 and 15 June 2019, whose systems and
-    horizontal modules share one course of DC output, so that the clipping of one day tells its
-    ratio, and published output at `first_ratio` on the first day and at `second_ratio` on the
-    second, with the level of TRUTH and a noise of 0.002 in capacity factor."""
+    """shared_course_arrays on the hours from 06:00 to 18:00 UTC of 14 and 15 June 2019, with
+    output published at `first_ratio` on the first day and at `second_ratio` on the second."""
     hours = pd.DatetimeIndex(
         [utc(f"2019-06-{day} {hour:02d}:00") for day in (14, 15) for hour in range(6, 19)],
         name="time",
     ).as_unit("ns")
-    dc = np.sin(np.pi * (hours.hour.to_numpy() + 0.5 - 5) / 14)
-    on_grid = np.stack([ac_output(dc, float(ratio)) for ratio in DC_AC_GRID], axis=-1)
-    arrays = precompute.SolarArrays(
-        fleet_mwh=CAPACITY_MW * np.stack([on_grid, on_grid], axis=1),
-        horizontal_mwh=CAPACITY_MW * on_grid,
-        shares=np.array([system.share for system in PV.fleet]),
-        covariates=covariates_on(hours),
-        centroid=CENTROID,
+    first_day = hours.day.to_numpy() == 14
+    published = np.where(
+        first_day, published_at(hours, first_ratio, 3), published_at(hours, second_ratio, 3)
     )
-    day = hours.day.to_numpy()
-    output = np.where(day == 14, ac_output(dc, first_ratio), ac_output(dc, second_ratio))
-    noise = np.random.default_rng(3).normal(0.0, 0.002, hours.size)
-    published_mwh = pd.Series(CAPACITY_MW * (TRUTH[0] * output + noise), index=hours)
-    return [arrays], published_mwh, pd.Series(True, index=hours)
+    published_mwh = pd.Series(published, index=hours)
+    return [shared_course_arrays(covariates_on(hours))], published_mwh, pd.Series(True, index=hours)
 
 
 def test_the_bootstrap_draws_whole_days() -> None:
@@ -382,3 +401,52 @@ def test_the_bootstrap_is_reproducible_with_its_seed() -> None:
     np.testing.assert_array_equal(first.minima, again.minima)
     assert first.quantiles == again.quantiles
     assert not np.array_equal(first.minima, other.minima)
+
+
+def test_the_report_states_each_minimum_at_0_05_with_the_sample_size() -> None:
+    # Whole days in Paris, as sky classes need them, with air at 25 degC in 2019 and 18 degC in
+    # 2020, and output published at a ratio of 1.33.
+    arrays, published = [], []
+    for year, temperature in [(2019, 25.0), (2020, 18.0)]:
+        hours = paris_hours(f"{year}-06-14", f"{year}-06-15")
+        covariates = sky_arrays(hours, 0.95, air_temperature_c=temperature).covariates
+        arrays.append(shared_course_arrays(covariates))
+        published.append(pd.Series(published_at(hours, 1.33, year), index=hours))
+    published_mwh = pd.concat(published)
+    classes = pd.DataFrame({"regime": "reference"}, index=published_mwh.index)
+    eligible = pd.Series(True, index=published_mwh.index)
+
+    found = dc_ac.report(arrays, published_mwh, eligible, classes, PV, replicates=3)
+
+    # The sun is at 20 degrees or more from 08:00 to 16:00 UTC.
+    years = pd.Index([2019, 2020], name="year")
+    expected = pd.DataFrame({"hours": [9, 9], "days": [1, 1]}, index=years)
+    pd.testing.assert_frame_equal(found.sample_size, expected)
+    assert found.profile.minimum == 1.33
+    assert list(found.subsets) == ["air_15_to_22_c", "air_from_22_c", "JJA"]
+    assert found.bootstrap.minima.size == 3
+    minima: pd.DataFrame = found.minima
+    assert list(minima.index) == [
+        "sample",
+        *found.subsets,
+        "bootstrap_5",
+        "bootstrap_50",
+        "bootstrap_95",
+    ]
+    # 1.33 (1 - 0.1408) is 1.143.
+    assert minima.loc["sample"].to_dict() == {
+        "hours": 18,
+        "days": 2,
+        "dc_ac_ratio": 1.33,
+        "at_grid_end": False,
+        "stated_ratio": 1.35,
+        "stated_ratio_after_losses": 1.15,
+    }
+    assert minima.loc["bootstrap_50", ["hours", "days"]].to_dict() == {"hours": 18, "days": 2}
+    for column, ratio in [
+        ("stated_ratio", minima["dc_ac_ratio"]),
+        ("stated_ratio_after_losses", minima["dc_ac_ratio"] * (1 - PV.dc_losses)),
+    ]:
+        steps = minima[column] / dc_ac.REPORT_STEP
+        np.testing.assert_allclose(steps, steps.round(), atol=1e-9)
+        assert ((minima[column] - ratio).abs() <= dc_ac.REPORT_STEP / 2).all()

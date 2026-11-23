@@ -22,6 +22,10 @@ generator seeded with SEED, and holds every hour of a drawn day as many times as
 Its minimum comes from its profile with the scale of the sample, each ratio of the grid starting
 from the solution at the ratio before it. The QUANTILES of the minima are minima of replicates:
 for 999 replicates, the 50th, 500th and 950th smallest.
+
+Report: the sample hours and days of each UTC year, and each minimum stated at REPORT_STEP, as the
+ratio r and as r (1 - L) with L the DC losses of the PV parameters: away from clipping hours, the
+data identify the level times r (1 - L), not r.
 """
 
 from collections.abc import Callable, Sequence
@@ -31,7 +35,9 @@ from typing import NamedTuple
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+import pandera.pandas as pa
 import pvlib
+from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import calibration, days, evaluation, precompute, pv
 from eu_solar_wind_audit.precompute import DC_AC_GRID, BoolArray, FloatArray
@@ -48,6 +54,8 @@ TRANSIT_WINDOW = pd.Timedelta(hours=3)
 REPLICATES = 999
 SEED = 20261123
 QUANTILES = (0.05, 0.5, 0.95)
+# The profile does not locate the ratio more precisely (calibration critique).
+REPORT_STEP = 0.05
 # Bands [low, high) of capacity-weighted air temperature in degC (calibration critique).
 AIR_TEMPERATURE_BANDS = {
     "air_below_15_c": (-np.inf, 15.0),
@@ -82,11 +90,54 @@ class Bootstrap:
     seed: int
 
 
+class SampleSize(pa.DataFrameModel):
+    """Sample hours and their Europe/Paris days in each UTC year with sample hours."""
+
+    year: Index[int] = pa.Field(unique=True, check_name=True)
+    hours: Series[int] = pa.Field(gt=0)
+    days: Series[int] = pa.Field(gt=0)
+
+    class Config:
+        strict = True
+
+
+class Minima(pa.DataFrameModel):
+    """The minimum of the profile of the sample (estimate "sample") and of each of its subsets,
+    and the QUANTILES of the bootstrap minima (estimates "bootstrap_5", "bootstrap_50" and
+    "bootstrap_95"), with the hours and days of the sample they come from. `dc_ac_ratio` is on
+    DC_AC_GRID and `at_grid_end` tells whether it is an end of the grid; `stated_ratio` is the
+    ratio at REPORT_STEP, and `stated_ratio_after_losses` the ratio times (1 - DC losses) at
+    REPORT_STEP."""
+
+    estimate: Index[str] = pa.Field(unique=True, check_name=True)
+    hours: Series[int] = pa.Field(gt=0)
+    days: Series[int] = pa.Field(gt=0)
+    dc_ac_ratio: Series[float]
+    at_grid_end: Series[bool]
+    stated_ratio: Series[float]
+    stated_ratio_after_losses: Series[float]
+
+    class Config:
+        strict = True
+
+
+@dataclass(frozen=True)
+class Report:
+    """The size of the sample, its profile, the profiles of its subsets, the bootstrap over its
+    days, and their minima stated at REPORT_STEP."""
+
+    sample_size: DataFrame[SampleSize]
+    profile: Profile
+    subsets: dict[str, Profile]
+    bootstrap: Bootstrap
+    minima: DataFrame[Minima]
+
+
 class _Sample(NamedTuple):
     """Sample hours, in the order of the arrays: the capacity factor of the whole fleet mounted as
     configured, `fleet`, and as horizontal modules, `horizontal`, at each ratio of DC_AC_GRID,
     shape (hour, ratio); the seasonal sine of precompute; the published capacity factor; and the
-    number of the Europe/Paris day."""
+    Europe/Paris day, numbered from 0 in time order."""
 
     fleet: FloatArray
     horizontal: FloatArray
@@ -203,6 +254,68 @@ def bootstrap(
         minima[replicate] = _profile(drawn, f_scale, warm=True).minimum
     quantiles = np.quantile(minima, QUANTILES, method="inverted_cdf")
     return Bootstrap(minima=minima, quantiles=tuple(quantiles.tolist()), seed=seed)
+
+
+def report(
+    arrays: Sequence[precompute.SolarArrays],
+    published_mwh: pd.Series,
+    eligible: pd.Series,
+    price_classes: pd.DataFrame,
+    parameters: PVParameters,
+    *,
+    replicates: int = REPLICATES,
+    seed: int = SEED,
+) -> Report:
+    """Report of the module docstring on the sample of `arrays`, from the inputs of sample_hours
+    and profile."""
+    sample = sample_hours(arrays, eligible, price_classes)
+    sample_profile = profile(arrays, published_mwh, sample, parameters)
+    subset_profiles = {
+        name: profile(arrays, published_mwh, hours, parameters)
+        for name, hours in subsets(arrays, sample).items()
+    }
+    resampled = bootstrap(
+        arrays, published_mwh, sample, parameters, replicates=replicates, seed=seed
+    )
+    estimates = {
+        name: (found.hours, found.days, found.minimum)
+        for name, found in {"sample": sample_profile, **subset_profiles}.items()
+    }
+    for quantile, ratio in zip(QUANTILES, resampled.quantiles, strict=True):
+        estimates[f"bootstrap_{round(100 * quantile)}"] = (
+            sample_profile.hours,
+            sample_profile.days,
+            ratio,
+        )
+    minima = pd.DataFrame.from_dict(
+        estimates, orient="index", columns=["hours", "days", "dc_ac_ratio"]
+    ).rename_axis("estimate")
+    minima["at_grid_end"] = minima["dc_ac_ratio"].isin([DC_AC_GRID[0], DC_AC_GRID[-1]])
+    minima["stated_ratio"] = _stated(minima["dc_ac_ratio"])
+    minima["stated_ratio_after_losses"] = _stated(
+        minima["dc_ac_ratio"] * (1 - parameters.dc_losses)
+    )
+    return Report(
+        sample_size=sample_size(sample),
+        profile=sample_profile,
+        subsets=subset_profiles,
+        bootstrap=resampled,
+        minima=Minima.validate(minima),
+    )
+
+
+def sample_size(sample: pd.Series) -> DataFrame[SampleSize]:
+    """The hours where the boolean `sample` is true, and their Europe/Paris days, counted in each
+    UTC year."""
+    hours = pd.DatetimeIndex(sample.index)[sample.to_numpy()]
+    year = pd.Index(hours.year, dtype="int64", name="year")
+    by_year = pd.Series(days.local_days(hours), index=hours).groupby(year)
+    return SampleSize.validate(pd.DataFrame({"hours": by_year.size(), "days": by_year.nunique()}))
+
+
+def _stated(ratio: pd.Series) -> pd.Series:
+    """`ratio` rounded to the nearest multiple of REPORT_STEP."""
+    return ((ratio / REPORT_STEP).round() * REPORT_STEP).round(2)
 
 
 def _sample(
