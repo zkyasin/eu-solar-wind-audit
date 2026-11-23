@@ -331,6 +331,25 @@ def test_the_two_deciding_days_must_be_off_by_45_minutes_on_average(
     assert len(claims(clear_days(episode(offsets)))) == claimed
 
 
+@pytest.mark.parametrize(
+    ("offsets", "claimed"),
+    [([29.0, 70.0], False), ([31.0, 70.0], True), ([-29.0, -70.0], False), ([-31.0, -70.0], True)],
+)
+def test_each_deciding_day_must_be_off_by_30_minutes(offsets: list[float], claimed: bool) -> None:
+    # Both pairs average more than 45 minutes.
+    assert len(claims(clear_days(episode(offsets)))) == claimed
+
+
+def test_the_size_is_the_median_of_the_first_seven_days_off() -> None:
+    # Days off by an hour, then days off by 31 minutes: four or three of the first seven days are
+    # an hour off.
+    four = claims(clear_days(episode([60.0] * 4 + [31.0] * 10)))
+    three = claims(clear_days(episode([60.0] * 3 + [31.0] * 10)))
+
+    assert evidence(four)[0]["median_residual_minutes"] == pytest.approx(60.0)
+    assert three.empty
+
+
 @pytest.mark.parametrize("offsets", [[120.0], [-120.0], [120.0, 0.0, 120.0]])
 def test_a_one_day_excursion_is_not_claimed(offsets: list[float]) -> None:
     assert claims(clear_days(episode(offsets))).empty
@@ -371,12 +390,14 @@ def test_days_that_are_not_valid_do_not_separate_runs() -> None:
     assert evidence(found)[0]["days_off"] == 10
 
 
-def test_runs_of_opposite_signs_are_separate_findings() -> None:
-    published = clear_days([0.0] * 5 + [60.0] * 5 + [0.0] * 2 + [-60.0] * 5 + [0.0] * 5)
+@pytest.mark.parametrize("first_sign", [1, -1])
+def test_runs_of_opposite_signs_are_separate_findings_in_time_order(first_sign: int) -> None:
+    offsets = [0.0] * 5 + [60.0] * 5 + [0.0] * 2 + [-60.0] * 5 + [0.0] * 5
+    published = clear_days([first_sign * offset for offset in offsets])
 
     assert spans(claims(published)) == [
-        (utc("2022-06-06"), utc("2022-06-11"), 1.0),
-        (utc("2022-06-13"), utc("2022-06-18"), -1.0),
+        (utc("2022-06-06"), utc("2022-06-11"), first_sign),
+        (utc("2022-06-13"), utc("2022-06-18"), -first_sign),
     ]
 
 
