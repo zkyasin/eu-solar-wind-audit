@@ -14,8 +14,8 @@ from eu_solar_wind_audit import grid, precompute
 
 TIME_ZONE = "Europe/Paris"
 
-# The 11 public holidays of the Code du travail, article L3133-1. The two more days of Alsace and
-# Moselle, Good Friday and 26 December, are left out.
+# The 11 public holidays of the Code du travail, article L3133-1. Alsace and Moselle have two
+# more, Good Friday and 26 December, which are left out.
 PUBLIC_HOLIDAYS = AbstractHolidayCalendar(
     "France",
     rules=[
