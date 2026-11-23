@@ -392,3 +392,55 @@ def test_inputs_are_checked(change: Callable[[SolarCase], SolarCase], error: str
 
     with pytest.raises(ValueError, match=error):
         calibration.fit_solar(arrays, published_mwh, eligible, PV)
+
+
+def test_an_hour_of_weight_zero_is_left_out() -> None:
+    arrays, published_mwh, eligible = solar_case()
+    in_2020 = pd.DatetimeIndex(eligible.index).year == 2020
+    weights = pd.Series(in_2020.astype(int), index=eligible.index)
+
+    weighted = calibration.fit_solar(arrays, published_mwh, eligible, PV, weights=weights)
+
+    assert weighted == calibration.fit_solar(arrays, published_mwh, eligible & in_2020, PV)
+
+
+def test_a_weight_of_two_on_every_hour_counts_each_twice() -> None:
+    arrays, published_mwh, eligible = wind_case()
+    twice = pd.Series(2, index=eligible.index)
+
+    weighted = calibration.fit_wind(arrays, published_mwh, eligible, weights=twice)
+    once = calibration.fit_wind(arrays, published_mwh, eligible)
+
+    assert weighted.speed_scale == pytest.approx(once.speed_scale, rel=1e-9)
+    assert weighted.fit.f_scale == pytest.approx(once.fit.f_scale)
+    assert weighted.fit.cost == pytest.approx(2 * once.fit.cost)
+    assert weighted.fit.eligible_hours == 2 * once.fit.eligible_hours
+
+
+def test_weights_move_the_fit_towards_the_hours_they_repeat() -> None:
+    arrays, published_mwh, eligible = solar_case()
+    in_2020 = pd.DatetimeIndex(eligible.index).year == 2020
+    # 2020 publishes 10 % more than 2019.
+    published_mwh[in_2020] *= 1.1
+    weights = pd.Series(np.where(in_2020, 3, 1), index=eligible.index)
+
+    weighted = calibration.fit_solar(arrays, published_mwh, eligible, PV, weights=weights)
+    once = calibration.fit_solar(arrays, published_mwh, eligible, PV)
+
+    assert once.level < weighted.level < 1.1 * SOLAR_TRUTH[0]
+
+
+@pytest.mark.parametrize(
+    ("weights", "error"),
+    [
+        (lambda hours: pd.Series(1.0, index=hours), "non-negative integers"),
+        (lambda hours: pd.Series(-1, index=hours), "non-negative integers"),
+        (lambda hours: pd.Series(1, index=hours[1:]), "on the hours of the eligibility"),
+        (lambda hours: pd.Series(0, index=hours), "no eligible hour has a positive weight"),
+    ],
+)
+def test_weights_are_checked(weights: Callable[[pd.Index], pd.Series], error: str) -> None:
+    arrays, published_mwh, eligible = solar_case()
+
+    with pytest.raises(ValueError, match=error):
+        calibration.fit_solar(arrays, published_mwh, eligible, PV, weights=weights(eligible.index))

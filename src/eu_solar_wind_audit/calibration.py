@@ -30,6 +30,9 @@ Huber estimator 95 % efficiency when the errors are normal (Huber 1981, Robust S
 pass must end on a convergence test of least_squares: a pass stopped by its evaluation limit raises
 RuntimeError.
 
+Fits given weights count each eligible hour as many times as its weight, in the cost and in the
+median absolute deviations, as for a bootstrap sample that holds the hour that many times.
+
 Solar: x = (level, horizontal share, seasonal amplitude) of precompute.solar_energy, at the
 configured DC/AC ratio. Onshore wind: x = (speed scale) of precompute.wind_energy, without speed
 offset and with the default smoothing. Fits refuse any hour outside evaluation.TRAINING_YEARS: 2026
@@ -44,7 +47,7 @@ import pandas as pd
 from scipy.optimize import OptimizeResult, least_squares
 from scipy.stats import median_abs_deviation
 
-from eu_solar_wind_audit import precompute
+from eu_solar_wind_audit import eligibility, precompute
 from eu_solar_wind_audit.evaluation import TRAINING_YEARS
 from eu_solar_wind_audit.precompute import BoolArray, FloatArray
 from eu_solar_wind_audit.pv import PVParameters
@@ -74,8 +77,8 @@ WIND_X_SCALE = (1.0,)
 @dataclass(frozen=True)
 class HuberFit:
     """Final pass of a fit: its scale c1, in capacity factor, its cost F(x2; c1), the nfev, status
-    and message that least_squares gives for it, and the number of eligible hours and their UTC
-    years."""
+    and message that least_squares gives for it, and the number of eligible hours, counted with
+    their weights, and their UTC years."""
 
     f_scale: float
     cost: float
@@ -137,15 +140,19 @@ def fit_solar(
     published_mwh: pd.Series,
     eligible: pd.Series,
     parameters: PVParameters,
+    *,
+    weights: pd.Series | None = None,
 ) -> SolarCalibration:
     """Solar calibration on the eligible hours of `arrays`, which cover distinct periods, not
     necessarily consecutive, such as the UTC years that precompute.solar gives for the training
-    years of a fold. `published_mwh` and the boolean `eligible` are indexed on the hours of the
+    years of a fold. `published_mwh`, the boolean `eligible` and the integer `weights`, the number
+    of times each eligible hour counts (once each without them), are indexed on the hours of the
     arrays, in the same order. `parameters` are the PV parameters the arrays were computed with:
     the potential takes their DC/AC ratio, and the effective gain their DC losses.
 
     Raises ValueError if an hour lies outside evaluation.TRAINING_YEARS, if the inputs are not on
-    the same hours, or if an eligible hour has no published energy, potential or capacity.
+    the same hours, if an eligible hour has no published energy, potential or capacity, or if the
+    weights are not non-negative integers with a positive weight at an eligible hour.
     """
 
     def potential(x: FloatArray) -> FloatArray:
@@ -173,6 +180,7 @@ def fit_solar(
         SOLAR_LOWER,
         SOLAR_UPPER,
         SOLAR_X_SCALE,
+        weights,
     )
     level, horizontal_share, seasonal_amplitude = values
     return SolarCalibration(
@@ -189,12 +197,16 @@ def fit_solar(
 
 
 def fit_wind(
-    arrays: Sequence[precompute.WindArrays], published_mwh: pd.Series, eligible: pd.Series
+    arrays: Sequence[precompute.WindArrays],
+    published_mwh: pd.Series,
+    eligible: pd.Series,
+    *,
+    weights: pd.Series | None = None,
 ) -> WindCalibration:
     """Onshore wind calibration on the eligible hours of `arrays`, which cover distinct periods,
     not necessarily consecutive, such as the UTC years that precompute.wind_onshore gives for the
-    training years of a fold. `published_mwh` and the boolean `eligible` are indexed on the hours
-    of the arrays, in the same order.
+    training years of a fold. `published_mwh`, the boolean `eligible` and the integer `weights`
+    are indexed on the hours of the arrays, in the same order, as for `fit_solar`.
 
     Raises ValueError as `fit_solar` does.
     """
@@ -214,6 +226,7 @@ def fit_wind(
         WIND_LOWER,
         WIND_UPPER,
         WIND_X_SCALE,
+        weights,
     )
     return WindCalibration(speed_scale=speed_scale, speed_scale_at_bound=at_bound, fit=fit)
 
@@ -227,16 +240,19 @@ def _huber_fit(
     lower: tuple[float, ...],
     upper: tuple[float, ...],
     x_scale: tuple[float, ...],
+    weights: pd.Series | None,
 ) -> tuple[list[float], list[bool], HuberFit]:
     """The estimator of the module docstring for `potential`, the energy in MWh over every hour
     of `covariates`. Gives the parameters, whether each lies at a bound, and the final pass."""
     hours = pd.concat(covariates)
     training = _training_hours(hours, published_mwh, eligible)
-    published: FloatArray = published_mwh.to_numpy(dtype=float)[training]
-    capacity_mw: FloatArray = hours["capacity_mw"].to_numpy(dtype=float)[training]
+    # Each eligible hour, repeated as many times as it counts.
+    positions = np.repeat(np.flatnonzero(training), eligibility.hour_counts(eligible, weights))
+    published: FloatArray = published_mwh.to_numpy(dtype=float)[positions]
+    capacity_mw: FloatArray = hours["capacity_mw"].to_numpy(dtype=float)[positions]
 
     def residuals(x: FloatArray) -> FloatArray:
-        return (potential(x)[training] - published) / capacity_mw
+        return (potential(x)[positions] - published) / capacity_mw
 
     x = np.array(start)
     # The two passes of the module docstring: each takes its scale from the residuals at its
@@ -247,14 +263,14 @@ def _huber_fit(
         x = result.x
 
     at_bound = (x - np.array(lower) <= AT_BOUND) | (np.array(upper) - x <= AT_BOUND)
-    years = pd.DatetimeIndex(hours.index)[training].year
+    years = pd.DatetimeIndex(hours.index)[positions].year
     fit = HuberFit(
         f_scale=float(f_scale),
         cost=float(result.cost),
         nfev=int(result.nfev),
         status=int(result.status),
         message=str(result.message),
-        eligible_hours=int(training.sum()),
+        eligible_hours=int(positions.size),
         training_years=tuple(int(year) for year in np.unique(years)),
     )
     return x.tolist(), at_bound.tolist(), fit

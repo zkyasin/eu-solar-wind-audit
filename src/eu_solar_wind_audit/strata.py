@@ -25,6 +25,10 @@ level of the other weeks of their year.
 
 The composition of the eligible hours of each year, by elevation band, sky class, day type and
 stratum, shows which strata the training years inform.
+
+Given weights, as for a bootstrap sample, an eligible hour counts as many times as its weight in
+the decile edges, the sums and the levels, and a day counts in a stratum as many times as the
+largest weight of its hours there.
 """
 
 from collections.abc import Sequence
@@ -36,7 +40,7 @@ import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Index, Series
 
-from eu_solar_wind_audit import days, evaluation, grid, precompute
+from eu_solar_wind_audit import days, eligibility, evaluation, grid, precompute
 from eu_solar_wind_audit.precompute import BoolArray
 
 # Sun elevation in degrees: the night band up to 0, then a band from each edge to the next, the
@@ -155,14 +159,17 @@ def fit_ratios(
     potential_mwh: pd.Series,
     covariates: pd.DataFrame,
     eligible: pd.Series,
+    *,
+    weights: pd.Series | None = None,
 ) -> StratumRatios:
     """Strata fitted on the eligible hours of `covariates`, a precompute.Covariates frame of the
     training years of a fold, which need not be consecutive. `published_mwh`, the potential
-    `potential_mwh` in MWh and the boolean `eligible` are on the hours of `covariates`.
+    `potential_mwh` in MWh, the boolean `eligible` and the integer `weights`, the number of times
+    each eligible hour counts (once each without them), are on the hours of `covariates`.
 
     Raises ValueError if an hour lies outside evaluation.TRAINING_YEARS, if the inputs are not on
-    the same hours, or if an eligible hour has no published energy, potential, capacity or sun
-    elevation.
+    the same hours, if an eligible hour has no published energy, potential, capacity or sun
+    elevation, or as eligibility.hour_counts does for the weights.
     """
     precompute.Covariates.validate(covariates)
     hours = pd.DatetimeIndex(covariates.index)
@@ -181,23 +188,27 @@ def fit_ratios(
         },
     )
 
-    factor = (potential_mwh / capacity_mw)[training]
-    edges = tuple(float(edge) for edge in np.quantile(factor, DECILE_LEVELS))
+    counts = eligibility.hour_counts(eligible, weights)
+    factor = (potential_mwh / capacity_mw)[training].to_numpy()
+    edges = tuple(float(edge) for edge in np.quantile(np.repeat(factor, counts), DECILE_LEVELS))
     strata = classify_hours(potential_mwh, covariates, edges)[training]
-    by_stratum = strata.assign(
-        published_mwh=published_mwh[training],
-        potential_mwh=potential_mwh[training],
+    counted = strata.assign(
+        count=counts,
+        published_mwh=published_mwh[training] * counts,
+        potential_mwh=potential_mwh[training] * counts,
         day=days.local_days(pd.DatetimeIndex(strata.index)),
-    ).groupby(STRATUM_KEY)
+    )
+    by_stratum = counted.groupby(STRATUM_KEY)
+    day_counts = counted.groupby([*STRATUM_KEY, "day"])["count"].max()
     sums = pd.DataFrame(
         {
-            "training_hours": by_stratum.size(),
-            "distinct_days": by_stratum["day"].nunique(),
+            "training_hours": by_stratum["count"].sum(),
+            "distinct_days": day_counts.groupby(level=STRATUM_KEY).sum(),
             "published_mwh": by_stratum["published_mwh"].sum(),
             "potential_mwh": by_stratum["potential_mwh"].sum(),
         }
     ).reindex(STRATA, fill_value=0)
-    pooled = float(published_mwh[training].sum() / potential_mwh[training].sum())
+    pooled = float(counted["published_mwh"].sum() / counted["potential_mwh"].sum())
     raw = sums["published_mwh"] / sums["potential_mwh"]
     weight = sums["distinct_days"] / (sums["distinct_days"] + SHRINKAGE_DAYS)
     shrunk = (weight * raw + (1 - weight) * pooled).where(sums["training_hours"] > 0, pooled)
@@ -218,16 +229,25 @@ def apply_ratios(
 
 
 def annual_levels(
-    published_mwh: pd.Series, potential_mwh: pd.Series, eligible: pd.Series
+    published_mwh: pd.Series,
+    potential_mwh: pd.Series,
+    eligible: pd.Series,
+    *,
+    weights: pd.Series | None = None,
 ) -> "pd.Series[float]":
     """Annual level of each UTC year of the hours of `eligible`: the published energy over the
     potential with strata of `apply_ratios`, both in MWh and summed over the eligible hours of the
-    year. NaN for a year without eligible hours. Indexed by year.
+    year, each counted as many times as its weight in `weights` (once without them). NaN for a
+    year without eligible hours of positive weight. Indexed by year.
 
     Raises ValueError unless the inputs are on the same UTC hours, `eligible` is boolean with an
-    eligible hour, and every eligible hour has both energies.
+    eligible hour, and every eligible hour has both energies, or as eligibility.hour_counts does
+    for the weights.
     """
     sums = _eligible_sums(published_mwh, potential_mwh, eligible)
+    counts = np.zeros(len(sums), dtype=np.int64)
+    counts[eligible.to_numpy()] = eligibility.hour_counts(eligible, weights)
+    sums = sums.mul(counts, axis="index")
     by_year = sums.groupby(pd.DatetimeIndex(sums.index).year.rename("year")).sum()
     return (by_year["published_mwh"] / by_year["potential_mwh"]).rename("annual_level")
 

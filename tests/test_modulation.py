@@ -144,6 +144,8 @@ def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
             str(tmp_path / "fits"),
             "--references",
             str(rte),
+            "--replicates",
+            "3",
         ]
     )
 
@@ -153,7 +155,14 @@ def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
         "solar-modulation-months.parquet",
         "solar-rte-months.parquet",
         "solar-rte-years.parquet",
+        "solar-modulation-replicates.parquet",
+        "solar-modulation-intervals.parquet",
+        "solar-modulation-intervals-dc-ac-sensitivity.parquet",
         "solar-modulation.json",
     }
     summary = json.loads((tmp_path / "out" / "solar-modulation.json").read_text())
     assert set(summary["tests"]) == {"annual_ratio", "monthly_detail", "monthly_rates"}
+    assert summary["bootstrap"]["replicates"] == 3
+    intervals = pd.read_parquet(tmp_path / "out" / "solar-modulation-intervals.parquet")
+    assert intervals.columns.tolist() == ["low_gwh", "high_gwh", "estimate_gwh"]
+    assert {"2019", "2020", "2021"} <= set(intervals.index)
