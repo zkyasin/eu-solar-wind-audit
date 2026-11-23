@@ -1,5 +1,6 @@
 import dataclasses
 import json
+from pathlib import Path
 
 import numpy as np
 import numpy.typing as npt
@@ -7,7 +8,7 @@ import pandas as pd
 import pytest
 from pandera.typing import DataFrame
 
-from eu_solar_wind_audit import physics
+from eu_solar_wind_audit import cli, physics
 from eu_solar_wind_audit.anomalies import breaks, detection, inputs, thresholds
 from eu_solar_wind_audit.anomalies.inputs import DetectionInputs, Published, Rows, SeriesInputs
 from eu_solar_wind_audit.config import CONFIG_DIR, load_country
@@ -333,3 +334,41 @@ def test_germany_gets_the_rules_and_the_cross_source_checks() -> None:
         ("smard.DE.solar", "parts_gap", utc("2019-01-15 12:00")),
         ("energy_charts.DE.public_power.solar", "cross_source_gap", utc("2019-02-05 12:00")),
     }
+
+
+def test_the_command_reads_france_from_the_first_day_and_writes_the_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls = []
+
+    def france_inputs(
+        client: object, start: pd.Timestamp, end: pd.Timestamp, *_: object
+    ) -> DetectionInputs:
+        calls.append((start, end))
+        return france()
+
+    monkeypatch.setattr(inputs, "france_inputs", france_inputs)
+    fixed_path = tmp_path / "FR.json"
+    thresholds.write(fixed_path, french_thresholds())
+
+    cli.main(
+        [
+            "detect-anomalies",
+            "FR",
+            "2019-01-01",
+            "2019-03-01",
+            str(tmp_path / "out"),
+            "--thresholds",
+            str(fixed_path),
+        ]
+    )
+
+    assert calls == [(breaks.FIRST_DAY, END)]
+    names = {path.name for path in (tmp_path / "out").iterdir()}
+    assert names == {"FR-findings.parquet", "FR-unattributed.parquet", "FR-detection.json"}
+    run = json.loads((tmp_path / "out" / "FR-detection.json").read_text())
+    assert run["thresholds"]["path"] == str(fixed_path)
+    assert run["findings"]["level_break"] == 2
+    assert len(run["series"]) == 2 * len(FRENCH_AREAS)
+    findings = pd.read_parquet(tmp_path / "out" / "FR-findings.parquet")
+    assert len(findings) == sum(run["findings"].values())

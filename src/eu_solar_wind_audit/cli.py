@@ -2,6 +2,7 @@
 
 import argparse
 import dataclasses
+import hashlib
 import json
 import math
 import subprocess
@@ -20,7 +21,7 @@ from eu_solar_wind_audit import (
     modulation,
     physics,
 )
-from eu_solar_wind_audit.anomalies import inputs, thresholds
+from eu_solar_wind_audit.anomalies import breaks, detection, inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
 from eu_solar_wind_audit.sources import natural_earth, odre, sdes
 
@@ -75,6 +76,19 @@ def main(argv: list[str] | None = None) -> None:
     )
     fix.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
     fix.add_argument("--output", type=Path, default=thresholds.THRESHOLDS_DIR / "FR.json")
+    anomalies = commands.add_parser(
+        "detect-anomalies",
+        help="run the anomaly detectors on the published series of a country over a period, and "
+        "write the findings with a JSON file describing the run",
+    )
+    anomalies.add_argument("country", choices=["FR", "DE"])
+    anomalies.add_argument("start", type=date.fromisoformat, help="first day, UTC")
+    anomalies.add_argument("end", type=date.fromisoformat, help="day after the last one, UTC")
+    anomalies.add_argument(
+        "output", type=Path, help="directory of the findings and their description"
+    )
+    anomalies.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
+    anomalies.add_argument("--thresholds", type=Path, default=thresholds.THRESHOLDS_DIR / "FR.json")
     args = parser.parse_args(argv)
 
     if args.command == "snapshot-realtime":
@@ -123,6 +137,32 @@ def main(argv: list[str] | None = None) -> None:
         reference = thresholds.reference_model(parameters, git_describe())
         thresholds.write(args.output, thresholds.fix(found, reference))
         print(args.output)
+    elif args.command == "detect-anomalies":
+        start, end = pd.Timestamp(args.start, tz="UTC"), pd.Timestamp(args.end, tz="UTC")
+        run: dict[str, Any] = {
+            "git_describe": git_describe(),
+            "ran_at": pd.Timestamp.now(tz="UTC").floor("s").isoformat(),
+        }
+        fixed = None
+        with odre.make_client() as client:
+            if args.country == "FR":
+                parameters = load_country(args.config)
+                fixed = thresholds.read(args.thresholds)
+                thresholds.check_reference(
+                    fixed, thresholds.reference_model(parameters, git_describe())
+                )
+                run["thresholds"] = {
+                    "path": str(args.thresholds),
+                    "sha256": hashlib.sha256(args.thresholds.read_bytes()).hexdigest(),
+                    "git_describe": fixed.reference_model["git_describe"],
+                }
+                # The level breaks read the daily ratios from their first day on.
+                found = inputs.france_inputs(client, breaks.FIRST_DAY, end, parameters)
+            else:
+                found = inputs.germany_inputs(client, start, end)
+        detected = detection.detect(found, fixed, start, end)
+        for path in detection.write(args.output, found, detected, start, end, run):
+            print(path)
 
 
 def run_metadata(
