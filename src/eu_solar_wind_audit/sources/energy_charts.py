@@ -8,6 +8,14 @@ Production is mean power in MW over quarter-hours labelled at their start. `publ
 net production fed into the public grid; `total_power` adds industrial self-supply and, for solar,
 self-consumption. `total_power` is published for Germany only. Their hourly wind energy was equal
 in every hour of 2019-2025 (checked on 2026-11-22).
+
+Over 2019-2022, hourly public power equals the SMARD feed-in times a factor that is constant within
+each month for solar and within each year for wind, months and years taken in Berlin time. On the
+hours with at least 50 MWh in SMARD (measured on 2026-11-23), the solar factor of a month lies
+between 0.952 and 1.238, and no hour departs from it by more than 0.72 %. The onshore wind factor
+is 0.9944, 0.9967, 1.0079 and 0.9626 from 2019 to 2022, and no hour departs from it by more than
+0.27 %. The offshore wind factor lies between 0.9998 and 1.0007, but 257 hours depart from it by
+more than 1 %. Public power is therefore not independent of SMARD.
 """
 
 import json
