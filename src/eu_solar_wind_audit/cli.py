@@ -22,6 +22,7 @@ from eu_solar_wind_audit import (
     folds,
     modulation,
     physics,
+    placebo,
 )
 from eu_solar_wind_audit.anomalies import inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
@@ -174,16 +175,19 @@ def estimate_modulation(
     the frozen `fit`, its 90 % interval from `replicates` bootstrap replicates (none with 0), and,
     for solar, the interval with the DC/AC ratios of the sensitivity; give the minimal detectable
     effect of each year from the leave-one-year-out folds; compare the estimate with the RTE
-    volumes of `reference_dir` and, with an interval, give the verdict. Write the tables and a
-    JSON summary to `output`. Gives the paths written."""
+    volumes of `reference_dir` and, with an interval, give the verdict and run the placebo and the
+    injection. Write the tables and a JSON summary to `output`. Gives the paths written."""
     # The reference series are imported here only, so that calibrate-france never loads them.
     from eu_solar_wind_audit import comparison, references
 
+    first = pd.Timestamp(evaluation.TRAINING_YEARS[0], 1, 1, tz="UTC")
+    end = pd.Timestamp(evaluation.TRAINING_YEARS[-1] + 1, 1, 1, tz="UTC")
     with odre.make_client() as client:
         years = [
             eligibility.year_inputs(client, technology, year, parameters)
             for year in evaluation.TRAINING_YEARS
         ]
+        consumption = odre.national_hourly(client, "load", first, end)
     hours = modulation.negative_hours(years, fit)
     months = modulation.months(hours)
     report = (
@@ -203,6 +207,7 @@ def estimate_modulation(
         "rte-years": found.years,
     }
     outcome = None
+    placebo_years = None
     if replicates > 0:
         estimate = months["modulation_gwh"]
         by_year = estimate.groupby(estimate.index.str[:4]).sum()
@@ -221,6 +226,17 @@ def estimate_modulation(
         judged = comparison.verdict(found, tables["modulation-intervals"], mde_gwh)
         tables["verdict-years"] = judged.years
         outcome = judged.verdict
+        checked = placebo.evaluate(
+            years,
+            technology,
+            parameters.solar,
+            fit,
+            consumption["energy_mwh"],
+            count=replicates,
+        )
+        tables["placebo-years"] = checked.years
+        tables["placebo-pairs"] = checked.pairs.to_frame()
+        placebo_years = checked.years
     written = []
     for name, table in tables.items():
         path = output / f"{technology}-{name}.parquet"
@@ -244,6 +260,15 @@ def estimate_modulation(
         "error_days": len(errors),
         "mde_gwh": {year: _finite(float(value)) for year, value in mde_gwh.items()},
         "verdict": outcome,
+        "placebo": None
+        if placebo_years is None
+        else {
+            "matched_hours": int(placebo_years["matched"].sum()),
+            "unmatched_hours": int(placebo_years["unmatched"].sum()),
+            "years": len(placebo_years),
+            "years_within": int(placebo_years["placebo_within"].sum()),
+            "injection_coverage": _finite(float(placebo_years["injection_covered"].mean())),
+        },
     }
     path = output / f"{technology}-modulation.json"
     path.write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8")
