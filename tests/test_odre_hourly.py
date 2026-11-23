@@ -52,6 +52,35 @@ def regional(
         return odre.regional_hourly(client, series, hour(start), hour(end), cache_dir=tmp_path)
 
 
+def onshore(
+    start: str,
+    end: str,
+    exports: dict[str, Path],
+    tmp_path: Path,
+    requests: list[httpx.Request] | None = None,
+) -> pd.DataFrame:
+    content = {dataset: path.read_bytes() for dataset, path in exports.items()}
+    with serving(content, [] if requests is None else requests) as client:
+        return odre.onshore_hourly(client, hour(start), hour(end), cache_dir=tmp_path)
+
+
+def national_end_of_may_2022(path: Path) -> Path:
+    """Synthetic national definitive export of 30 and 31 May 2022 in UTC, on a 30-minute grid, with
+    wind in MW written as the time of the row: 2130 at 21:30."""
+    stamps = pd.date_range("2022-05-30", "2022-06-01", freq="30min", tz="UTC", unit="ms")
+    export = pd.DataFrame(
+        {
+            "date_heure": stamps,
+            "nature": "Données définitives",
+            "consommation": 50000.0,
+            "solaire": 0.0,
+            "eolien": (stamps.hour * 100 + stamps.minute).astype(float),
+        }
+    )
+    export.to_parquet(path, index=False)
+    return path
+
+
 def hour(stamp: str) -> pd.Timestamp:
     return pd.Timestamp(stamp, tz="UTC")
 
@@ -297,6 +326,106 @@ def test_hours_without_published_values_have_no_status(tmp_path: Path) -> None:
     assert before_gap["status"] == "realtime"
 
 
+def test_onshore_reference_is_national_wind_until_the_first_offshore_power(
+    tmp_path: Path,
+) -> None:
+    requests: list[httpx.Request] = []
+    export = national_end_of_may_2022(tmp_path / "export.parquet")
+
+    reference = onshore(
+        "2022-05-31 20:00",
+        "2022-06-01 00:00",
+        {odre.NATIONAL_CONSOLIDATED: export},
+        tmp_path / "cache",
+        requests,
+    )
+
+    # Midnight in Paris, in summer time.
+    assert hour("2022-05-31 22:00") == odre.FIRST_OFFSHORE_POWER
+    assert reference.index.equals(hours("2022-05-31 20:00", "2022-06-01 00:00"))
+    # Half-hours ending 21:30 (2130 MW) and 22:00 (2200 MW).
+    assert reference.loc[utc("2022-05-31 21:00"), "energy_mwh"].item() == 2165.0
+    # The hours from 22:00 on are left out, although the export has values for them.
+    after = utc("2022-05-31 22:00", "2022-05-31 23:00")
+    assert reference.index[~reference["complete"]].equals(after)
+    assert reference.index[reference["status"].isna()].equals(after)
+    assert set(reference["status"].dropna()) == {"definitive"}
+    # Neither regional nor real-time data are requested.
+    (request,) = requests
+    assert request.url.path.split("/")[-3] == odre.NATIONAL_CONSOLIDATED
+
+
+def test_onshore_reference_is_the_regional_onshore_sum_from_the_split(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    exports = {odre.REGIONAL_CONSOLIDATED: SPLIT_START_REGIONAL}
+
+    reference = onshore("2023-12-31 21:00", "2024-01-01 00:00", exports, tmp_path, requests)
+
+    # Sums of the 12 regions for the half-hours ending 23:30 and 00:00.
+    assert reference.loc[utc("2023-12-31 23:00"), "energy_mwh"].item() == (14888 + 14827) / 2
+    assert reference.index[reference["complete"]].equals(utc("2023-12-31 23:00"))
+    # The regional rows of the two hours before are definitive, with an onshore field of zero.
+    before = utc("2023-12-31 21:00", "2023-12-31 22:00")
+    assert reference.index[reference["status"].isna()].equals(before)
+    assert reference.loc[utc("2023-12-31 23:00"), "status"].item() == "definitive"
+    (request,) = requests
+    assert request.url.path.split("/")[-3] == odre.REGIONAL_CONSOLIDATED
+
+
+def test_onshore_reference_is_incomplete_between_its_two_sources(tmp_path: Path) -> None:
+    export = national_end_of_may_2022(tmp_path / "export.parquet")
+    exports = {odre.NATIONAL_CONSOLIDATED: export, odre.REGIONAL_CONSOLIDATED: SPLIT_START_REGIONAL}
+
+    reference = onshore("2022-05-31 21:00", "2024-01-01 00:00", exports, tmp_path / "cache")
+
+    assert reference.index.equals(hours("2022-05-31 21:00", "2024-01-01 00:00"))
+    # The last hour before the gap and the first one after it.
+    edges = utc("2022-05-31 21:00", "2023-12-31 23:00")
+    assert reference.index[reference["complete"]].equals(edges)
+    assert reference.index[reference["status"].notna()].equals(edges)
+
+
+def test_onshore_reference_inside_the_gap_downloads_nothing(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    with serving({}, requests) as client:
+        reference = odre.onshore_hourly(
+            client, odre.FIRST_OFFSHORE_POWER, odre.WIND_SPLIT_START, cache_dir=tmp_path
+        )
+
+    assert reference.index.equals(hours("2022-05-31 22:00", "2023-12-31 23:00"))
+    assert not reference["complete"].any()
+    assert reference["status"].isna().all()
+    assert not requests
+
+
+def test_onshore_reference_before_the_first_offshore_power_is_national_wind(
+    tmp_path: Path,
+) -> None:
+    requests: list[httpx.Request] = []
+    exports = {odre.NATIONAL_CONSOLIDATED: national_end_of_may_2022(tmp_path / "export.parquet")}
+
+    reference = onshore("2022-05-30", "2022-05-31", exports, tmp_path / "cache", requests)
+
+    expected = national("wind", "2022-05-30", "2022-05-31", exports, tmp_path / "cache")
+    pd.testing.assert_frame_equal(reference, expected, check_freq=False)
+    # National wind is requested for the days of the period only.
+    (request,) = requests
+    assert request.url.params["where"] == odre.utc_days(date(2022, 5, 30), date(2022, 5, 30))
+
+
+def test_onshore_reference_after_the_split_is_national_onshore_wind(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    reference = onshore("2026-08-31", "2026-09-02", SWITCH, tmp_path, requests)
+
+    expected = national("wind_onshore", "2026-08-31", "2026-09-02", SWITCH, tmp_path)
+    pd.testing.assert_frame_equal(reference, expected, check_freq=False)
+    # Sums of the consolidated regional rows, then national real-time values.
+    assert list(reference["status"].unique()) == ["consolidated", "realtime"]
+    # Both datasets are requested for the days of the period only.
+    days = odre.utc_days(date(2026, 8, 31), date(2026, 9, 1))
+    assert {request.url.params["where"] for request in requests} == {days}
+
+
 @pytest.mark.parametrize(
     ("start", "end", "error"),
     [
@@ -317,5 +446,7 @@ def test_a_wrong_period_is_rejected_before_any_download(
             odre.national_hourly(client, "solar", start, end, cache_dir=tmp_path)
         with pytest.raises(ValueError, match=error):
             odre.regional_hourly(client, "solar", start, end, cache_dir=tmp_path)
+        with pytest.raises(ValueError, match=error):
+            odre.onshore_hourly(client, start, end, cache_dir=tmp_path)
 
     assert not requests
