@@ -16,6 +16,12 @@ is the smallest ratio with the lowest cost, flagged when it is an end of the gri
 Subsets: the profile, each with its own scale, of the sample hours in each band of
 capacity-weighted air temperature, where warm modules lose output at peak hours as clipping does,
 and in each season of the UTC month.
+
+Bootstrap: each of REPLICATES replicates draws the days of the sample with replacement, from a
+generator seeded with SEED, and holds every hour of a drawn day as many times as the day is drawn.
+Its minimum comes from its profile with the scale of the sample, each ratio of the grid starting
+from the solution at the ratio before it. The QUANTILES of the minima are minima of replicates:
+for 999 replicates, the 50th, 500th and 950th smallest.
 """
 
 from collections.abc import Callable, Sequence
@@ -37,6 +43,11 @@ IntArray = npt.NDArray[np.intp]
 # 3 h of solar noon all have the reference price (evaluation plan, Deviations).
 SAMPLE_ELEVATION_DEG = 20.0
 TRANSIT_WINDOW = pd.Timedelta(hours=3)
+# Bootstrap over days (evaluation plan, Deviations), with the 999 replicates of the inference of
+# the plan and a fixed seed.
+REPLICATES = 999
+SEED = 20261123
+QUANTILES = (0.05, 0.5, 0.95)
 # Bands [low, high) of capacity-weighted air temperature in degC (calibration critique).
 AIR_TEMPERATURE_BANDS = {
     "air_below_15_c": (-np.inf, 15.0),
@@ -59,6 +70,16 @@ class Profile:
     at_grid_end: bool
     hours: int
     days: int
+
+
+@dataclass(frozen=True)
+class Bootstrap:
+    """Minima of the profiles of `minima.size` replicates drawn with the generator seeded with
+    `seed`, and their QUANTILES."""
+
+    minima: FloatArray
+    quantiles: tuple[float, ...]
+    seed: int
 
 
 class _Sample(NamedTuple):
@@ -150,6 +171,40 @@ def profile(
     return _profile(_sample(arrays, published_mwh, sample), f_scale)
 
 
+def bootstrap(
+    arrays: Sequence[precompute.SolarArrays],
+    published_mwh: pd.Series,
+    sample: pd.Series,
+    parameters: PVParameters,
+    *,
+    replicates: int = REPLICATES,
+    seed: int = SEED,
+) -> Bootstrap:
+    """Bootstrap of the module docstring over the days of the hours of `arrays` where `sample` is
+    true, from the inputs of `profile`.
+
+    Raises ValueError as calibration.fit_solar does.
+    """
+    f_scale = calibration.fit_solar(arrays, published_mwh, sample, parameters).fit.f_scale
+    base = _sample(arrays, published_mwh, sample)
+    day_count = np.unique(base.day).size
+    generator = np.random.default_rng(seed)
+    minima = np.empty(replicates)
+    for replicate in range(replicates):
+        draws = np.bincount(generator.integers(day_count, size=day_count), minlength=day_count)
+        rows = np.repeat(np.arange(base.day.size), draws[base.day])
+        drawn = _Sample(
+            fleet=base.fleet[rows],
+            horizontal=base.horizontal[rows],
+            sine=base.sine[rows],
+            published=base.published[rows],
+            day=base.day[rows],
+        )
+        minima[replicate] = _profile(drawn, f_scale, warm=True).minimum
+    quantiles = np.quantile(minima, QUANTILES, method="inverted_cdf")
+    return Bootstrap(minima=minima, quantiles=tuple(quantiles.tolist()), seed=seed)
+
+
 def _sample(
     arrays: Sequence[precompute.SolarArrays], published_mwh: pd.Series, sample: pd.Series
 ) -> _Sample:
@@ -169,19 +224,24 @@ def _sample(
     )
 
 
-def _profile(sample: _Sample, f_scale: float) -> Profile:
+def _profile(sample: _Sample, f_scale: float, warm: bool = False) -> Profile:
+    """Profile on the hours of `sample`, which can repeat. Each ratio starts from
+    calibration.SOLAR_START or, when `warm`, from the solution at the ratio before it."""
     costs = np.empty(DC_AC_GRID.size)
     fitted = np.empty((DC_AC_GRID.size, len(calibration.SOLAR_START)))
+    start = np.array(calibration.SOLAR_START)
     for column in range(DC_AC_GRID.size):
         result = calibration.huber_pass(
             _residuals(sample, column),
-            np.array(calibration.SOLAR_START),
+            start,
             f_scale,
             calibration.SOLAR_LOWER,
             calibration.SOLAR_UPPER,
             calibration.SOLAR_X_SCALE,
         )
         costs[column], fitted[column] = result.cost, result.x
+        if warm:
+            start = result.x
     # argmin keeps the first of equal costs, so ties go to the smallest ratio.
     lowest = int(np.argmin(costs))
     return Profile(

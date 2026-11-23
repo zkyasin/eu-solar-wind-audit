@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from numpy.typing import ArrayLike
+from pandera.typing import DataFrame
 
 from eu_solar_wind_audit import calibration, days, dc_ac, precompute, pv, regimes
 from eu_solar_wind_audit.precompute import DC_AC_GRID, FloatArray
@@ -173,6 +174,24 @@ def ac_output(dc: FloatArray, ratio: float) -> FloatArray:
     return pv.ac_from_dc(dc, ratio, PV.dc_losses)
 
 
+def covariates_on(hours: pd.DatetimeIndex) -> DataFrame[precompute.Covariates]:
+    """Covariates of a clear and complete hour on each of `hours`."""
+    covariates = pd.DataFrame(
+        {
+            "complete": True,
+            "capacity_mw": CAPACITY_MW,
+            "capacity_provisional": False,
+            "era5_source": "ERA5",
+            "sun_elevation_deg": 40.0,
+            "ghi_w_m2": 600.0,
+            "clear_sky_ghi_w_m2": 620.0,
+            "air_temperature_c": 20.0,
+        },
+        index=hours,
+    )
+    return precompute.Covariates.validate(covariates)
+
+
 def clipping_case(
     true_ratio: float, dc_scale: float = 1.0, years: tuple[int, ...] = (2019, 2020)
 ) -> Case:
@@ -200,26 +219,13 @@ def clipping_case(
             np.stack([ac_output(values, float(ratio)) for ratio in DC_AC_GRID], axis=-1)
             for values in systems
         ]
-        covariates = pd.DataFrame(
-            {
-                "complete": True,
-                "capacity_mw": CAPACITY_MW,
-                "capacity_provisional": False,
-                "era5_source": "ERA5",
-                "sun_elevation_deg": 40.0,
-                "ghi_w_m2": 600.0,
-                "clear_sky_ghi_w_m2": 620.0,
-                "air_temperature_c": 20.0,
-            },
-            index=hours,
-        )
         shares = np.array([system.share for system in PV.fleet])
         arrays.append(
             precompute.SolarArrays(
                 fleet_mwh=CAPACITY_MW * np.stack(on_grid[:-1], axis=1),
                 horizontal_mwh=CAPACITY_MW * on_grid[-1],
                 shares=shares,
-                covariates=precompute.Covariates.validate(covariates),
+                covariates=covariates_on(hours),
                 centroid=CENTROID,
             )
         )
@@ -324,3 +330,55 @@ def test_hours_of_2026_are_never_profiled() -> None:
         dc_ac.profile(
             arrays, published_mwh, sample & (pd.DatetimeIndex(sample.index).year == 2025), PV
         )
+
+
+def two_clear_days(first_ratio: float, second_ratio: float) -> Case:
+    """Arrays on the hours from 06:00 to 18:00 UTC of 14 and 15 June 2019, whose systems and
+    horizontal modules share one course of DC output, so that the clipping of one day tells its
+    ratio, and published output at `first_ratio` on the first day and at `second_ratio` on the
+    second, with the level of TRUTH and a noise of 0.002 in capacity factor."""
+    hours = pd.DatetimeIndex(
+        [utc(f"2019-06-{day} {hour:02d}:00") for day in (14, 15) for hour in range(6, 19)],
+        name="time",
+    ).as_unit("ns")
+    dc = np.sin(np.pi * (hours.hour.to_numpy() + 0.5 - 5) / 14)
+    on_grid = np.stack([ac_output(dc, float(ratio)) for ratio in DC_AC_GRID], axis=-1)
+    arrays = precompute.SolarArrays(
+        fleet_mwh=CAPACITY_MW * np.stack([on_grid, on_grid], axis=1),
+        horizontal_mwh=CAPACITY_MW * on_grid,
+        shares=np.array([system.share for system in PV.fleet]),
+        covariates=covariates_on(hours),
+        centroid=CENTROID,
+    )
+    day = hours.day.to_numpy()
+    output = np.where(day == 14, ac_output(dc, first_ratio), ac_output(dc, second_ratio))
+    noise = np.random.default_rng(3).normal(0.0, 0.002, hours.size)
+    published_mwh = pd.Series(CAPACITY_MW * (TRUTH[0] * output + noise), index=hours)
+    return [arrays], published_mwh, pd.Series(True, index=hours)
+
+
+def test_the_bootstrap_draws_whole_days() -> None:
+    arrays, published_mwh, sample = two_clear_days(1.3, 1.7)
+    both = dc_ac.profile(arrays, published_mwh, sample, PV).minimum
+
+    found = dc_ac.bootstrap(arrays, published_mwh, sample, PV, replicates=6, seed=1)
+
+    # A replicate that draws one day twice finds the ratio of that day: drawn hours would mix the
+    # two days.
+    assert set(found.minima.tolist()) == {1.3, 1.7, both}
+    ordered = np.sort(found.minima)
+    # The 1st, 3rd and 6th smallest of 6 minima.
+    assert found.quantiles == (ordered[0], ordered[2], ordered[5])
+
+
+def test_the_bootstrap_is_reproducible_with_its_seed() -> None:
+    case = two_clear_days(1.3, 1.7)
+
+    first = dc_ac.bootstrap(*case, PV, replicates=4)
+    again = dc_ac.bootstrap(*case, PV, replicates=4)
+    other = dc_ac.bootstrap(*case, PV, replicates=4, seed=1)
+
+    assert first.seed == dc_ac.SEED
+    np.testing.assert_array_equal(first.minima, again.minima)
+    assert first.quantiles == again.quantiles
+    assert not np.array_equal(first.minima, other.minima)
