@@ -47,6 +47,8 @@ class Findings(pa.DataFrameModel):
     series: Series[str] = pa.Field(str_length={"min_value": 1})
     # Producer and dataset of the rows, such as "RTE, éCO2mix, ODRÉ dataset eco2mix-national-tr".
     provenance: Series[str] = pa.Field(str_length={"min_value": 1})
+    # Whether the rows are real-time values, which their producer replaces later.
+    provisional: Series[bool]
     start: Series[grid.UtcTime]
     end: Series[grid.UtcTime]
     kind: Series[str] = pa.Field(isin=KINDS)

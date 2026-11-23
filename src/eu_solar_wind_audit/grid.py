@@ -5,7 +5,7 @@ An hour is complete only when all its values are present. Incomplete hours keep 
 are never partially summed or interpolated.
 """
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 import pandas as pd
 import pandera.pandas as pa
@@ -14,6 +14,10 @@ from pandera.typing import Index, Series
 HOUR = pd.Timedelta(hours=1)
 
 UtcTime = Annotated[pd.DatetimeTZDtype, "ns", "UTC"]
+
+# Where a published stamp lies in the period of its value: at its start, at its end, or at the
+# instant of an instantaneous value.
+Label = Literal["start", "end", "instant"]
 
 
 class Hourly(pa.DataFrameModel):

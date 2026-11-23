@@ -21,6 +21,7 @@ def record(**changes: object) -> dict[str, object]:
     return {
         "series": "odre.FR.solar",
         "provenance": "RTE, éCO2mix, ODRÉ dataset eco2mix-national-cons-def",
+        "provisional": False,
         "start": utc("2022-03-27 00:00"),
         "end": utc("2022-03-27 02:00"),
         "kind": "gap",
