@@ -44,7 +44,7 @@ PEAK_WINDOW_DAYS = 31
 DECIDE_FROM_MINUTES = 30.0
 CLAIM_FROM_MINUTES = 45.0
 # Runs of days off with one sign and at most 3 valid days between them are one finding, whose size
-# is the median residual of its first 7 days off (detector design).
+# is the median residual of its first 7 days off from the deciding days (detector design).
 MERGE_GAP_DAYS = 3
 SIZE_DAYS = 7
 # A jump compares the median residuals of the valid days in the 14 days before and after a clock
@@ -166,11 +166,11 @@ def shifts(
     The valid days are read in time order. A day is off when its residual reaches
     `decide_from_minutes` in absolute value. Consecutive days off with one sign form a run, and
     runs of one sign with at most MERGE_GAP_DAYS valid days between them form one finding, from its
-    first to its last day off. The finding is claimed when two consecutive days off in it average
-    `claim_from_minutes` or more in absolute value, and when the median residual of its first
-    SIZE_DAYS days off does too: that median, rounded to whole hours, is the size of the shift.
-    Smaller offsets stay in the centroid table only. The evidence gives the size in hours, the
-    median residual, the two days that decide the claim with their mean residual, and the number
+    first to its last day off. The finding is decided by its first two consecutive days off that
+    average `claim_from_minutes` or more in absolute value, and claimed when the median residual of
+    the SIZE_DAYS days off from these two does too: that median, rounded to whole hours, is the
+    size of the shift. Smaller offsets stay in the centroid table only. The evidence gives the size
+    in hours, the median residual, the two deciding days with their mean residual, and the number
     of days off.
     """
     table = Centroids.validate(centroids).sort_index()
@@ -187,10 +187,13 @@ def shifts(
         consecutive = np.diff(positions) == 1
         pair_means = (residual[positions[:-1]] + residual[positions[1:]]) / 2
         deciding = np.flatnonzero(consecutive & (sign * pair_means >= claim_from_minutes))
-        median = float(np.median(residual[positions[:SIZE_DAYS]]))
-        if deciding.size == 0 or sign * median < claim_from_minutes:
+        if deciding.size == 0:
             continue
         first = deciding[0]
+        # Days off before the deciding days are often a smaller offset, or noise.
+        median = float(np.median(residual[positions[first : first + SIZE_DAYS]]))
+        if sign * median < claim_from_minutes:
+            continue
         records.append(
             {
                 "series": series,
