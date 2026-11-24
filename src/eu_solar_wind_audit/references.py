@@ -22,6 +22,17 @@ RTE_COLUMNS = ["Date", "Filière", "Valeur (GWh)"]
 TOLERANCE_GWH = 1e-9
 HIRTH_FILE = "market_curtailment_germany.csv"
 HIRTH_COLUMNS = ["year", "technology", "twh", "source"]
+SDES_FILE = "autoconsommation_electricite_france_2018_2024.xlsx"
+SDES_SHEET = "Figures"
+# Columns of the table of self-consumption by technology, after the year.
+SDES_TECHNOLOGIES = (
+    "Éolienne",
+    "Hydraulique",
+    "Photovoltaïque",
+    "Thermique hors cogénération",
+    "Thermique en cogénération",
+)
+TOLERANCE_TWH = 1e-9
 
 
 def load_rte_modulation(directory: Path) -> pd.DataFrame:
@@ -92,6 +103,40 @@ def load_hirth_curtailment(directory: Path) -> pd.DataFrame:
         raise ValueError(f"{path.name}: expected the technologies wind and solar")
     return pd.DataFrame(
         {"year": raw["year"], "technology": raw["technology"], "gwh": 1000.0 * raw["twh"]}
+    )
+
+
+def load_sdes_self_consumption(directory: Path) -> "pd.Series[float]":
+    """Yearly self-consumption of solar photovoltaics in France, overseas departments included, in
+    GWh, indexed by year: the first table of the SDES data file, self-consumption by technology in
+    TWh, whose technologies must add up to its total."""
+    path = directory / SDES_FILE
+    raw = pd.read_excel(path, sheet_name=SDES_SHEET, header=None)
+    (header,) = np.flatnonzero(raw[0] == "Annee").tolist()
+    width = len(SDES_TECHNOLOGIES)
+    labels = raw.iloc[header + 1].iloc[1 : 1 + width].tolist()
+    if labels != list(SDES_TECHNOLOGIES) or raw.iat[header, 1 + width] != "Total":
+        raise ValueError(
+            f"{path.name}: expected the columns {list(SDES_TECHNOLOGIES)} and Total, found {labels}"
+        )
+
+    first = header + 2
+    # The table runs down to the first row without a year.
+    years = pd.to_numeric(raw[0].iloc[first:], errors="coerce")
+    count = int(years.notna().cumprod().sum())
+    table = raw.iloc[first : first + count, : width + 2].astype(float)
+    table.columns = pd.Index(["year", *SDES_TECHNOLOGIES, "Total"])
+    total = table[list(SDES_TECHNOLOGIES)].sum(axis=1)
+    mismatch = ~(np.abs(total - table["Total"]) <= TOLERANCE_TWH)
+    if mismatch.any():
+        raise ValueError(
+            f"{path.name}: technologies do not add up to the total, "
+            f"first in {int(table['year'][mismatch].iloc[0])}"
+        )
+    return pd.Series(
+        1000.0 * table["Photovoltaïque"].to_numpy(),
+        index=pd.Index(table["year"].astype(int), name="year"),
+        name="gwh",
     )
 
 

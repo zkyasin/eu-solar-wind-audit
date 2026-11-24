@@ -1,0 +1,21 @@
+{
+ "producer": "Service des données et études statistiques (SDES), Ministère de la Transition écologique",
+ "use": "Comparison reference only; calibration code must not read these files.",
+ "files": {
+  "autoconsommation_electricite_france_2018_2024.xlsx": {
+   "sha256": "742881f00aff1ec221a459dd15807c3638b4023c1322a52d682a0beeca085ff2",
+   "size_bytes": 19585,
+   "description": "Data file of the publication, unchanged. Its sheet Figures opens with the yearly self-consumption of electricity in France by technology, 2018 to 2024, in TWh.",
+   "source": {
+    "title": "L'autoconsommation d'électricité en France",
+    "url": "https://www.statistiques.developpement-durable.gouv.fr/lautoconsommation-delectricite-en-france",
+    "file_url": "https://www.statistiques.developpement-durable.gouv.fr/media/9768/download?inline",
+    "published": "2026-10-02",
+    "retrieved_at": "2026-11-24"
+   },
+   "definition": "« la différence entre ce que produit l'installation électrique et ce que cette dernière vend (au réseau d'électricité français ou hors réseau) »: installations that self-consume all their output and those that inject part of it are both covered. Mainland France holds 98 % of the 2024 total, so the overseas departments are included.",
+   "method": "« la production d'électricité des installations qui autoconsomment totalement ou partiellement est prédite à partir d'un modèle d'apprentissage automatique prenant en compte des données de puissance installée et d'ensoleillement. L'autoconsommation d'électricité est déduite de la différence entre cette production prédite et la quantité d'électricité injectée sur le réseau. »",
+   "licence": "Open licence of décret n° 2017-638; cite « Service des données et études statistiques (SDES) » with the publication and its date, data not altered."
+  }
+ }
+}

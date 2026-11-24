@@ -7,13 +7,22 @@ import pytest
 
 from eu_solar_wind_audit.references import (
     RTE_FILES,
+    SDES_FILE,
+    SDES_SHEET,
     load_hirth_curtailment,
     load_rte_modulation,
+    load_sdes_self_consumption,
     verify_manifest,
 )
 
 RTE = Path(__file__).parents[1] / "references" / "rte"
 HIRTH = Path(__file__).parents[1] / "references" / "hirth"
+SDES = Path(__file__).parents[1] / "references" / "sdes"
+# Positions in the SDES sheet, read without a header: the row of technology labels, the row of
+# 2020, and the photovoltaic column.
+SDES_LABELS_ROW = 20
+SDES_2020_ROW = 23
+SDES_PHOTOVOLTAIC_COLUMN = 3
 SOLAR = "RTE_PAD_solaire_modulation.csv"
 WIND = "RTE_PAD_eolien_modulation.csv"
 # Working-day row of April 2025 in the solar file; the value appears nowhere else.
@@ -155,3 +164,55 @@ def test_hirth_volumes_are_those_of_the_paper_in_gwh() -> None:
         ("wind", 2025): 2100.0,
         ("solar", 2025): 600.0,
     }
+
+
+def test_sdes_files_match_their_manifest() -> None:
+    manifest = json.loads((SDES / "manifest.json").read_text(encoding="utf-8"))
+
+    assert set(manifest["files"]) == {SDES_FILE}
+    verify_manifest(SDES)
+
+
+def test_sdes_photovoltaic_self_consumption_is_read_in_gwh() -> None:
+    found = load_sdes_self_consumption(SDES)
+
+    assert found.index.tolist() == list(range(2018, 2025))
+    # The publication rounds them to 0.2 TWh and 1.8 TWh.
+    assert found[2020] == pytest.approx(223.97, abs=0.01)
+    assert found[2024] == pytest.approx(1777.01, abs=0.01)
+
+
+@pytest.fixture
+def sdes_copy(tmp_path: Path) -> Path:
+    shutil.copy(SDES / SDES_FILE, tmp_path / SDES_FILE)
+    return tmp_path
+
+
+def edit_sdes(directory: Path, row: int, column: int, value: str | float) -> None:
+    path = directory / SDES_FILE
+    sheet = pd.read_excel(path, sheet_name=SDES_SHEET, header=None)
+    sheet.iat[row, column] = value
+    sheet.to_excel(path, sheet_name=SDES_SHEET, header=False, index=False)
+
+
+def test_an_unchanged_rewrite_of_the_sdes_sheet_reads_the_same(sdes_copy: Path) -> None:
+    edit_sdes(sdes_copy, SDES_LABELS_ROW, SDES_PHOTOVOLTAIC_COLUMN, "Photovoltaïque")
+
+    # Writing the workbook again moves values by about 1e-13 GWh.
+    pd.testing.assert_series_equal(
+        load_sdes_self_consumption(sdes_copy), load_sdes_self_consumption(SDES)
+    )
+
+
+def test_a_renamed_sdes_technology_is_rejected(sdes_copy: Path) -> None:
+    edit_sdes(sdes_copy, SDES_LABELS_ROW, SDES_PHOTOVOLTAIC_COLUMN, "Solaire")
+
+    with pytest.raises(ValueError, match="Solaire"):
+        load_sdes_self_consumption(sdes_copy)
+
+
+def test_a_changed_sdes_value_breaks_the_total(sdes_copy: Path) -> None:
+    edit_sdes(sdes_copy, SDES_2020_ROW, SDES_PHOTOVOLTAIC_COLUMN, 0.5)
+
+    with pytest.raises(ValueError, match="first in 2020"):
+        load_sdes_self_consumption(sdes_copy)
