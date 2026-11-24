@@ -28,7 +28,15 @@ from eu_solar_wind_audit import (
 )
 from eu_solar_wind_audit.anomalies import breaks, detection, inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
-from eu_solar_wind_audit.sources import energy_charts, eurostat, natural_earth, odre, sdes, smard
+from eu_solar_wind_audit.sources import (
+    energy_charts,
+    eurostat,
+    mastr,
+    natural_earth,
+    odre,
+    sdes,
+    smard,
+)
 
 # A week of June 2025 with negative prices on five of its days, at whose hours published onshore
 # wind was 52 % of its potential (data/processed/modulation-fr).
@@ -43,6 +51,7 @@ HIRTH_TECHNOLOGIES: dict[physics.Technology, str] = {"solar": "solar", "wind_ons
 # The SDES workbook of each technology of the perimeter tests: the wind one holds onshore and
 # offshore wind.
 SDES_WORKBOOKS = {"solar": sdes.SOLAR_2026_Q2, "wind": sdes.WIND_2026_Q2}
+WIND_TECHNOLOGIES = ("wind_onshore", "wind_offshore")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -126,10 +135,12 @@ def main(argv: list[str] | None = None) -> None:
     audit = commands.add_parser(
         "audit-perimeter",
         help="set the yearly solar and wind output of the published series against Eurostat gross "
-        "production and decide whether their solar output includes self-consumption",
+        "production, decide whether they include self-consumption and cover the distribution "
+        "grids, and combine both with what their producers state",
     )
     audit.add_argument("output", type=Path, help="directory of the results")
     audit.add_argument("--self-consumption", type=Path, default=Path("references/sdes"))
+    audit.add_argument("--documentation", type=Path, default=Path("references/documentation"))
     draw = commands.add_parser(
         "draw-figures",
         help="draw the figures of the README, in a light and a dark version, from the results of "
@@ -224,7 +235,7 @@ def main(argv: list[str] | None = None) -> None:
         for path in detection.write(args.output, found, detected, start, end, run):
             print(path)
     elif args.command == "audit-perimeter":
-        for path in audit_perimeter(args.output, args.self_consumption):
+        for path in audit_perimeter(args.output, args.self_consumption, args.documentation):
             print(path)
     elif args.command == "draw-figures":
         drawn = f"Drawn on {date.today().isoformat()} at commit {(git_commit() or 'unknown')[:12]}."
@@ -399,10 +410,10 @@ def estimate_modulation(
     return [*written, path]
 
 
-def audit_perimeter(output: Path, sdes_dir: Path) -> list[Path]:
-    """Levels of the published series against Eurostat gross production, the error of their gap
-    and the detection threshold it gives, and whether each series includes self-consumption
-    (evaluation plan, axis 3)."""
+def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> list[Path]:
+    """Levels of the published series against Eurostat gross production, the errors and detection
+    thresholds of both dimensions, the decision of each year, and the matrix of axis 3 that
+    combines them with what the producers state (evaluation plan, axis 3)."""
     # The reference series are imported here only, so that calibrate never loads them.
     from eu_solar_wind_audit import perimeter, references
 
@@ -421,6 +432,7 @@ def audit_perimeter(output: Path, sdes_dir: Path) -> list[Path]:
             technology: sdes.download_dashboard(client, media)
             for technology, media in SDES_WORKBOOKS.items()
         }
+        register = odre.fetch_register(client)
     eco2mix = {name: perimeter.annual_energy(hourly) for name, hourly in eco2mix_hourly.items()}
     smard_hourly = {
         technology: smard.fetch_hourly_feed_in("DE", technology, start, end)
@@ -496,30 +508,60 @@ def audit_perimeter(output: Path, sdes_dir: Path) -> list[Path]:
         .reset_index()
     )
 
-    table = perimeter.levels(published, gross, inside, self_consumption)
-    errors = perimeter.gap_errors(table)
-    error = perimeter.error_rms(errors)
-    threshold = perimeter.detection_threshold(error)
-    decided = table.assign(decision=perimeter.decide(table, threshold))
+    units_path = mastr.OUTPUT_DIR / "mastr_units.parquet"
+    if not units_path.exists():
+        mastr.extract_capacity()
+    units = pd.read_parquet(units_path)
+    last_year_end = pd.Timestamp(f"{gross['year'].max()}-12-31")
+    distribution = pd.Series(
+        {
+            "FR": 1 - odre.transmission_share(register, "Eolien"),
+            "DE": 1 - mastr.transmission_share(units, WIND_TECHNOLOGIES, last_year_end),
+        }
+    )
+
+    table = perimeter.levels(published, gross, inside, self_consumption, distribution)
+    errors = {
+        "self_consumption": perimeter.gap_errors(table),
+        "distribution": perimeter.wind_errors(table),
+    }
+    rms = {dimension: perimeter.error_rms(values) for dimension, values in errors.items()}
+    thresholds = {
+        dimension: perimeter.detection_threshold(value) for dimension, value in rms.items()
+    }
+    decided = table.assign(
+        self_consumption=perimeter.decide_self_consumption(table, thresholds["self_consumption"]),
+        distribution=perimeter.decide_distribution(table, thresholds["distribution"]),
+    )
+    matrix = perimeter.cells(decided, references.load_documentation(documentation_dir))
     manifest = json.loads((sdes_dir / "manifest.json").read_text(encoding="utf-8"))
+    mastr_export = json.loads(units_path.with_suffix(".json").read_text())["export_date"]
     summary = {
         "git_describe": git_describe(),
         "eurostat": {"dataset": "nrg_bal_peh", "updated": release.updated.isoformat()},
         "sdes_self_consumption": manifest["files"][references.SDES_FILE]["source"],
-        "gap_errors": errors.reset_index().to_dict(orient="records"),
-        "gap_error_rms": error,
-        "detection_threshold": threshold,
-        "content": {
-            series: perimeter.verdict(rows["decision"])
-            for series, rows in decided.groupby("series")
+        "distribution_share": {
+            "values": distribution.to_dict(),
+            "FR": f"ODRÉ {odre.REGISTER}, wind outside the grid of RTE",
+            "DE": f"Marktstammdatenregister export of {mastr_export}, wind on land below "
+            f"extra-high voltage, at {last_year_end.date()}",
         },
+        "errors": {
+            dimension: values.reset_index().to_dict(orient="records")
+            for dimension, values in errors.items()
+        },
+        "error_rms": rms,
+        "detection_threshold": thresholds,
+        "cells": matrix.to_dict(orient="records"),
     }
     output.mkdir(parents=True, exist_ok=True)
     levels_path = output / "perimeter-levels.parquet"
     decided.to_parquet(levels_path)
+    cells_path = output / "perimeter-cells.parquet"
+    matrix.to_parquet(cells_path)
     summary_path = output / "perimeter.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    return [levels_path, summary_path]
+    return [levels_path, cells_path, summary_path]
 
 
 def draw_week(output: Path, parameters: Country, fits_dir: Path, drawn: str) -> list[Path]:

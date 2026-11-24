@@ -26,7 +26,7 @@ its date and reason in the plan's Deviations section.
 |---|---|---|
 | 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 |
 | 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 |
-| 3. Content of the series | Level against Eurostat: inconclusive | Level against Eurostat: SMARD excludes self-consumption |
+| 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete |
 | 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) |
 
 The Netherlands and Denmark follow, then Belgium, Spain, Portugal, Italy, Austria and Poland, each
@@ -112,21 +112,23 @@ within 10 MWh a day on every day of 2025 but two periods, both found by the dete
 the national total is below the sum (DE-2), and 3 to 10 December, when TransnetBW is published as
 zero while the national total keeps its output, up to 15.5 GWh a day (DE-1).
 
-### Self-consumption in the published solar series
+### What the published series contain
 
-Each published series is set against Eurostat gross production, which counts self-consumed
-output, solar against wind: a series that leaves out a self-consumed share s of solar output falls
-short of Eurostat by log(1 − s) more than its wind does. With the error of this gap measured on the
-series whose content is known, a share is detected from 9.1 %.
+Each series is placed in the matrix of the plan from two types of evidence that must agree: its
+yearly level against Eurostat gross production, solar against wind, and what its producer states,
+quoted in `references/documentation`. A self-consumed share of solar output is detected from
+9.1 %, a share of wind capacity left out from 4.1 %.
 
-| Series | Self-consumed share of solar output, 2019 to 2024 | Content from the level |
-|---|---|---|
-| SMARD feed-in, Germany | 6.0 % to 19.7 % | Excluded, decided on 2022-2024 |
-| Energy-Charts total power, Germany | 6.0 % to 19.7 % | Included, decided on 2022-2024 |
-| éCO2mix, mainland France | 1.0 % to 7.1 % | Inconclusive: below the threshold every year |
+| Series | Self-consumption | Distribution grids | Cell |
+|---|---|---|---|
+| SMARD, Germany | Excluded, decided on 2022-2024 | Covered | Feed-in only |
+| Energy-Charts total power, Germany | Included, decided on 2022-2024 | Covered | Complete |
+| éCO2mix, mainland France | Inconclusive: 1.0 % to 7.1 % of solar output | Covered | Inconclusive |
 
-RTE counts self-consumption in its production figures; the French share is too small for yearly
-statistics to confirm it. Details in [docs/perimeter-2019-2024.md](docs/perimeter-2019-2024.md).
+The two German series share their fleet and weather and land in different cells, as their
+producers state. RTE counts self-consumption in its production figures, but the French share is
+too small for yearly statistics to confirm it. Details in
+[docs/perimeter-2019-2024.md](docs/perimeter-2019-2024.md).
 
 ### Output modulated during negative prices in mainland France
 
@@ -181,7 +183,7 @@ when home batteries and self-consumption take the midday output. Details in
   against a second source.
 - **Content of the series.** Yearly published output against Eurostat gross production, solar
   against wind, with a detection threshold from the error measured on the series whose content is
-  known.
+  known, combined with what each producer states.
 - **Modulation.** Signed sums over the negative-price hours; 90 % intervals from a stationary
   bootstrap of days that refits the calibration and draws the capacity and the DC/AC ratio; a
   minimal detectable effect; a placebo on low positive prices and an injection-recovery test.
@@ -233,6 +235,7 @@ The results on this page use:
 France: RTE, éCO2mix data via ODRÉ, Licence Ouverte 2.0, retrieved on 22 and 23 November 2026.
 France, negative-price modulation: source RTE, analysesetdonnees.rte-france.com, last updated 20 November 2026.
 Service des données et études statistiques (SDES), quarterly solar and wind capacity tables; L'autoconsommation d'électricité en France, 2 October 2026.
+France, national register of production installations at the end of 2024: RTE, Enedis, EDF SEI and local distribution operators, via ODRÉ, Licence Ouverte 2.0.
 Germany: Bundesnetzagentur | SMARD.de, CC BY 4.0.
 Germany, unit register: Bundesnetzagentur, Marktstammdatenregister, dl-de/by-2-0 (www.govdata.de/dl-de/by-2-0), export of 2026-10-01; data changed.
 Germany, administrative boundaries: © BKG (2026) dl-de/by-2-0 (Daten verändert).
