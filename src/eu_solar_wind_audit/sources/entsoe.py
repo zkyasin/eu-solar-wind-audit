@@ -15,6 +15,7 @@ import itertools
 import os
 import time
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
@@ -146,15 +147,9 @@ def parse_energy(content: bytes, domain: str) -> pd.Series:
     (ENTSO-E, "The introduction of different time series possibilities (CurveType) within ENTSO-E
     electronic documents", version 1.4, section 4.3). Positions missing from a period, and
     intervals between disjoint periods, are gaps (section 5)."""
-    root = ET.fromstring(content)
-    namespace = {"m": root.tag[1:].split("}")[0]}
-    if root.tag.endswith("Acknowledgement_MarketDocument"):
-        reasons = root.findall("m:Reason", namespace)
-        codes = [_text(reason, "m:code", namespace) for reason in reasons]
-        if codes == [NO_DATA]:
-            return _energy([])
-        texts = [reason.findtext("m:text", default="", namespaces=namespace) for reason in reasons]
-        raise EntsoeError(f"reasons {', '.join(codes)}: {' '.join(texts)}")
+    root, namespace = _root(content)
+    if _no_data(root, namespace):
+        return _energy([])
     periods = []
     for series in root.findall("m:TimeSeries", namespace):
         if series.find(f"m:{domain}", namespace) is None:
@@ -203,21 +198,41 @@ def _answer(
     end: pd.Timestamp,
     cache_dir: Path,
 ) -> pd.Series:
-    """Quarter-hour energies of the answer to `query` over [start, end), read from the cache
-    when it holds them. A settled answer is cached once it parses, so a refusal never is."""
-    params = {**query, "periodStart": f"{start:%Y%m%d%H%M}", "periodEnd": f"{end:%Y%m%d%H%M}"}
+    """Quarter-hour energies of the answer to `query` over [start, end)."""
+    return _cached(
+        client,
+        _period(query, start, end),
+        lambda content: parse_energy(content, domain),
+        end + SETTLED_AFTER <= pd.Timestamp.now(tz="UTC"),
+        cache_dir,
+    )
+
+
+def _cached[Parsed](
+    client: httpx.Client,
+    params: dict[str, str],
+    parse: Callable[[bytes], Parsed],
+    settled: bool,
+    cache_dir: Path,
+) -> Parsed:
+    """`parse` of the answer to `params`, read from the cache when it holds it. A settled answer
+    is cached once it parses, so a refusal never is."""
     path = cache_dir / f"{'_'.join(params.values())}.xml"
     if path.exists():
-        return parse_energy(path.read_bytes(), domain)
+        return parse(path.read_bytes())
     content = _get(client, params)
-    energy = parse_energy(content, domain)
-    if end + SETTLED_AFTER <= pd.Timestamp.now(tz="UTC"):
+    parsed = parse(content)
+    if settled:
         path.parent.mkdir(parents=True, exist_ok=True)
         # Write under a temporary name so that an interrupted write never looks complete.
         partial = path.with_name(path.name + ".part")
         partial.write_bytes(content)
         partial.replace(path)
-    return energy
+    return parsed
+
+
+def _period(query: dict[str, str], start: pd.Timestamp, end: pd.Timestamp) -> dict[str, str]:
+    return {**query, "periodStart": f"{start:%Y%m%d%H%M}", "periodEnd": f"{end:%Y%m%d%H%M}"}
 
 
 def _get(client: httpx.Client, params: dict[str, str]) -> bytes:
@@ -259,6 +274,25 @@ def _period_energy(period: ET.Element, curve: str, namespace: dict[str, str]) ->
     quarters = pd.date_range(start, end, freq=QUARTER, inclusive="left", unit="ns")
     energy = np.repeat(power.to_numpy(), step // QUARTER) * (QUARTER / grid.HOUR)
     return pd.Series(energy, index=quarters)
+
+
+def _root(content: bytes) -> tuple[ET.Element, dict[str, str]]:
+    """The root element of a document and the namespace of its elements, as prefix m."""
+    root = ET.fromstring(content)
+    return root, {"m": root.tag[1:].split("}")[0]}
+
+
+def _no_data(root: ET.Element, namespace: dict[str, str]) -> bool:
+    """Whether `root` acknowledges that no data matches the query. Any other acknowledgement
+    raises EntsoeError; a market document gives False."""
+    if not root.tag.endswith("Acknowledgement_MarketDocument"):
+        return False
+    reasons = root.findall("m:Reason", namespace)
+    codes = [_text(reason, "m:code", namespace) for reason in reasons]
+    if codes == [NO_DATA]:
+        return True
+    texts = [reason.findtext("m:text", default="", namespaces=namespace) for reason in reasons]
+    raise EntsoeError(f"reasons {', '.join(codes)}: {' '.join(texts)}")
 
 
 def _text(element: ET.Element, path: str, namespace: dict[str, str]) -> str:
