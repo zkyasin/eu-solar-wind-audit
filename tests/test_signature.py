@@ -1,10 +1,14 @@
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 from scipy.stats import norm
 
-from eu_solar_wind_audit import signature
+from eu_solar_wind_audit import cli, signature
 from eu_solar_wind_audit.evaluation import SEASON_OF_MONTH
+from eu_solar_wind_audit.sources import energy_charts
 
 # Raw model output of each sky class at the midday hours, for a capacity of 2,000 MW.
 POTENTIAL_MWH = {"clear": 1000.0, "mixed": 600.0, "overcast": 300.0}
@@ -159,3 +163,41 @@ def test_the_evidence_is_used_only_when_both_controls_pass(
     found = signature.controls(control_rows(eco2mix, smard))
 
     assert (found["negative_control"], found["positive_control"], found["used"]) == expected
+
+
+def test_the_command_writes_the_contrasts_and_the_controls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    french, german = predictions(WHOLE_OUTPUT)[1], predictions(FEED_IN)[1]
+    for name, frame in {"calibration-fr": french, "calibration-de": german}.items():
+        (tmp_path / name).mkdir()
+        frame.to_parquet(tmp_path / name / "solar-predictions.parquet")
+    # Energy-Charts total power: the feed-in times a factor of the month.
+    total = pd.DataFrame({"energy_mwh": german["published_mwh"] * 1.25, "complete": True})
+
+    def fetch_hourly_power(start: pd.Timestamp, end: pd.Timestamp) -> dict[str, pd.DataFrame]:
+        assert (start, end) == (german.index[0], german.index[-1] + pd.Timedelta(hours=1))
+        return {"total.solar": total}
+
+    monkeypatch.setattr(energy_charts, "fetch_hourly_power", fetch_hourly_power)
+    output = tmp_path / "signature"
+
+    cli.main(
+        [
+            "feed-in-signature",
+            str(output),
+            "--calibration-fr",
+            str(tmp_path / "calibration-fr"),
+            "--calibration-de",
+            str(tmp_path / "calibration-de"),
+        ]
+    )
+
+    summary = json.loads((output / "feed-in-signature.json").read_text(encoding="utf-8"))
+    assert summary["controls"] == {"negative_control": True, "positive_control": True, "used": True}
+    assert set(summary["predictions"]) == {"FR", "DE"}
+    rows = pd.read_parquet(output / "feed-in-signature.parquet")
+    overall = rows[(rows["season"] == "all") & (rows["min_capacity_factor"] == 0)]
+    estimates = overall.set_index("series")["estimate"]
+    assert estimates["energy_charts_total"] == pytest.approx(estimates["smard"])
+    assert len(summary["contrasts"]) == 6
