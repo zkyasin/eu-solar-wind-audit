@@ -1,10 +1,16 @@
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
 from pandera.typing import DataFrame
 
-from eu_solar_wind_audit import perimeter
+from eu_solar_wind_audit import cli, perimeter
 from eu_solar_wind_audit.detectability import Z_SUM
+from eu_solar_wind_audit.sources import energy_charts, eurostat, odre, sdes, smard
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def hourly(start: str, end: str, energy_mwh: float) -> pd.DataFrame:
@@ -178,3 +184,58 @@ def test_a_series_takes_the_content_its_decided_years_agree_on(
     decisions: list[str], expected: str
 ) -> None:
     assert perimeter.verdict(pd.Series(decisions)) == expected
+
+
+def test_the_command_writes_the_levels_and_the_content_of_each_series(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def constant(start: pd.Timestamp, end: pd.Timestamp, energy_mwh: float) -> pd.DataFrame:
+        return hourly(str(start.tz_convert(None)), str(end.tz_convert(None)), energy_mwh)
+
+    def gross(**_: object) -> eurostat.Release:
+        return eurostat.parse_gross_production(
+            (FIXTURES / "eurostat" / "nrg_bal_peh.csv").read_bytes()
+        )
+
+    def national_hourly(
+        client: object, series: str, start: pd.Timestamp, end: pd.Timestamp, **_: object
+    ) -> pd.DataFrame:
+        return constant(start, end, 2000.0)
+
+    def download_dashboard(client: object, media_id: int, **_: object) -> Path:
+        name = (
+            "solaire-pv-2026-t2.xlsx" if media_id == sdes.SOLAR_2026_Q2 else "eolien-2026-t2.xlsx"
+        )
+        return FIXTURES / "sdes" / name
+
+    def feed_in(
+        region: str, technology: str, start: pd.Timestamp, end: pd.Timestamp, **_: object
+    ) -> pd.DataFrame:
+        return constant(start, end, 5000.0)
+
+    def power(start: pd.Timestamp, end: pd.Timestamp, **_: object) -> dict[str, pd.DataFrame]:
+        series = {
+            f"{perimeter_name}.{technology}": constant(start, end, 5000.0)
+            for perimeter_name in ["public", "total"]
+            for technology in ["solar", "wind_onshore", "wind_offshore"]
+        }
+        series["self_consumption.solar"] = constant(start, end, 500.0)
+        return series
+
+    monkeypatch.setattr(eurostat, "fetch_gross_production", gross)
+    monkeypatch.setattr(odre, "national_hourly", national_hourly)
+    monkeypatch.setattr(sdes, "download_dashboard", download_dashboard)
+    monkeypatch.setattr(smard, "fetch_hourly_feed_in", feed_in)
+    monkeypatch.setattr(energy_charts, "fetch_hourly_power", power)
+
+    cli.main(["audit-perimeter", str(tmp_path)])
+
+    table = pd.read_parquet(tmp_path / "perimeter-levels.parquet")
+    summary = json.loads((tmp_path / "perimeter.json").read_text())
+    assert set(table["series"]) == set(perimeter.SERIES)
+    assert set(table["year"]) == set(range(2019, 2025))
+    assert set(table["decision"]) <= {"included", "excluded", "inconclusive"}
+    assert set(summary["content"]) == set(perimeter.SERIES)
+    assert len(summary["gap_errors"]) == 12
+    assert 0 < summary["detection_threshold"] < 1
+    assert summary["eurostat"]["updated"] == "2026-06-02T23:00:00"
