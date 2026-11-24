@@ -35,6 +35,7 @@
         <ul>
           <li><a href="#model">Model</a></li>
           <li><a href="#anomalies">Anomalies</a></li>
+          <li><a href="#content">Content</a></li>
         </ul>
       </nav>
       <a class="repo-link" href="https://github.com/zkyasin/eu-solar-wind-audit">
@@ -158,6 +159,36 @@
       </div>
     </section>
 
+    <section class="chapter" id="content" aria-labelledby="content-title">
+      <div class="chapter-head">
+        <p class="chapter-number">03 <span>Content of the series</span></p>
+        <h2 id="content-title">What each published series counts</h2>
+        <p class="intro">Two series of the same fleet can differ by the output its owners consume on site, or by the farms on distribution grids. Before countries are compared, each series is placed in a matrix from two kinds of evidence that must agree: its yearly level against Eurostat gross production, and what its producer states.</p>
+        <p class="intro">Germany and Denmark serve as validation cases: each publishes a feed-in series and a total, and both pairs land where their producers say.</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/perimeter-2019-2024.md">The matrix and its controls</a>
+      </div>
+      <div class="chapter-body">
+        <figure class="chart">
+          <ul class="legend" id="content-legend"></ul>
+          <div class="plot" id="content-plot"></div>
+          <figcaption id="content-caption">Published solar output over Eurostat gross solar production, each year.</figcaption>
+        </figure>
+        <div class="table-scroll">
+          <table id="matrix">
+            <thead>
+              <tr>
+                <th scope="col">Series</th>
+                <th scope="col">Self-consumption</th>
+                <th scope="col">Distribution grids</th>
+                <th scope="col">Against its producer</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="note" id="matrix-note"></p>
+      </div>
+    </section>
 
 
   </main>

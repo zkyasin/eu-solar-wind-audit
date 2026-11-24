@@ -1101,3 +1101,150 @@ h3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
+
+/* Tables. */
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  margin: 0.25rem 0 0.5rem;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  padding: 0.5625rem 0 0.5625rem 1.25rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+:is(th, td):first-child {
+  padding-left: 0;
+}
+
+thead th {
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  vertical-align: bottom;
+}
+
+tbody th {
+  font-weight: 500;
+}
+
+tbody th small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
+/* Chapter 03: the content matrix. */
+
+#matrix {
+  margin-top: 0.5rem;
+}
+
+.state,
+.verdict-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4375rem;
+  white-space: nowrap;
+}
+
+.state::before,
+.verdict-chip::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--dim);
+}
+
+.state-included::before,
+.state-covered::before {
+  background: var(--third);
+}
+
+.state-excluded::before {
+  background: var(--published);
+}
+
+.state-not_covered::before {
+  background: var(--flag);
+}
+
+.state-inconclusive {
+  color: var(--muted);
+}
+
+.state-inconclusive::before,
+.verdict-inconclusive::before {
+  border: 1px solid var(--muted);
+  background: transparent;
+}
+
+.verdict-pass::before {
+  background: var(--third);
+}
+
+.verdict-fail::before {
+  background: var(--flag);
+}
+
+.verdict-inconclusive {
+  color: var(--muted);
+}
+
+/* On a phone each series of the matrix is a card, every value under its column name. */
+@media (max-width: 40rem) {
+  #matrix thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  #matrix tr {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.5rem 0.75rem;
+    padding: 0.875rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  #matrix :is(th, td) {
+    padding: 0;
+    border: 0;
+  }
+
+  #matrix tbody th {
+    grid-column: 1 / -1;
+  }
+
+  #matrix tbody th small {
+    display: inline;
+    margin-left: 0.375rem;
+  }
+
+  #matrix td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.125rem;
+    color: var(--muted);
+    font-size: 0.75rem;
+  }
+
+  #matrix td {
+    font-size: 0.8125rem;
+  }
+}
