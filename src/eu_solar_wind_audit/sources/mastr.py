@@ -73,6 +73,18 @@ CONTROL_AREA_CODES = {
     1001572: ("TransnetBW", "TransnetBW"),
 }
 CONTROL_AREAS = tuple(name for _, name in CONTROL_AREA_CODES.values())
+# Voltage levels of the grid connection points. In Germany the four transmission system operators
+# run the extra-high voltage grid; the 110 kV grid and below are distribution grids.
+VOLTAGE_CODES = {
+    348: ("Höchstspannung", "extra_high"),
+    349: ("Umspannebene Höchstspannung/Hochspannung", "extra_high_to_high"),
+    350: ("Hochspannung", "high"),
+    351: ("Umspannebene Hochspannung/Mittelspannung", "high_to_medium"),
+    352: ("Mittelspannung", "medium"),
+    353: ("Umspannebene Mittelspannung/Niederspannung", "medium_to_low"),
+    354: ("Niederspannung (= Hausanschluss/Haushaltsstrom)", "low"),
+}
+TRANSMISSION_VOLTAGES = ("extra_high", "extra_high_to_high")
 # Main orientation and tilt of the modules of a solar unit, whether a unit feeds all its output
 # or only what its owner does not consume, and the limit on its feed-in (EEG 2012 to 2021: 70 %
 # of the module power for small units without remote control).
@@ -128,6 +140,7 @@ COMMON_FIELDS = {
 CONNECTION_FIELDS = {
     "LokationMaStRNummer": "location_id",
     "RegelzoneNetzanschlusspunkt": "control_area",
+    "Spannungsebene": "voltage",
 }
 SOLAR_FIELDS = {
     **COMMON_FIELDS,
@@ -191,6 +204,7 @@ class Units(pa.DataFrameModel):
     # Most units point to a generation location (SEL), some to a consumption location (SVL).
     location_id: Series[str] = pa.Field(nullable=True, str_matches=r"^[A-Z]{3}\d{12}$")
     control_area: Series[str] = pa.Field(nullable=True, isin=_names(CONTROL_AREA_CODES))
+    voltage: Series[str] = pa.Field(nullable=True, isin=_names(VOLTAGE_CODES))
 
     class Config:
         strict = True
@@ -363,7 +377,9 @@ def read_units(path: Path) -> DataFrame[Units]:
         )
     text = ["sea", "cluster", "wind_farm", "feed_in", "orientation", "tilt", "feed_in_limit"]
     units = pd.concat(frames, ignore_index=True).astype(dict.fromkeys(text, "str"))
-    units["control_area"] = units["location_id"].map(_control_areas(points)).astype("str")
+    for column, codes in [("control_area", CONTROL_AREA_CODES), ("voltage", VOLTAGE_CODES)]:
+        found = _location_values(points, column, codes)
+        units[column] = units["location_id"].map(found).astype("str")
     return Units.validate(units[list(Units.to_schema().columns)])
 
 
@@ -400,6 +416,22 @@ def monthly_capacity(
     panel["month_end"] = panel["month_end"].astype("datetime64[ns]")
     panel = panel.sort_values(["month_end", "technology", "district"], ignore_index=True)
     return MonthlyCapacity.validate(panel)
+
+
+def transmission_share(
+    units: pd.DataFrame, technologies: Sequence[str], as_of: pd.Timestamp
+) -> float:
+    """Share of the net power of the units of `technologies` in operation at `as_of` that feeds
+    the transmission grid: offshore wind, which the transmission system operators connect whatever
+    the voltage of its connection point, and the units at TRANSMISSION_VOLTAGES. Units on land
+    whose location has no single voltage are left out."""
+    active = pd.concat([_active(units, technology, as_of) for technology in technologies])
+    offshore = active["technology"].eq("wind_offshore")
+    known = active[offshore | active["voltage"].notna()]
+    transmission = known["technology"].eq("wind_offshore") | known["voltage"].isin(
+        TRANSMISSION_VOLTAGES
+    )
+    return float(known.loc[transmission, "net_kw"].sum() / known["net_kw"].sum())
 
 
 def offshore_wind(units: pd.DataFrame, as_of: pd.Timestamp) -> DataFrame[OffshoreWind]:
@@ -566,6 +598,7 @@ def _read_catalogue(archive: zipfile.ZipFile) -> dict[int, str]:
         FEED_IN_CODES,
         FEED_IN_LIMIT_CODES,
         CONTROL_AREA_CODES,
+        VOLTAGE_CODES,
     )
     expected = {code: name for codes in tables for code, (name, _) in codes.items()}
     changed = {
@@ -632,14 +665,16 @@ def _common(raw: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
-def _control_areas(points: pd.DataFrame) -> "pd.Series[str]":
-    """The control area of each location of the grid connection `points`, those of a single
-    control area only."""
-    found = points.assign(control_area=_decode(points["control_area"], CONTROL_AREA_CODES))
+def _location_values(
+    points: pd.DataFrame, column: str, codes: dict[int, tuple[str, str]]
+) -> "pd.Series[str]":
+    """The decoded `column` of each location of the grid connection `points`, for the locations
+    whose points all give the same value."""
+    found = points[["location_id", column]].assign(**{column: _decode(points[column], codes)})
     found = found.dropna().drop_duplicates()
     single = found[~found["location_id"].duplicated(keep=False)]
-    areas: pd.Series[str] = single.set_index("location_id")["control_area"]
-    return areas
+    values: pd.Series[str] = single.set_index("location_id")[column]
+    return values
 
 
 def _decode(codes: "pd.Series[str]", table: dict[int, tuple[str, str]]) -> "pd.Series[str]":

@@ -16,8 +16,9 @@ from eu_solar_wind_audit.sources import mastr
 # original UTF-16 LE records byte for byte: 25 units of EinheitenWind.xml plus SEE973525112162 and
 # SEE901254459012 (former district keys), 6 + 5 units of EinheitenSolar_30.xml split into
 # EinheitenSolar_1.xml and EinheitenSolar_2.xml, and the Katalogwerte.xml values of categories 4,
-# 39, 87, 107 and 108. The values of categories 33, 34, 52, 65 and 76 and Netzanschlusspunkte_1.xml,
-# the 23 grid connection points of the units' locations, were added from parsed records.
+# 39, 87, 107 and 108. The values of categories 15, 33, 34, 52, 65 and 76 and
+# Netzanschlusspunkte_1.xml, the 23 grid connection points of the units' locations, were added
+# from parsed records.
 FIXTURES = Path(__file__).parent / "fixtures" / "mastr"
 EXPORT = FIXTURES / "Gesamtdatenexport_20261001_26.1.zip"
 ZIP_TYPE = "application/x-zip-compressed"
@@ -310,7 +311,12 @@ def test_offshore_units_have_a_sea_and_cluster_but_no_district(units: pd.DataFra
 
 @pytest.mark.parametrize(
     ("old", "new"),
-    [("In Betrieb", "Aktiv"), ("Ost-West", "Ost/West"), ("TransnetBW", "Transnet BW")],
+    [
+        ("In Betrieb", "Aktiv"),
+        ("Ost-West", "Ost/West"),
+        ("TransnetBW", "Transnet BW"),
+        ("Höchstspannung</Wert>", "Hoechstspannung</Wert>"),
+    ],
 )
 def test_a_changed_catalogue_is_refused(tmp_path: Path, old: str, new: str) -> None:
     export = export_with(tmp_path, mastr.CATALOGUE_MEMBER, old, new)
@@ -351,6 +357,65 @@ def test_a_location_in_two_control_areas_has_none(tmp_path: Path) -> None:
 
     assert pd.isna(unit(units, "SEE983469276431")["control_area"])
     assert unit(units, "SEE945477027818")["control_area"] == "TenneT"
+
+
+def test_units_take_the_voltage_of_their_location(units: pd.DataFrame) -> None:
+    assert unit(units, "SEE983469276431")["voltage"] == "medium"
+    assert unit(units, "SEE945477027818")["voltage"] == "low"
+    assert unit(units, "SEE940146675093")["voltage"] == "high"
+    assert unit(units, "SEE919087229481")["voltage"] == "extra_high"
+    assert pd.isna(unit(units, "SEE921643140857")["voltage"])
+
+
+def test_a_location_at_two_voltages_has_none(tmp_path: Path) -> None:
+    point_at_low_voltage = (
+        "<Netzanschlusspunkt><LokationMaStRNummer>SEL921339176207</LokationMaStRNummer>"
+        "<Spannungsebene>354</Spannungsebene></Netzanschlusspunkt>"
+    )
+    export = export_with(
+        tmp_path,
+        "Netzanschlusspunkte_1.xml",
+        "</Netzanschlusspunkte>",
+        point_at_low_voltage + "</Netzanschlusspunkte>",
+    )
+
+    units = mastr.read_units(export)
+
+    assert pd.isna(unit(units, "SEE983469276431")["voltage"])
+    assert unit(units, "SEE983469276431")["control_area"] == "50Hertz"
+
+
+# Wind in operation at the end of September 2026: offshore turbines of 49,610 kW, all fed into the
+# transmission grid whatever their voltage, and onshore turbines of 24,326 kW with a voltage,
+# none of them at extra-high voltage.
+OFFSHORE_KW = 49_610.0
+ONSHORE_KW = 24_326.0
+WIND = ["wind_onshore", "wind_offshore"]
+
+
+def test_offshore_wind_feeds_the_transmission_grid(units: pd.DataFrame) -> None:
+    share = mastr.transmission_share(units, WIND, pd.Timestamp("2026-09-30"))
+
+    assert share == pytest.approx(OFFSHORE_KW / (OFFSHORE_KW + ONSHORE_KW))
+
+
+def test_onshore_units_at_extra_high_voltage_feed_the_transmission_grid(tmp_path: Path) -> None:
+    # The connection point of SEE940146675093, a 3,000 kW turbine at 110 kV.
+    measuring_point = "<Messlokation>DE0003323426000000000010000240156</Messlokation>"
+    export = export_with(
+        tmp_path,
+        "Netzanschlusspunkte_1.xml",
+        measuring_point + "<Spannungsebene>350</Spannungsebene>",
+        measuring_point + "<Spannungsebene>348</Spannungsebene>",
+    )
+
+    share = mastr.transmission_share(mastr.read_units(export), WIND, pd.Timestamp("2026-09-30"))
+
+    assert share == pytest.approx((OFFSHORE_KW + 3_000.0) / (OFFSHORE_KW + ONSHORE_KW))
+
+
+def test_no_solar_unit_of_the_fixture_feeds_the_transmission_grid(units: pd.DataFrame) -> None:
+    assert mastr.transmission_share(units, ["solar"], pd.Timestamp("2026-09-30")) == 0.0
 
 
 @pytest.mark.parametrize(
