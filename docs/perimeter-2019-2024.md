@@ -26,7 +26,8 @@ eu-solar-wind-audit audit-perimeter data/processed/perimeter
 - No validation series is placed in a wrong cell. The Netherlands, the validation case of a series
   without its distribution grids, waits for access to the ENTSO-E Transparency Platform.
 - The feed-in signature, a third type of evidence, fails its positive control and is not used
-  ([Feed-in signature](#feed-in-signature)).
+  ([Feed-in signature](#feed-in-signature)). The consumption signature, a fourth one, fails its
+  negative control ([Consumption signature](#consumption-signature)).
 
 ## What the producers state
 
@@ -173,6 +174,50 @@ positive control, does.
   the SMARD feed-in times one factor (from 1.04 to 1.75 over 2019-2025), so it holds
   self-consumption in its monthly and yearly sums, not hour by hour.
 
+## Consumption signature
+
+```
+eu-solar-wind-audit consumption-signature data/processed/signature
+```
+
+A load series that leaves out self-consumption is the consumption less the solar output consumed on
+site. It should fall at the hours of high solar output, more on a sunny day than on an overcast one
+at the same hour and date, and a load series that includes self-consumption should not (evidence 5
+of the plan). The negative control is éCO2mix consumption, which includes self-consumption (RTE,
+Bilan électrique 2025, page 9); the positive control is the SMARD load, computed from the feed-in,
+the exchanges and the pumping (SMARD handbook, section 2.1.1).
+
+The dip of a series is the coefficient of the physics model with nominal parameters in its hourly
+load, both in MWh, with one effect per local day, which takes the level of the day, and one per
+cell of local hour, month, year and day type, which takes its usual profile. The hours are those of
+2019-2025 with positive modelled output and a published load, whatever their price, and the
+standard errors are clustered by day. A series shows the signature when the 90 % interval of its
+dip lies below zero. This rule was logged in the plan before the first run.
+
+| Season | éCO2mix consumption | SMARD load |
+|---|---|---|
+| Year | −0.085 (−0.102 to −0.068) | −0.071 (−0.076 to −0.065) |
+| Winter | −0.252 (−0.290 to −0.214) | −0.062 (−0.072 to −0.052) |
+| Spring | −0.138 (−0.171 to −0.106) | −0.083 (−0.093 to −0.074) |
+| Summer | +0.076 (+0.052 to +0.099) | −0.069 (−0.078 to −0.059) |
+| Autumn | −0.036 (−0.063 to −0.009) | −0.056 (−0.066 to −0.047) |
+
+MWh of load per MWh of modelled solar output, with the 90 % interval.
+
+- The negative control fails. French consumption includes self-consumption, yet it falls by 0.085
+  MWh per MWh of modelled output over the year, about as much as the SMARD load. The evidence is
+  not used.
+- The French dip follows the seasons, from −0.252 in winter to +0.076 in summer, as the
+  confounders named before the run would make it: lighting, which falls with daylight, and
+  heating, which falls with solar gains, in winter; cooling, which rises on sunny afternoons, in
+  summer.
+- The SMARD dip stays between −0.056 and −0.083 in every season. At these hours, modelled solar
+  output is 27.2 % of the German load against 9.9 % of the French one, so the same relative
+  response of the load to the weather gives a coefficient about three times smaller in Germany. The
+  German dip still cannot be split between self-consumption and that response.
+- Splitting them would need a model of how the load responds to temperature and cloud cover, the
+  work of load forecasting. It is not attempted here.
+
 ## Limits
 
 - Eurostat has not published 2025 yet, and the SDES series ends in 2024.
@@ -181,4 +226,5 @@ positive control, does.
   grids for their share of wind output.
 - The self-consumed shares are estimates of the SDES and of Fraunhofer ISE, not measurements.
 - Twelve validation years give imprecise errors, and so imprecise thresholds.
-- The consumption signature, the last type of evidence of the plan, is not used yet.
+- The load series have no cell: besides what their producers state, their only evidence, the
+  consumption signature, fails its negative control.
