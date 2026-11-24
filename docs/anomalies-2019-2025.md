@@ -8,10 +8,11 @@ eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/ano
 eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
 ```
 
-France uses the thresholds of `config/anomaly-thresholds/FR.json`, fixed on 2019-2022 (tag
-`anomaly-thresholds-fr-v1`). Germany has no physics model yet, so it gets the rule-based
-detectors only. Each run writes its findings, the level breaks left unattributed, and a JSON file
-with the SHA-256 of every input series.
+Each country uses the thresholds of `config/anomaly-thresholds/<country>.json`, fixed on 2019-2022
+before any later year was read (tags `anomaly-thresholds-fr-v1` and `anomaly-thresholds-de-v1`).
+The German model covers Germany and each of its four control areas, whose units are placed by the
+grid connection points of the Marktstammdatenregister. Each run writes its findings, the level
+breaks left unattributed, and a JSON file with the SHA-256 of every input series.
 
 A finding is not a defect. The cases below were checked against the raw files of the publisher
 and are written as the tickets that would be sent to it. The other findings follow, with the
@@ -27,12 +28,12 @@ reason they are not attributed to the published data.
 | frozen | 31 | 3 |
 | parts_gap | 19 | 51 |
 | cross_source_gap | 0 | 22 |
-| timestamp_shift | 5 | - |
-| clock_change_jump | 1 | - |
-| residual_outlier | 5 | - |
-| level_break | 4 | - |
+| timestamp_shift | 5 | 0 |
+| clock_change_jump | 1 | 0 |
+| residual_outlier | 5 | 7 |
+| level_break | 4 | 20 |
 | clock_change_convention | 2 | 0 |
-| Level breaks left unattributed | 10 | - |
+| Level breaks left unattributed | 10 | 4 |
 
 Times are in UTC unless a time zone is given.
 
@@ -132,6 +133,16 @@ Times are in UTC unless a time zone is given.
 - Energy-Charts public solar does not carry it, which is how the run found it: 232 hours of
   departure from SMARD between 11 June and 14 July, at the first hours of daylight.
 
+### DE-4. TransnetBW solar, 12 April 2019: published as zero from 16:00 to 20:00
+
+- Series: SMARD feed-in, filter 4068 (solar), region TransnetBW, quarter-hours.
+- The quarter-hour from 15:45 to 16:00 (Berlin) holds 420.75 MWh, and every quarter-hour from
+  16:00 to 20:00 holds 0.00, while the three other control areas decline as the sun sets.
+- Germany carries the hole: from 16:00 to 20:00 it equals the sum of its four control areas, so
+  only the model shows it (`residual_outlier`, 0 MWh published at 16:00 for about 1,160 MWh
+  modelled). At the share of about 18 % that TransnetBW held from 10:00 to 15:00, about 3 GWh are
+  missing from both series.
+
 ## Findings not attributed to the published data
 
 - Zero runs of offshore wind (31 `frozen`): 24 to 96 hours at exactly zero in Normandie (7),
@@ -158,10 +169,29 @@ Times are in UTC unless a time zone is given.
 - éCO2mix clock changes (2 `clock_change_convention`): the datasets publish the same rows for
   every local day, as documented, which repeats the hour after each spring change and leaves out
   the hour before each autumn change.
+- German joint level breaks (20): solar falls by 47 to 84 % and onshore wind by 11 to 26 % at
+  once, in Germany and three of its control areas, from 2 to 21 December 2022, from 20 to
+  28 January 2023 (Amprion) and from 28 November to 8 December 2023. These are snow periods: ERA5
+  puts more than 5 mm water equivalent of snow on 30 to 60 % of the cells of the German box in
+  their middle (12 and 18 December 2022, 22 January 2023, 30 November to 6 December 2023),
+  against 3 to 9 % a week before them. The model knows neither snow on modules nor ice on blades,
+  and snow moves both technologies at once, which the attribution rule reads as a defect of the
+  series.
+- German level breaks left unattributed (4): the TransnetBW onshore wind of DE-1, seen as a step
+  down on 19 November 2025 and back on 15 December; Amprion solar 21 % lower from December 2022
+  on, alone, while German solar feed-in falls against its potential from 2023 on; and 50Hertz
+  onshore wind 6 % lower from December 2020.
+- German residual outliers (7), besides DE-4: five runs of one to five hours of solar in 2021,
+  2022 and 2024, on afternoons when one or two control areas fall far below the model, and 50Hertz
+  onshore wind on the night of 21 January 2019. Without a second source by control area, they
+  cannot be told apart from weather that ERA5 misses.
 
 ## Limits
 
-- Statistical detectors run on France only, and their thresholds rest on 2019-2022.
+- The thresholds rest on 2019-2022. The model knows neither snow cover on modules nor ice on
+  blades, so the level breaks of snowy winters are not claimed.
+- The German control areas get the units without a grid connection point, 13 % of the operating
+  solar units, in proportion to the capacity of their district in each area.
 - A finding against the SDES capacity depends on its quarterly figures, which this project
   interpolates linearly between quarter ends.
 - No case has been reported to its publisher yet.
