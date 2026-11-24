@@ -308,6 +308,26 @@ def test_a_series_classified_against_its_expected_cell_fails_the_validation() ->
     assert row["validation"] == "fail"
 
 
+def test_a_country_without_a_self_consumed_share_keeps_its_levels() -> None:
+    published, gross, inside, self_consumption, distribution = inputs(
+        solar_gwh=80.0, wind_gwh=95.0, share=0.2
+    )
+
+    table = perimeter.levels(published, gross, inside, self_consumption.iloc[:0], distribution)
+
+    (row,) = table.to_dict(orient="records")
+    assert np.isnan(row["self_consumption_share"])
+    assert row["gap"] == pytest.approx(np.log(0.8 / 0.95))
+
+
+def test_an_unknown_self_consumed_share_leaves_the_year_inconclusive() -> None:
+    table = levels_of(
+        [{"series": "smard", "year": 2024, "gap": -0.5, "self_consumption_share": np.nan}]
+    )
+
+    assert perimeter.decide_self_consumption(table, 0.05).tolist() == ["inconclusive"]
+
+
 @pytest.mark.parametrize(
     ("decisions", "expected"),
     [

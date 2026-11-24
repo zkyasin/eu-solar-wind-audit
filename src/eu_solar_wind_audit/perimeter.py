@@ -57,7 +57,8 @@ class Levels(pa.DataFrameModel):
     the series, the published output over the gross production inside that perimeter, the gap
     log(solar ratio / wind ratio), the self-consumed share s of solar output, with the gap it gives
     to a series that leaves it out, log(1 - s), and the share d of wind capacity connected to the
-    distribution grids, with the log wind ratio of a series that leaves them out, log(1 - d)."""
+    distribution grids, with the log wind ratio of a series that leaves them out, log(1 - d). s is
+    null where no estimate is published."""
 
     series: Series[str] = pa.Field(isin=list(SERIES))
     year: Series[int]
@@ -70,8 +71,8 @@ class Levels(pa.DataFrameModel):
     solar_ratio: Series[float]
     wind_ratio: Series[float]
     gap: Series[float]
-    self_consumption_share: Series[float] = pa.Field(ge=0, lt=1)
-    gap_if_excluded: Series[float] = pa.Field(le=0)
+    self_consumption_share: Series[float] = pa.Field(ge=0, lt=1, nullable=True)
+    gap_if_excluded: Series[float] = pa.Field(le=0, nullable=True)
     distribution_share: Series[float] = pa.Field(ge=0, lt=1)
     log_wind_ratio_if_not_covered: Series[float] = pa.Field(le=0)
 
@@ -117,13 +118,13 @@ def levels(
 ) -> DataFrame[Levels]:
     """`Levels` of each series and year found in all the inputs: `published` and `inside` with the
     columns series, year, solar and wind; `gross` with country, year, solar and wind in GWh;
-    `self_consumption` with country, year and share; and `distribution`, the distribution share of
-    wind capacity, indexed by country."""
+    `self_consumption` with country, year and share, for the countries that publish one; and
+    `distribution`, the distribution share of wind capacity, indexed by country."""
     table = (
         published.merge(inside, on=["series", "year"], suffixes=("", "_inside"))
         .assign(country=lambda frame: frame["series"].map(SERIES))
         .merge(gross, on=["country", "year"], suffixes=("", "_gross"))
-        .merge(self_consumption, on=["country", "year"])
+        .merge(self_consumption, on=["country", "year"], how="left")
         .merge(distribution.rename("distribution"), left_on="country", right_index=True)
     )
     solar_ratio = table["solar"] / (table["solar_gross"] * table["solar_inside"])
@@ -183,12 +184,13 @@ def detection_threshold(error: float) -> float:
 
 def decide_self_consumption(table: DataFrame[Levels], threshold: float) -> "pd.Series[str]":
     """Whether the solar output of each row of `table` includes self-consumption: inconclusive
-    when the self-consumed share is below `threshold`, otherwise the content whose gap is closer to
-    the observed one."""
+    when the self-consumed share is unknown or below `threshold`, otherwise the content whose gap
+    is closer to the observed one."""
+    share = table["self_consumption_share"]
     return _decide(
         table["gap"],
         table["gap_if_excluded"],
-        table["self_consumption_share"] < threshold,
+        share.isna() | (share < threshold),
         ("included", "excluded"),
     )
 
