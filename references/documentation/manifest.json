@@ -2,8 +2,8 @@
  "use": "Comparison reference only; calibration code must not read these files.",
  "files": {
   "statements.csv": {
-   "sha256": "1d353b44a064b7ef35a2f1589f090c9e646bdd082ec4d7c82787bdb9a75efed1",
-   "size_bytes": 2616,
+   "sha256": "d267e78dfb91acdef3639f293842bce177a5e3bfe9e88a80fa186c6a8ad2e9ee",
+   "size_bytes": 3534,
    "description": "What the producers of each published series state about its content: one row per series and dimension, with the document, its section and the exact quote, in its original language. Dimension self_consumption: included or excluded; distribution: covered or not_covered. Each quote was found in the text of the document listed below."
   }
  },
@@ -49,6 +49,23 @@
    "retrieved_at": "2026-11-24",
    "sha256": "523d3ec0fd82a7f148a94c02ffc08e8251c231d74e74b6019978af1e64b610d4",
    "size_bytes": 83840
+  },
+  "energinet_settlement_metadata": {
+   "producer": "Energinet",
+   "title": "Energi Data Service, metadata of the dataset ProductionConsumptionSettlement",
+   "url": "https://api.energidataservice.dk/meta/dataset/ProductionConsumptionSettlement",
+   "retrieved_at": "2026-11-24",
+   "sha256": "6d606317fc65825bc09826c33c7e0fedf89343b39c813ad323b0ee83035dc635",
+   "size_bytes": 16205
+  },
+  "energinet_retail_market": {
+   "producer": "Energinet",
+   "title": "The Danish electricity retail market",
+   "url": "https://en.energinet.dk/media/qouleeb5/danish-electricity-retail-market.pdf",
+   "created": "2018-02-12",
+   "retrieved_at": "2026-11-24",
+   "sha256": "eae2e942f18bfcfef94f85030547e8ff45ae9a386f95bfaf1c08d6b9826511ed",
+   "size_bytes": 1342551
   }
  }
 }
