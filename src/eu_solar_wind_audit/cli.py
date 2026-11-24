@@ -22,9 +22,11 @@ from eu_solar_wind_audit import (
     figures,
     fits,
     folds,
+    grid,
     modulation,
     physics,
     placebo,
+    signature,
 )
 from eu_solar_wind_audit.anomalies import breaks, detection, inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
@@ -141,6 +143,19 @@ def main(argv: list[str] | None = None) -> None:
     audit.add_argument("output", type=Path, help="directory of the results")
     audit.add_argument("--self-consumption", type=Path, default=Path("references/sdes"))
     audit.add_argument("--documentation", type=Path, default=Path("references/documentation"))
+    feed_in = commands.add_parser(
+        "feed-in-signature",
+        help="measure how much more the published solar output of éCO2mix, SMARD and "
+        "Energy-Charts total power rises than the raw model from overcast to clear days, from the "
+        "predictions of calibrate, and check the negative and positive controls",
+    )
+    feed_in.add_argument("output", type=Path, help="directory of the results")
+    feed_in.add_argument(
+        "--calibration-fr", type=Path, default=Path("data/processed/calibration-fr")
+    )
+    feed_in.add_argument(
+        "--calibration-de", type=Path, default=Path("data/processed/calibration-de")
+    )
     draw = commands.add_parser(
         "draw-figures",
         help="draw the figures of the README, in a light and a dark version, from the results of "
@@ -236,6 +251,9 @@ def main(argv: list[str] | None = None) -> None:
             print(path)
     elif args.command == "audit-perimeter":
         for path in audit_perimeter(args.output, args.self_consumption, args.documentation):
+            print(path)
+    elif args.command == "feed-in-signature":
+        for path in feed_in_signature(args.output, args.calibration_fr, args.calibration_de):
             print(path)
     elif args.command == "draw-figures":
         drawn = f"Drawn on {date.today().isoformat()} at commit {(git_commit() or 'unknown')[:12]}."
@@ -562,6 +580,48 @@ def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> li
     summary_path = output / "perimeter.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return [levels_path, cells_path, summary_path]
+
+
+def feed_in_signature(output: Path, calibration_fr: Path, calibration_de: Path) -> list[Path]:
+    """Contrasts of the feed-in signature of éCO2mix, SMARD and Energy-Charts total power, from
+    the solar predictions that calibrate wrote to `calibration_fr` and `calibration_de`, and its
+    controls (evaluation plan, axis 3, evidence 4)."""
+    paths = {
+        country: directory / "solar-predictions.parquet"
+        for country, directory in {"FR": calibration_fr, "DE": calibration_de}.items()
+    }
+    french, german = (
+        evaluation.Predictions.validate(pd.read_parquet(path)) for path in paths.values()
+    )
+    hours = pd.DatetimeIndex(german.index)
+    total = energy_charts.fetch_hourly_power(hours[0], hours[-1] + grid.HOUR)["total.solar"]
+    tables = {
+        "eco2mix": signature.hours_table(french["published_mwh"], french, "FR"),
+        "smard": signature.hours_table(german["published_mwh"], german, "DE"),
+        "energy_charts_total": signature.hours_table(
+            total["energy_mwh"].where(total["complete"]).reindex(hours), german, "DE"
+        ),
+    }
+    rows = pd.concat(
+        [signature.contrasts(table).assign(series=name) for name, table in tables.items()],
+        ignore_index=True,
+    )
+    summary = {
+        "git_describe": git_describe(),
+        "predictions": {
+            country: {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+            for country, path in paths.items()
+        },
+        "level": signature.LEVEL,
+        "controls": signature.controls(rows),
+        "contrasts": rows[rows["season"] == "all"].to_dict(orient="records"),
+    }
+    output.mkdir(parents=True, exist_ok=True)
+    rows_path = output / "feed-in-signature.parquet"
+    rows.to_parquet(rows_path)
+    summary_path = output / "feed-in-signature.json"
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return [rows_path, summary_path]
 
 
 def draw_week(output: Path, parameters: Country, fits_dir: Path, drawn: str) -> list[Path]:
