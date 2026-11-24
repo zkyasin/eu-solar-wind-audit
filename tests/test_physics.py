@@ -890,3 +890,21 @@ def test_model_germany_reads_the_mastr_units_and_the_districts(
     assert found["capacity_mw"].iloc[0] == pytest.approx(3.0)
     assert found["energy_mwh"].iloc[0] == pytest.approx(1.5)
     assert not found["capacity_provisional"].any()
+
+
+def test_each_control_area_gets_the_output_of_its_units(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monkeypatch.setattr(bkg, "load_districts", lambda: DISTRICTS)
+
+    found = physics.model_germany_areas(
+        "solar", utc("2025-03-01"), utc("2025-03-02"), GERMANY, tmp_path, mastr_units(tmp_path)
+    )
+
+    assert list(found) == ["DE", "50Hertz", "Amprion", "TenneT", "TransnetBW"]
+    # 1 MW in TenneT and 2 MW in Amprion from the end of February; none in the other two.
+    expected = {"DE": 1.5, "50Hertz": 0.0, "Amprion": 1.0, "TenneT": 0.5, "TransnetBW": 0.0}
+    assert {name: frame["energy_mwh"].iloc[0] for name, frame in found.items()} == pytest.approx(
+        expected
+    )

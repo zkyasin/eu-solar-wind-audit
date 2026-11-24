@@ -8,7 +8,7 @@ capacity factor times capacity in MW.
 
 import json
 import shutil
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Literal, NamedTuple
 
@@ -257,7 +257,38 @@ def model_regions(
     if unknown:
         # Their capacity would be in the mainland and in no region.
         raise ValueError(f"mainland regions not in odre.REGIONS: {sorted(unknown)}")
-    # ERA5 times are naive UTC. Loaded once, as every region selects its cells from it.
+    # Other regions keep their rows at zero capacity, so that a region needs no rows of its own to
+    # get a fleet.
+    parts = {
+        code: monthly.assign(
+            capacity_mw=monthly["capacity_mw"].where(monthly["region"] == name, 0.0)
+        )
+        for code, name in odre.REGIONS.items()
+    }
+    return model_parts(technology, start, end, parameters, monthly, parts, regions, cache_dir)
+
+
+def model_parts(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    monthly: pd.DataFrame,
+    parts: Mapping[str, pd.DataFrame],
+    regions: gpd.GeoDataFrame,
+    cache_dir: Path = ERA5_CACHE_DIR,
+) -> dict[str, DataFrame[Modelled]]:
+    """Hourly modelled output for hours [start, end), both hour starts in UTC, of each part of
+    the fleet whose capacity panel is `monthly`: the output of `model` for the capacity panel of
+    the part in `parts`, keyed by its name. `monthly`, the panels of `parts` and `regions` are as
+    for `model`.
+
+    The weather is read and the capacity factors of the cells of the fleet are computed once:
+    parts differ only in their capacity. Raises ValueError if a part has capacity in a cell where
+    the fleet has none.
+    """
+    grid.check_period(start, end)
+    # ERA5 times are naive UTC. Loaded once, as every part selects its cells from it.
     weather = read_weather(
         parameters.country,
         parameters.era5_box,
@@ -268,19 +299,15 @@ def model_regions(
     ).load()
     cells = fleet_cells(technology, weather, parameters, monthly, regions).cells
     factors = list(_capacity_factors(technology, cells, parameters))
-    mainland = _cell_index(cells)
-    by_region = {}
-    for code, name in odre.REGIONS.items():
-        # Other regions keep their rows at zero capacity, so that a region needs no rows of its
-        # own to get a fleet.
-        capacity_mw = monthly["capacity_mw"].where(monthly["region"] == name, 0.0)
-        fleet = fleet_cells(
-            technology, weather, parameters, monthly.assign(capacity_mw=capacity_mw), regions
-        )
-        # A cell with capacity in the region has capacity in the mainland too.
-        positions = mainland.get_indexer(_cell_index(fleet.cells))
-        by_region[code] = _modelled(fleet, [factor.isel(cell=positions) for factor in factors])
-    return by_region
+    whole = _cell_index(cells)
+    modelled = {}
+    for name, panel in parts.items():
+        fleet = fleet_cells(technology, weather, parameters, panel, regions)
+        positions = whole.get_indexer(_cell_index(fleet.cells))
+        if (positions < 0).any():
+            raise ValueError(f"{name} has capacity in cells where the fleet has none")
+        modelled[name] = _modelled(fleet, [factor.isel(cell=positions) for factor in factors])
+    return modelled
 
 
 def _cell_index(cells: xr.Dataset) -> pd.MultiIndex:
@@ -410,6 +437,32 @@ def model_germany(
         for first, stop in _calendar_years(start, end)
     ]
     return Modelled.validate(pd.concat(years))
+
+
+def model_germany_areas(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    cache_dir: Path = ERA5_CACHE_DIR,
+    units_path: Path | None = None,
+) -> dict[str, DataFrame[Modelled]]:
+    """Hourly modelled output of the onshore fleet of Germany, keyed "DE", and of its units in
+    each control area of mastr.CONTROL_AREAS, keyed by its name, for hours [start, end), both hour
+    starts in UTC, computed one calendar year at a time; see `model_parts` and `model_germany`.
+    Units without a control area count in Germany only."""
+    grid.check_period(start, end)
+    monthly = load_germany_capacity(technology, parameters, units_path)
+    parts = {"DE": monthly} | {
+        area: load_germany_capacity(technology, parameters, units_path, area)
+        for area in mastr.CONTROL_AREAS
+    }
+    districts = bkg.load_districts()
+    years = [
+        model_parts(technology, first, stop, parameters, monthly, parts, districts, cache_dir)
+        for first, stop in _calendar_years(start, end)
+    ]
+    return {name: Modelled.validate(pd.concat(year[name] for year in years)) for name in parts}
 
 
 def model_france(

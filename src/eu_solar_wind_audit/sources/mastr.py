@@ -72,6 +72,7 @@ CONTROL_AREA_CODES = {
     1001564: ("TenneT", "TenneT"),
     1001572: ("TransnetBW", "TransnetBW"),
 }
+CONTROL_AREAS = tuple(name for _, name in CONTROL_AREA_CODES.values())
 # Main orientation and tilt of the modules of a solar unit, whether a unit feeds all its output
 # or only what its owner does not consume, and the limit on its feed-in (EEG 2012 to 2021: 70 %
 # of the module power for small units without remote control).
