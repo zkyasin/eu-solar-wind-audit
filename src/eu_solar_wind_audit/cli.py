@@ -28,7 +28,7 @@ from eu_solar_wind_audit import (
 )
 from eu_solar_wind_audit.anomalies import breaks, detection, inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
-from eu_solar_wind_audit.sources import natural_earth, odre, sdes, smard
+from eu_solar_wind_audit.sources import energy_charts, eurostat, natural_earth, odre, sdes, smard
 
 # A week of June 2025 with negative prices on five of its days, at whose hours published onshore
 # wind was 52 % of its potential (data/processed/modulation-fr).
@@ -40,6 +40,9 @@ TECHNOLOGIES: tuple[physics.Technology, ...] = ("solar", "wind_onshore")
 # (2026) that holds onshore wind: his wind is onshore and offshore together.
 REFERENCES = {"FR": Path("references/rte"), "DE": Path("references/hirth")}
 HIRTH_TECHNOLOGIES: dict[physics.Technology, str] = {"solar": "solar", "wind_onshore": "wind"}
+# The SDES workbook of each technology of the perimeter tests: the wind one holds onshore and
+# offshore wind.
+SDES_WORKBOOKS = {"solar": sdes.SOLAR_2026_Q2, "wind": sdes.WIND_2026_Q2}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -120,6 +123,13 @@ def main(argv: list[str] | None = None) -> None:
     anomalies.add_argument(
         "--thresholds", type=Path, help="config/anomaly-thresholds/<COUNTRY>.json by default"
     )
+    audit = commands.add_parser(
+        "audit-perimeter",
+        help="set the yearly solar and wind output of the published series against Eurostat gross "
+        "production and decide whether their solar output includes self-consumption",
+    )
+    audit.add_argument("output", type=Path, help="directory of the results")
+    audit.add_argument("--self-consumption", type=Path, default=Path("references/sdes"))
     draw = commands.add_parser(
         "draw-figures",
         help="draw the figures of the README, in a light and a dark version, from the results of "
@@ -212,6 +222,9 @@ def main(argv: list[str] | None = None) -> None:
             found = country_inputs(client, breaks.FIRST_DAY, end, parameters)
         detected = detection.detect(found, fixed, start, end)
         for path in detection.write(args.output, found, detected, start, end, run):
+            print(path)
+    elif args.command == "audit-perimeter":
+        for path in audit_perimeter(args.output, args.self_consumption):
             print(path)
     elif args.command == "draw-figures":
         drawn = f"Drawn on {date.today().isoformat()} at commit {(git_commit() or 'unknown')[:12]}."
@@ -384,6 +397,129 @@ def estimate_modulation(
     path = output / f"{technology}-modulation.json"
     path.write_text(json.dumps(summary, indent=1) + "\n", encoding="utf-8")
     return [*written, path]
+
+
+def audit_perimeter(output: Path, sdes_dir: Path) -> list[Path]:
+    """Levels of the published series against Eurostat gross production, the error of their gap
+    and the detection threshold it gives, and whether each series includes self-consumption
+    (evaluation plan, axis 3)."""
+    # The reference series are imported here only, so that calibrate never loads them.
+    from eu_solar_wind_audit import perimeter, references
+
+    release = eurostat.fetch_gross_production()
+    gross = release.production.pivot_table(
+        index=["country", "year"], columns="technology", values="gwh"
+    ).reset_index()
+    start, end = perimeter.year_bounds(eurostat.FIRST_YEAR, int(gross["year"].max()))
+
+    with odre.make_client() as client:
+        eco2mix_hourly = {
+            technology: odre.national_hourly(client, technology, start, end)
+            for technology in perimeter.TECHNOLOGIES
+        }
+        workbooks = {
+            technology: sdes.download_dashboard(client, media)
+            for technology, media in SDES_WORKBOOKS.items()
+        }
+    eco2mix = {name: perimeter.annual_energy(hourly) for name, hourly in eco2mix_hourly.items()}
+    smard_hourly = {
+        technology: smard.fetch_hourly_feed_in("DE", technology, start, end)
+        for technology in ("solar", "wind_onshore", "wind_offshore")
+    }
+    feed_in = {name: perimeter.annual_energy(hourly) for name, hourly in smard_hourly.items()}
+    power = {
+        name: perimeter.annual_energy(hourly)
+        for name, hourly in energy_charts.fetch_hourly_power(start, end).items()
+    }
+    published = (
+        pd.concat(
+            [
+                pd.DataFrame(eco2mix).assign(series="eco2mix"),
+                pd.DataFrame(
+                    {
+                        "solar": feed_in["solar"],
+                        "wind": feed_in["wind_onshore"] + feed_in["wind_offshore"],
+                        "series": "smard",
+                    }
+                ),
+                pd.DataFrame(
+                    {
+                        "solar": power["total.solar"],
+                        "wind": power["total.wind_onshore"] + power["total.wind_offshore"],
+                        "series": "energy_charts_total",
+                    }
+                ),
+            ]
+        )
+        .rename_axis("year")
+        .reset_index()
+    )
+
+    french = {}
+    for technology, path in workbooks.items():
+        kept = sdes.SERIES_TECHNOLOGIES[technology]
+        panel, totals = sdes.read_capacity(path), sdes.read_totals(path)
+        french[technology] = perimeter.inside_shares(
+            panel[panel["technology"].isin(kept)], totals[totals["technology"].isin(kept)]
+        )
+    years = pd.Index(sorted(set(published["year"])), name="year")
+    whole = pd.DataFrame({"solar": 1.0, "wind": 1.0}, index=years)
+    inside = (
+        pd.concat(
+            [
+                pd.DataFrame(french).assign(series="eco2mix"),
+                whole.assign(series="smard"),
+                whole.assign(series="energy_charts_total"),
+            ]
+        )
+        .rename_axis("year")
+        .reset_index()
+    )
+
+    french_solar = gross.set_index(["country", "year"])["solar"].loc["FR"]
+    self_consumed = references.load_sdes_self_consumption(sdes_dir)
+    self_consumption = (
+        pd.concat(
+            [
+                (self_consumed / french_solar)
+                .dropna()
+                .rename("share")
+                .to_frame()
+                .assign(country="FR"),
+                (power["self_consumption.solar"] / power["total.solar"])
+                .rename("share")
+                .to_frame()
+                .assign(country="DE"),
+            ]
+        )
+        .rename_axis("year")
+        .reset_index()
+    )
+
+    table = perimeter.levels(published, gross, inside, self_consumption)
+    errors = perimeter.gap_errors(table)
+    error = perimeter.error_rms(errors)
+    threshold = perimeter.detection_threshold(error)
+    decided = table.assign(decision=perimeter.decide(table, threshold))
+    manifest = json.loads((sdes_dir / "manifest.json").read_text(encoding="utf-8"))
+    summary = {
+        "git_describe": git_describe(),
+        "eurostat": {"dataset": "nrg_bal_peh", "updated": release.updated.isoformat()},
+        "sdes_self_consumption": manifest["files"][references.SDES_FILE]["source"],
+        "gap_errors": errors.reset_index().to_dict(orient="records"),
+        "gap_error_rms": error,
+        "detection_threshold": threshold,
+        "content": {
+            series: perimeter.verdict(rows["decision"])
+            for series, rows in decided.groupby("series")
+        },
+    }
+    output.mkdir(parents=True, exist_ok=True)
+    levels_path = output / "perimeter-levels.parquet"
+    decided.to_parquet(levels_path)
+    summary_path = output / "perimeter.json"
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return [levels_path, summary_path]
 
 
 def draw_week(output: Path, parameters: Country, fits_dir: Path, drawn: str) -> list[Path]:
