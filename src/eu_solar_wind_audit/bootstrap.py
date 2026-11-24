@@ -105,7 +105,7 @@ def replicate(
         else targets
     )
     eligible = pd.concat([inputs.eligibility["eligible"] for inputs in years]) & ~estimated
-    fitted_on = eligible & hours.year.isin(folds.FOLD_YEARS[technology])
+    fitted_on = eligible & hours.year.isin(folds.fold_years_of(years, technology))
     factor = drawn.capacity_factors
 
     fitted: calibration.SolarCalibration | calibration.WindCalibration

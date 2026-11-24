@@ -27,7 +27,7 @@ def test_calibrate_france_writes_the_tables_the_description_and_the_frozen_fit(
     monkeypatch.setattr(eligibility, "year_inputs", year_inputs)
     output, fits_dir = tmp_path / "out", tmp_path / "fits"
 
-    cli.main(["calibrate-france", "wind_onshore", str(output), "--fits-dir", str(fits_dir)])
+    cli.main(["calibrate", "FR", "wind_onshore", str(output), "--fits-dir", str(fits_dir)])
 
     assert requested == [("wind_onshore", year) for year in YEARS]
     tables = {
@@ -79,3 +79,37 @@ def test_solar_calibration_reports_the_dc_ac_profile(tmp_path: Path) -> None:
     } <= names
     bootstrap = pd.read_parquet(tmp_path / "out" / "solar-dc-ac-bootstrap.parquet")
     assert len(bootstrap) == 3
+
+
+def test_calibrate_germany_takes_its_config_and_writes_its_fit_in_fits_de(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    countries: list[str] = []
+
+    def year_inputs(
+        client: httpx.Client, technology: physics.Technology, year: int, parameters: Country
+    ) -> eligibility.YearInputs:
+        countries.append(parameters.country)
+        return wind_year(year, "DE")
+
+    monkeypatch.setattr(eligibility, "year_inputs", year_inputs)
+    # The default config and fits folders are relative to the repository root.
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").symlink_to(Path(__file__).parents[1] / "config")
+
+    cli.main(["calibrate", "DE", "wind_onshore", "out"])
+
+    assert set(countries) == {"DE"}
+    frozen = fits.read(tmp_path / "fits" / "DE" / "wind_onshore.json")
+    # German onshore wind has a fold in every year.
+    assert sorted(frozen.fold_calibrations) == YEARS
+    description = json.loads((tmp_path / "out" / "wind_onshore-calibration.json").read_text())
+    assert description["inputs"]["prices"] == "SMARD.de, day-ahead prices of DE-LU, filter 4169"
+    assert description["inputs"]["published"] == "SMARD.de, feed-in of Germany, filter 4067"
+
+
+def test_calibrate_refuses_a_config_of_another_country(tmp_path: Path) -> None:
+    config = CONFIG_DIR / "fr.toml"
+
+    with pytest.raises(SystemExit):
+        cli.main(["calibrate", "DE", "solar", str(tmp_path), "--config", str(config)])

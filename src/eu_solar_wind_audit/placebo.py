@@ -20,7 +20,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from eu_solar_wind_audit import bootstrap, days, eligibility, fits, modulation, physics
+from eu_solar_wind_audit import bootstrap, eligibility, fits, modulation, physics
 from eu_solar_wind_audit.pv import PVParameters
 
 PLACEBO_PRICES = (5.0, 15.0)
@@ -78,7 +78,7 @@ def match(
             {
                 "month": local.month,
                 "hour": local.hour,
-                "day_type": days.day_types(hours).to_numpy(),
+                "day_type": inputs.arrays.covariates["day_type"].to_numpy(),
                 "factor": (p_star / inputs.arrays.covariates["capacity_mw"]).to_numpy(),
                 "consumption": consumption_mwh.reindex(hours).to_numpy(),
             },

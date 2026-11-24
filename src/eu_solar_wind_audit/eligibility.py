@@ -1,6 +1,6 @@
-"""Hours on which the calibrated potential of France is fitted and evaluated (evaluation plan,
+"""Hours on which the calibrated potential of a country is fitted and evaluated (evaluation plan,
 "Scope", "Two model objects", "Axis 1" and Deviations), and the inputs they are chosen from, one
-UTC year at a time.
+UTC year at a time: the éCO2mix series of mainland France and the SMARD feed-in of Germany.
 
 Each rule of `Eligibility` has its own column, so that a report can count the hours that each one
 leaves out.
@@ -18,9 +18,11 @@ from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import evaluation, grid, physics, precompute, regimes
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import natural_earth, odre, smard
+from eu_solar_wind_audit.sources import bkg, natural_earth, odre, smard
 
 FINAL_STATUSES = ["definitive", "consolidated"]
+# The day-ahead zone of each country, a key of smard.PRICES.
+PRICE_ZONES = {"FR": "FR", "DE": "DE-LU"}
 
 
 class Eligibility(pa.DataFrameModel):
@@ -59,18 +61,27 @@ class Eligibility(pa.DataFrameModel):
 
 
 def eligible_hours(
+    country: str,
     technology: physics.Technology,
     published: pd.DataFrame,
     covariates: pd.DataFrame,
     price_classes: pd.DataFrame,
 ) -> DataFrame[Eligibility]:
-    """Rules of `Eligibility` for each hour of `published`, the odre.Hourly series that
-    `technology` is calibrated on: national solar, or the onshore wind of odre.onshore_hourly.
+    """Rules of `Eligibility` for each hour of `published`, the series that `technology` is
+    calibrated on in `country`, a key of PRICE_ZONES: in France, national solar or the onshore
+    wind of odre.onshore_hourly, an odre.Hourly frame; in Germany, the SMARD feed-in, a grid.Hourly
+    frame. SMARD gives no publication status and publishes onshore wind apart, so every German hour
+    is final and an onshore reference.
 
     `covariates` are the precompute.Covariates of the technology and `price_classes` the classes of
     regimes.classify_hours, both on the hours of `published`.
     """
-    odre.Hourly.validate(published)
+    if country not in PRICE_ZONES:
+        raise ValueError(f"no calibration inputs for {country}")
+    if country == "FR":
+        final = odre.Hourly.validate(published)["status"].isin(FINAL_STATUSES)
+    else:
+        final = pd.Series(True, index=grid.Hourly.validate(published).index)
     precompute.Covariates.validate(covariates)
     hours = pd.DatetimeIndex(published.index)
     for name, frame in [("covariates", covariates), ("price classes", price_classes)]:
@@ -79,7 +90,7 @@ def eligible_hours(
 
     rules = pd.DataFrame(
         {
-            "consolidated_or_definitive": published["status"].isin(FINAL_STATUSES),
+            "consolidated_or_definitive": final,
             "complete": published["complete"] & covariates["complete"],
             "reference_price": price_classes["regime"] == "reference",
             "final_capacity": ~covariates["capacity_provisional"],
@@ -91,9 +102,9 @@ def eligible_hours(
     if technology == "solar":
         rules["sun_above_horizon"] = covariates["sun_elevation_deg"] > 0
     else:
-        # Published wind then includes offshore output, which no series gives separately.
+        # Published wind of France then includes offshore output, which no series gives apart.
         with_offshore = (hours >= odre.FIRST_OFFSHORE_POWER) & (hours < odre.WIND_SPLIT_START)
-        rules["onshore_reference"] = ~with_offshore
+        rules["onshore_reference"] = ~with_offshore if country == "FR" else True
     rules["eligible"] = rules.all(axis="columns")
     return Eligibility.validate(rules)
 
@@ -127,11 +138,13 @@ def price_classes(
 
 @dataclass(frozen=True)
 class YearInputs:
-    """Calibration inputs of one technology on the hours of one UTC year, all on the same hours:
-    the published series, its price classes, the precompute arrays with their covariates, and the
-    rules of `Eligibility`."""
+    """Calibration inputs of one technology in one country, a key of PRICE_ZONES, on the hours of
+    one UTC year, all on the same hours: the published series, an odre.Hourly frame for France and
+    a grid.Hourly frame for Germany, its price classes, the precompute arrays with their
+    covariates, and the rules of `Eligibility`."""
 
-    published: DataFrame[odre.Hourly]
+    country: str
+    published: pd.DataFrame
     price_classes: pd.DataFrame
     arrays: precompute.SolarArrays | precompute.WindArrays
     eligibility: DataFrame[Eligibility]
@@ -175,22 +188,40 @@ def year_inputs(
     smard_cache_dir: Path = smard.CACHE_DIR,
     era5_cache_dir: Path = physics.ERA5_CACHE_DIR,
 ) -> YearInputs:
-    """Calibration inputs of `technology` on the hours of the UTC year `year`: national solar or
-    the onshore wind of odre.onshore_hourly, the `price_classes` of these hours, and the arrays of
-    precompute.solar or precompute.wind_onshore, from the SDES capacity and the department
-    polygons loaded as physics.model_france loads them for that year.
+    """Calibration inputs of `technology` in the country of `parameters` on the hours of the UTC
+    year `year`: the published series, the `price_classes` of its zone, and the arrays of
+    precompute.solar or precompute.wind_onshore from the capacity and the areas that
+    physics.model_france or physics.model_germany load.
+
+    The published series is national solar or the onshore wind of odre.onshore_hourly for France,
+    the SMARD feed-in of Germany for Germany.
     """
+    country = parameters.country
     start = pd.Timestamp(year, 1, 1, tz="UTC")
     end = pd.Timestamp(year + 1, 1, 1, tz="UTC")
-    classes = price_classes(start, end, client=client, cache_dir=smard_cache_dir)
-    monthly = physics.load_monthly_capacity(technology, end - grid.HOUR)
-    regions = natural_earth.load_admin1(parameters.country)
+    published: pd.DataFrame
+    if country == "FR":
+        if technology == "solar":
+            published = odre.national_hourly(client, "solar", start, end, cache_dir=odre_cache_dir)
+        else:
+            published = odre.onshore_hourly(client, start, end, cache_dir=odre_cache_dir)
+        monthly = physics.load_monthly_capacity(technology, end - grid.HOUR)
+        regions = natural_earth.load_admin1(country)
+    elif country == "DE":
+        published = smard.fetch_hourly_feed_in(
+            "DE", technology, start, end, client=client, cache_dir=smard_cache_dir
+        )
+        monthly = physics.load_germany_capacity(technology, parameters)
+        regions = bkg.load_districts()
+    else:
+        raise ValueError(f"no calibration inputs for {country}")
+    classes = price_classes(
+        start, end, zone=PRICE_ZONES[country], client=client, cache_dir=smard_cache_dir
+    )
     arrays: precompute.SolarArrays | precompute.WindArrays
     if technology == "solar":
-        published = odre.national_hourly(client, "solar", start, end, cache_dir=odre_cache_dir)
         arrays = precompute.solar(start, end, parameters, monthly, regions, era5_cache_dir)
     else:
-        published = odre.onshore_hourly(client, start, end, cache_dir=odre_cache_dir)
         arrays = precompute.wind_onshore(start, end, parameters, monthly, regions, era5_cache_dir)
-    rules = eligible_hours(technology, published, arrays.covariates, classes)
-    return YearInputs(published, classes, arrays, rules)
+    rules = eligible_hours(country, technology, published, arrays.covariates, classes)
+    return YearInputs(country, published, classes, arrays, rules)

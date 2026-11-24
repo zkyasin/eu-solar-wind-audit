@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from eu_solar_wind_audit import precompute
 from eu_solar_wind_audit.config import Country, WindGeneration, load_country
 from eu_solar_wind_audit.pv import PVParameters, System
 from eu_solar_wind_audit.sources.era5 import Box
@@ -136,3 +137,8 @@ def test_germany_file_is_valid() -> None:
         2020,
         None,
     ]
+
+
+@pytest.mark.parametrize("path", [FRANCE, GERMANY], ids=["FR", "DE"])
+def test_the_dc_ac_ratio_of_each_country_is_on_the_grid_of_precompute(path: Path) -> None:
+    assert load_country(path).solar.dc_ac_ratio in precompute.DC_AC_GRID

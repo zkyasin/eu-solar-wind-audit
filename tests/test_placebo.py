@@ -57,7 +57,7 @@ def test_each_n_hour_takes_a_candidate_of_its_cell_once(
     for keys in (
         lambda hours: hours.tz_convert("Europe/Paris").month,
         lambda hours: hours.tz_convert("Europe/Paris").hour,
-        lambda hours: days.day_types(hours).to_numpy(),
+        lambda hours: days.day_types(hours, "FR").to_numpy(),
     ):
         assert (keys(n_hours) == keys(placebo_hours)).all()
 
@@ -76,7 +76,7 @@ def test_the_nearest_candidate_is_chosen(
     same_cell = (
         (local.month == first_n.tz_convert("Europe/Paris").month)
         & (local.hour == first_n.tz_convert("Europe/Paris").hour)
-        & (days.day_types(hours) == days.day_types(pd.DatetimeIndex([first_n])).iloc[0])
+        & (days.day_types(hours, "FR") == days.day_types(pd.DatetimeIndex([first_n]), "FR").iloc[0])
         & inputs.eligibility["eligible"]
         & (inputs.price_classes["mean_price"] == 10.0)
     )

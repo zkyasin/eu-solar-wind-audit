@@ -1,5 +1,5 @@
-"""Leave-one-year-out calibration of mainland France, as the `calibrate-france` command runs it
-(evaluation plan, "Two model objects" and "Axis 1: model quality").
+"""Leave-one-year-out calibration of a country, as the `calibrate` command runs it (evaluation
+plan, "Two model objects" and "Axis 1: model quality").
 
 `run` loads the inputs of every year of evaluation.TRAINING_YEARS and `report_of` gives the report
 of folds, the composition of the eligible hours of each year with the strata of the final fit,
@@ -33,7 +33,7 @@ from eu_solar_wind_audit import (
     strata,
 )
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import natural_earth, smard
+from eu_solar_wind_audit.sources import bkg, mastr, natural_earth, smard
 
 
 @dataclass(frozen=True)
@@ -55,8 +55,8 @@ def run(
     *,
     replicates: int = dc_ac.REPLICATES,
 ) -> Run:
-    """Calibration of `technology` on the inputs of every year of evaluation.TRAINING_YEARS, with
-    `replicates` day-bootstrap replicates for the DC/AC profile."""
+    """Calibration of `technology` in the country of `parameters` on the inputs of every year of
+    evaluation.TRAINING_YEARS, with `replicates` day-bootstrap replicates for the DC/AC profile."""
     years = [
         eligibility.year_inputs(client, technology, year, parameters)
         for year in evaluation.TRAINING_YEARS
@@ -146,7 +146,10 @@ def describe(calibrated: Run, git_describe: str | None) -> dict[str, Any]:
                 "year": int(pd.DatetimeIndex(published.index)[0].year),
                 "hours": len(published),
                 "eligible_hours": int(inputs.eligibility["eligible"].sum()),
-                "status": published["status"].fillna("none").value_counts().to_dict(),
+                # SMARD gives no publication status.
+                "status": published["status"].fillna("none").value_counts().to_dict()
+                if "status" in published
+                else None,
                 "era5_source": covariates["era5_source"].value_counts().to_dict(),
                 "provisional_capacity_hours": int(covariates["capacity_provisional"].sum()),
                 "price_classes": inputs.price_classes["regime"].value_counts().to_dict(),
@@ -157,7 +160,7 @@ def describe(calibrated: Run, git_describe: str | None) -> dict[str, Any]:
         "technology": calibrated.technology,
         "git_describe": git_describe,
         "package_version": importlib.metadata.version("eu-solar-wind-audit"),
-        "fold_years": list(folds.FOLD_YEARS[calibrated.technology]),
+        "fold_years": list(folds.fold_years_of(calibrated.years, calibrated.technology)),
         "estimator": {
             "huber_tuning": calibration.HUBER_TUNING,
             "tolerances": [calibration.FTOL, calibration.XTOL, calibration.GTOL],
@@ -169,12 +172,26 @@ def describe(calibrated: Run, git_describe: str | None) -> dict[str, Any]:
                 "seed": calibrated.dc_ac.bootstrap.seed,
             },
         },
-        "inputs": {
-            "capacity": f"SDES dashboard, media {physics.SDES_MEDIA[calibrated.technology]}",
+        "inputs": _sources(calibrated.years[0].country, calibrated.technology) | {"years": years},
+    }
+
+
+def _sources(country: str, technology: physics.Technology) -> dict[str, str]:
+    """The capacity, areas, prices and published series that the inputs of `country` rest on."""
+    zone = eligibility.PRICE_ZONES[country]
+    prices = f"SMARD.de, day-ahead prices of {zone}, filter {smard.PRICES[zone][0]}"
+    if country == "FR":
+        return {
+            "capacity": f"SDES dashboard, media {physics.SDES_MEDIA[technology]}",
             "regions": f"Natural Earth admin-1 {natural_earth.VERSION}",
-            "prices": f"SMARD.de, day-ahead prices of France, filter {smard.PRICES['FR'][0]}",
-            "years": years,
-        },
+            "prices": prices,
+            "published": "RTE, éCO2mix via ODRÉ",
+        }
+    return {
+        "capacity": f"Marktstammdatenregister, {mastr.EXPORT_URL}",
+        "regions": f"BKG VG5000 districts, state of {bkg.EDITION}",
+        "prices": prices,
+        "published": f"SMARD.de, feed-in of Germany, filter {smard.FEED_IN[technology]}",
     }
 
 

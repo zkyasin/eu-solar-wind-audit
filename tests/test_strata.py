@@ -37,6 +37,7 @@ def covariates(
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 700.0,
             "air_temperature_c": 20.0,
+            "day_type": days.day_types(hours, "FR").to_numpy(),
         },
         index=hours,
     )
@@ -78,15 +79,14 @@ def test_hours_below_or_above_the_edges_go_to_the_first_or_last_decile() -> None
     assert found["decile"].tolist() == [1, 1, 2, 2, 6, 9, 10, 10]
 
 
-def test_hours_take_the_type_of_their_day_in_paris() -> None:
-    # From Friday 3 June 2022 at 21:00 UTC, 23:00 in Paris: Saturday in Paris starts at 22:00 UTC.
-    hours = utc_hours("2022-06-03 21:00", 30)
+def test_hours_take_the_day_type_of_their_covariates() -> None:
+    # Friday 3 June 2022 at 21:00 UTC is a Friday in Paris, but its covariates make it a Saturday.
+    hours = utc_hours("2022-06-03 21:00", 3)
+    given = covariates(hours).assign(day_type="saturday")
 
-    found = strata.classify_hours(pd.Series(50.0, index=hours), covariates(hours), EDGES)
+    found = strata.classify_hours(pd.Series(50.0, index=hours), given, EDGES)
 
-    pd.testing.assert_series_equal(found["day_type"], days.day_types(hours))
-    expected = ["working_day"] + ["saturday"] * 24 + ["sunday_or_holiday"] * 5
-    assert found["day_type"].tolist() == expected
+    assert found["day_type"].tolist() == ["saturday"] * 3
 
 
 def test_hours_without_elevation_or_capacity_factor_have_no_band_or_decile() -> None:

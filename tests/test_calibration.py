@@ -9,7 +9,7 @@ from pandera.typing import DataFrame
 from scipy.optimize import OptimizeResult, least_squares
 from scipy.stats import norm
 
-from eu_solar_wind_audit import calibration, precompute
+from eu_solar_wind_audit import calibration, days, precompute
 from eu_solar_wind_audit.config import WindGeneration
 from eu_solar_wind_audit.precompute import FloatArray
 from eu_solar_wind_audit.pv import PVParameters, System
@@ -43,6 +43,7 @@ def covariates(year: int) -> DataFrame[precompute.Covariates]:
             "ghi_w_m2": 500.0,
             "clear_sky_ghi_w_m2": 700.0,
             "air_temperature_c": 20.0,
+            "day_type": days.day_types(hours, "FR").to_numpy(),
         },
         index=hours.rename("time"),
     )

@@ -55,6 +55,7 @@ def sky_arrays(
             "ghi_w_m2": 100.0 * np.asarray(clear_sky_index, dtype=float),
             "clear_sky_ghi_w_m2": 100.0,
             "air_temperature_c": air_temperature_c,
+            "day_type": days.day_types(hours, "FR").to_numpy(),
         },
         index=hours,
     )
@@ -203,6 +204,7 @@ def covariates_on(hours: pd.DatetimeIndex) -> DataFrame[precompute.Covariates]:
             "ghi_w_m2": 600.0,
             "clear_sky_ghi_w_m2": 620.0,
             "air_temperature_c": 20.0,
+            "day_type": days.day_types(hours, "FR").to_numpy(),
         },
         index=hours,
     )

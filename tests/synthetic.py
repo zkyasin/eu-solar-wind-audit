@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from pandera.typing import DataFrame
 
-from eu_solar_wind_audit import days, eligibility, physics, precompute, regimes
+from eu_solar_wind_audit import days, eligibility, grid, physics, precompute, regimes
 from eu_solar_wind_audit.config import WindGeneration
 from eu_solar_wind_audit.pv import PVParameters, System
 from eu_solar_wind_audit.sources import odre
@@ -46,6 +46,7 @@ def covariates(
             "ghi_w_m2": rng.uniform(40.0, 110.0, day.max() + 1)[day],
             "clear_sky_ghi_w_m2": 100.0,
             "air_temperature_c": 20.0,
+            "day_type": days.day_types(hours, "FR").to_numpy(),
         },
         index=hours,
     )
@@ -56,10 +57,12 @@ def year_inputs(
     arrays: precompute.SolarArrays | precompute.WindArrays,
     truth_mwh: pd.Series,
     rng: np.random.Generator,
+    country: str = "FR",
 ) -> eligibility.YearInputs:
-    """Inputs on the hours of `arrays`: the published output is `truth_mwh` with a noise of 0.01
-    in capacity factor, definitive, except where odre.onshore_hourly has no onshore wind, and one
-    hour in 50 has a negative price."""
+    """Inputs of `country` on the hours of `arrays`: the published output is `truth_mwh` with a
+    noise of 0.01 in capacity factor, and one hour in 50 has a negative price. French output is
+    definitive, except where odre.onshore_hourly has no onshore wind; German output, as SMARD
+    gives it, has no status."""
     hours = pd.DatetimeIndex(truth_mwh.index)
     published = pd.DataFrame(
         {
@@ -69,19 +72,23 @@ def year_inputs(
         },
         index=hours,
     )
-    if isinstance(arrays, precompute.WindArrays):
-        offshore = (hours >= odre.FIRST_OFFSHORE_POWER) & (hours < odre.WIND_SPLIT_START)
-        published.loc[offshore, "energy_mwh"] = np.nan
-        published.loc[offshore, "complete"] = False
-        published.loc[offshore, "status"] = None
+    if country == "DE":
+        published = grid.Hourly.validate(published.drop(columns="status"))
+    else:
+        if isinstance(arrays, precompute.WindArrays):
+            offshore = (hours >= odre.FIRST_OFFSHORE_POWER) & (hours < odre.WIND_SPLIT_START)
+            published.loc[offshore, "energy_mwh"] = np.nan
+            published.loc[offshore, "complete"] = False
+            published.loc[offshore, "status"] = None
+        published = odre.Hourly.validate(published)
     prices = pd.Series(50.0, index=pd.date_range(hours[0], hours[-1], freq="h"))
     prices[hours[::50]] = -5.0
     classes = regimes.classify_hours(prices).reindex(hours)
     technology: physics.Technology = (
         "solar" if isinstance(arrays, precompute.SolarArrays) else "wind_onshore"
     )
-    rules = eligibility.eligible_hours(technology, published, arrays.covariates, classes)
-    return eligibility.YearInputs(odre.Hourly.validate(published), classes, arrays, rules)
+    rules = eligibility.eligible_hours(country, technology, published, arrays.covariates, classes)
+    return eligibility.YearInputs(country, published, classes, arrays, rules)
 
 
 def solar_year(year: int, step: int = 5) -> eligibility.YearInputs:
@@ -97,7 +104,7 @@ def solar_year(year: int, step: int = 5) -> eligibility.YearInputs:
     return year_inputs(arrays, precompute.solar_energy(arrays, PV.dc_ac_ratio, *SOLAR_TRUTH), rng)
 
 
-def wind_year(year: int) -> eligibility.YearInputs:
+def wind_year(year: int, country: str = "FR") -> eligibility.YearInputs:
     """Each generation holds 50 MW, spread over 20 cells whose hub-height speeds scatter around
     a mean speed of the hour."""
     rng = np.random.default_rng(year)
@@ -113,4 +120,4 @@ def wind_year(year: int) -> eligibility.YearInputs:
     arrays = precompute.WindArrays(
         capacity_mw=capacity_mw, generations=GENERATIONS, covariates=covariates(hours, rng)
     )
-    return year_inputs(arrays, precompute.wind_energy(arrays, WIND_TRUTH), rng)
+    return year_inputs(arrays, precompute.wind_energy(arrays, WIND_TRUTH), rng, country)

@@ -22,7 +22,7 @@ import pandera.pandas as pa
 import pvlib
 from pandera.typing import DataFrame, Index, Series
 
-from eu_solar_wind_audit import grid, physics, pv, wind
+from eu_solar_wind_audit import days, grid, physics, pv, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 
 FloatArray = npt.NDArray[np.float64]
@@ -41,9 +41,10 @@ SPEED_CENTRES = (SPEED_EDGES[:-1] + SPEED_EDGES[1:]) / 2
 class Covariates(pa.DataFrameModel):
     """Hourly values that calibration needs besides the output, for the hour starting at `time`:
     whether the output of the hour is complete, as in physics.model, the capacity in MW at its
-    start and whether it uses provisional SDES months, the ERA5 release, the apparent sun
+    start and whether it uses provisional capacity months, the ERA5 release, the apparent sun
     elevation and the global and clear-sky horizontal irradiance in W m-2 seen by the fleet at
-    mid-hour, and the air temperature at 2 m in degC over the hour."""
+    mid-hour, the air temperature at 2 m in degC over the hour, and the days.day_types of its
+    local day in the country of the fleet."""
 
     time: Index[grid.UtcTime] = pa.Field(unique=True, check_name=True)
     complete: Series[bool]
@@ -54,6 +55,7 @@ class Covariates(pa.DataFrameModel):
     ghi_w_m2: Series[float] = pa.Field(nullable=True)
     clear_sky_ghi_w_m2: Series[float] = pa.Field(nullable=True)
     air_temperature_c: Series[float] = pa.Field(nullable=True)
+    day_type: Series[str] = pa.Field(isin=days.DAY_TYPES)
 
     class Config:
         strict = True
@@ -158,7 +160,15 @@ def solar(
         fleet_mwh=energy[:, :-1],
         horizontal_mwh=energy[:, -1],
         shares=np.array([system.share for system in params.fleet]),
-        covariates=_covariates(fleet, complete, elevation, mean_ghi, mean_clear, mean_temperature),
+        covariates=_covariates(
+            parameters.country,
+            fleet,
+            complete,
+            elevation,
+            mean_ghi,
+            mean_clear,
+            mean_temperature,
+        ),
         centroid=_capacity_centroid(latitude, longitude, capacity_mw),
     )
 
@@ -305,6 +315,7 @@ def wind_onshore(
         capacity_mw=histograms,
         generations=parameters.wind_onshore,
         covariates=_covariates(
+            parameters.country,
             fleet,
             complete,
             sun["apparent_elevation"].to_numpy(),
@@ -346,6 +357,7 @@ def _capacity_centroid(
 
 
 def _covariates(
+    country: str,
     fleet: physics.Fleet,
     complete: BoolArray,
     sun_elevation_deg: FloatArray,
@@ -353,7 +365,8 @@ def _covariates(
     clear_sky_ghi_w_m2: FloatArray,
     air_temperature_c: FloatArray,
 ) -> DataFrame[Covariates]:
-    hours = pd.DatetimeIndex(fleet.cells.indexes["time"])
+    # ERA5 times read outside the zarr cache are not always in nanoseconds.
+    hours = pd.DatetimeIndex(fleet.cells.indexes["time"]).tz_localize("UTC").as_unit("ns")
     covariates = pd.DataFrame(
         {
             "complete": complete,
@@ -364,8 +377,8 @@ def _covariates(
             "ghi_w_m2": ghi_w_m2,
             "clear_sky_ghi_w_m2": clear_sky_ghi_w_m2,
             "air_temperature_c": air_temperature_c,
+            "day_type": days.day_types(hours, country).to_numpy(),
         },
-        # ERA5 times read outside the zarr cache are not always in nanoseconds.
-        index=hours.tz_localize("UTC").as_unit("ns").rename("time"),
+        index=hours.rename("time"),
     )
     return Covariates.validate(covariates)

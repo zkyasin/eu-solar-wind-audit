@@ -14,6 +14,14 @@ EASTER_HOLIDAYS = {
     2021: ["04-05", "05-13", "05-24"],
     2022: ["04-18", "05-26", "06-06"],
 }
+GERMAN_FIXED_HOLIDAYS = ["01-01", "05-01", "10-03", "12-25", "12-26"]
+# Good Friday, Easter Monday, Ascension Day and Whit Monday.
+GERMAN_EASTER_HOLIDAYS = {
+    2019: ["04-19", "04-22", "05-30", "06-10"],
+    2020: ["04-10", "04-13", "05-21", "06-01"],
+    2021: ["04-02", "04-05", "05-13", "05-24"],
+    2022: ["04-15", "04-18", "05-26", "06-06"],
+}
 
 
 def utc_hours(start: str, end: str) -> pd.DatetimeIndex:
@@ -52,7 +60,7 @@ def sky(hours: pd.DatetimeIndex, classes: list[str | None]) -> pd.Series:
 
 @pytest.mark.parametrize("year", [2019, 2020, 2021, 2022])
 def test_the_eleven_public_holidays_of_a_year(year: int) -> None:
-    holidays = days.PUBLIC_HOLIDAYS.holidays(f"{year}-01-01", f"{year}-12-31")
+    holidays = days.PUBLIC_HOLIDAYS["FR"].holidays(f"{year}-01-01", f"{year}-12-31")
 
     expected = sorted(FIXED_HOLIDAYS + EASTER_HOLIDAYS[year])
     assert holidays.strftime("%m-%d").tolist() == expected
@@ -98,18 +106,34 @@ def test_hours_take_the_type_of_their_day_in_paris(
 ) -> None:
     hours = utc_hours(start, end)
 
-    types = days.day_types(hours)
+    types = days.day_types(hours, "FR")
 
     assert types.index.equals(hours)
     assert types.tolist() == [day_type for day_type, count in expected for _ in range(count)]
     assert set(types) <= set(days.DAY_TYPES)
 
 
+@pytest.mark.parametrize("year", [2019, 2020, 2021, 2022])
+def test_the_nine_public_holidays_of_every_german_land(year: int) -> None:
+    holidays = days.PUBLIC_HOLIDAYS["DE"].holidays(f"{year}-01-01", f"{year}-12-31")
+
+    expected = sorted(GERMAN_FIXED_HOLIDAYS + GERMAN_EASTER_HOLIDAYS[year])
+    assert holidays.strftime("%m-%d").tolist() == expected
+
+
+def test_each_country_has_its_own_holidays() -> None:
+    # Thursday 14 July 2022 is the French National Day, Monday 3 October German Unity Day.
+    hours = pd.DatetimeIndex(["2022-07-14 10:00", "2022-10-03 10:00"], tz="UTC")
+
+    assert days.day_types(hours, "FR").tolist() == ["sunday_or_holiday", "working_day"]
+    assert days.day_types(hours, "DE").tolist() == ["working_day", "sunday_or_holiday"]
+
+
 def test_day_types_need_utc_hours() -> None:
     hours = pd.date_range("2022-03-26", periods=3, freq="h", tz="Europe/Paris")
 
     with pytest.raises(ValueError, match="UTC"):
-        days.day_types(hours)
+        days.day_types(hours, "FR")
 
 
 @pytest.mark.parametrize(

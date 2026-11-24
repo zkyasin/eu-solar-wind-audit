@@ -57,14 +57,15 @@ def main(argv: list[str] | None = None) -> None:
     model.add_argument("output", type=Path, help="parquet file; the JSON file goes next to it")
     model.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
     fit = commands.add_parser(
-        "calibrate-france",
-        help="fit the calibrated potential of mainland France leaving one year out of 2019-2025, "
-        "write its tables with a JSON file describing the run, and the frozen fit",
+        "calibrate",
+        help="fit the calibrated potential of a country leaving one year out of 2019-2025, write "
+        "its tables with a JSON file describing the run, and the frozen fit",
     )
+    fit.add_argument("country", choices=list(eligibility.PRICE_ZONES))
     fit.add_argument("technology", choices=["solar", "wind_onshore"])
     fit.add_argument("output", type=Path, help="directory of the tables and their description")
-    fit.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
-    fit.add_argument("--fits-dir", type=Path, default=fits.FITS_DIR)
+    fit.add_argument("--config", type=Path, help="config/countries/<country>.toml by default")
+    fit.add_argument("--fits-dir", type=Path, help="fits/<COUNTRY> by default")
     fit.add_argument(
         "--replicates",
         type=int,
@@ -136,13 +137,17 @@ def main(argv: list[str] | None = None) -> None:
         sidecar.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
         print(args.output)
         print(sidecar)
-    elif args.command == "calibrate-france":
-        parameters = load_country(args.config)
+    elif args.command == "calibrate":
+        config = args.config or CONFIG_DIR / f"{args.country.lower()}.toml"
+        parameters = load_country(config)
+        if parameters.country != args.country:
+            parser.error(f"{config} describes {parameters.country}, not {args.country}")
         with odre.make_client() as client:
             calibrated = calibrate.run(
                 client, args.technology, parameters, replicates=args.replicates
             )
-        for path in calibrate.write(calibrated, args.output, args.fits_dir, git_describe()):
+        fits_dir = args.fits_dir or fits.FITS_ROOT / args.country
+        for path in calibrate.write(calibrated, args.output, fits_dir, git_describe()):
             print(path)
     elif args.command == "estimate-modulation":
         for path in estimate_modulation(
@@ -244,7 +249,7 @@ def estimate_modulation(
     effect of each year from the leave-one-year-out folds; compare the estimate with the RTE
     volumes of `reference_dir` and, with an interval, give the verdict and run the placebo and the
     injection. Write the tables and a JSON summary to `output`. Gives the paths written."""
-    # The reference series are imported here only, so that calibrate-france never loads them.
+    # The reference series are imported here only, so that calibrate never loads them.
     from eu_solar_wind_audit import comparison, references
 
     first = pd.Timestamp(evaluation.TRAINING_YEARS[0], 1, 1, tz="UTC")
