@@ -8,7 +8,16 @@ from pandera.typing import DataFrame
 
 from eu_solar_wind_audit import cli, perimeter
 from eu_solar_wind_audit.detectability import Z_SUM
-from eu_solar_wind_audit.sources import energy_charts, eurostat, mastr, odre, sdes, smard
+from eu_solar_wind_audit.sources import (
+    energinet,
+    energy_charts,
+    entsoe,
+    eurostat,
+    mastr,
+    odre,
+    sdes,
+    smard,
+)
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -419,6 +428,28 @@ def test_the_command_writes_the_levels_and_the_matrix(
         series["self_consumption.solar"] = constant(start, end, 500.0)
         return series
 
+    def settlement(
+        area: str, quantity: str, start: pd.Timestamp, end: pd.Timestamp, **_: object
+    ) -> pd.DataFrame:
+        return constant(start, end, 100.0 if quantity == "solar_self_consumption" else 300.0)
+
+    def generation(
+        area: str, technology: str, start: pd.Timestamp, end: pd.Timestamp, **_: object
+    ) -> pd.DataFrame:
+        return constant(start, end, 10.0 if technology == "solar" else 600.0)
+
+    def capacity(area: str, year: int, **_: object) -> "pd.Series[float]":
+        return pd.Series({"solar": 1000.0, "wind_onshore": 700.0, "wind_offshore": 300.0})
+
+    def units(area: str, year: int, **_: object) -> pd.DataFrame:
+        listed = {
+            "unit": "49W1",
+            "name": "Farm",
+            "technology": "wind_offshore",
+            "voltage_kv": 220.0,
+        }
+        return pd.DataFrame([listed | {"capacity_mw": 300.0}])
+
     units_dir = tmp_path / "mastr"
     units_dir.mkdir()
     mastr.read_units(FIXTURES / "mastr" / "Gesamtdatenexport_20261001_26.1.zip").to_parquet(
@@ -432,6 +463,11 @@ def test_the_command_writes_the_levels_and_the_matrix(
     monkeypatch.setattr(sdes, "download_dashboard", download_dashboard)
     monkeypatch.setattr(smard, "fetch_hourly_feed_in", feed_in)
     monkeypatch.setattr(energy_charts, "fetch_hourly_power", power)
+    monkeypatch.setattr(energinet, "fetch_hourly_settlement", settlement)
+    monkeypatch.setattr(entsoe, "fetch_hourly_generation", generation)
+    monkeypatch.setattr(entsoe, "fetch_capacity", capacity)
+    monkeypatch.setattr(entsoe, "fetch_unit_capacity", units)
+    monkeypatch.setenv(entsoe.TOKEN_VARIABLE, "a-token")
 
     cli.main(["audit-perimeter", str(tmp_path / "out")])
 
@@ -440,6 +476,10 @@ def test_the_command_writes_the_levels_and_the_matrix(
     summary = json.loads((tmp_path / "out" / "perimeter.json").read_text())
     assert set(table["series"]) == set(perimeter.SERIES)
     assert set(table["year"]) == set(range(2019, 2025))
+    danish = table[table["series"] == "energinet_total"]
+    assert danish["year"].tolist() == list(range(energinet.SOLAR_SPLIT_YEAR, 2025))
+    assert danish["self_consumption_share"].tolist() == pytest.approx([0.25] * 5)
+    assert table.loc[table["series"] == "entsoe_nl", "self_consumption_share"].isna().all()
     assert set(table["self_consumption"]) <= {"included", "excluded", "inconclusive"}
     assert set(table["distribution"]) <= {"covered", "not_covered", "inconclusive"}
     assert set(matrix["series"]) == set(perimeter.SERIES)
@@ -448,4 +488,7 @@ def test_the_command_writes_the_levels_and_the_matrix(
     assert all(0 < value < 1 for value in summary["detection_threshold"].values())
     # Wind of the register cut: 78,800 kW of 100,550 on the grid of RTE.
     assert summary["distribution_share"]["values"]["FR"] == pytest.approx(21_750 / 100_550)
+    # One listed farm of 300 MW per bidding zone, against 1,000 MW of wind capacity in each.
+    assert summary["distribution_share"]["values"]["DK"] == pytest.approx(0.7)
+    assert summary["distribution_share"]["values"]["NL"] == pytest.approx(0.7)
     assert summary["eurostat"]["updated"] == "2026-06-02T23:00:00"

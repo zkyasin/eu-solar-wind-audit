@@ -33,8 +33,16 @@ from eu_solar_wind_audit.sources import sdes
 
 # Published national series and their countries. Energy-Charts total power is the SMARD feed-in
 # times a monthly factor plus the self-consumption estimated by Fraunhofer ISE
-# (sources/energy_charts.py).
-SERIES = {"eco2mix": "FR", "smard": "DE", "energy_charts_total": "DE"}
+# (sources/energy_charts.py). The Energinet series is the sum of the solar size classes of the
+# settlement data, and its total adds their self-consumption column (sources/energinet.py).
+SERIES = {
+    "eco2mix": "FR",
+    "smard": "DE",
+    "energy_charts_total": "DE",
+    "energinet": "DK",
+    "energinet_total": "DK",
+    "entsoe_nl": "NL",
+}
 DIMENSIONS = ("self_consumption", "distribution")
 # The cell of each content of the two dimensions (evaluation plan, axis 3).
 CELLS = {
@@ -44,11 +52,14 @@ CELLS = {
     ("excluded", "not_covered"): "partial_feed_in",
 }
 # Expected content of the validation series on each dimension they check (evaluation plan, axis
-# 3, and Deviations).
+# 3, and Deviations): the Dutch series is expected without its distribution grids, in either row.
 EXPECTED: dict[str, dict[str, str]] = {
     "eco2mix": {"self_consumption": "included", "distribution": "covered"},
     "smard": {"self_consumption": "excluded", "distribution": "covered"},
     "energy_charts_total": {"self_consumption": "included", "distribution": "covered"},
+    "energinet": {"self_consumption": "excluded", "distribution": "covered"},
+    "energinet_total": {"self_consumption": "included", "distribution": "covered"},
+    "entsoe_nl": {"distribution": "not_covered"},
 }
 # The series whose years measure the errors: those of Energy-Charts total power are SMARD's.
 ERROR_SERIES = ("eco2mix", "smard")
@@ -89,7 +100,8 @@ class Levels(pa.DataFrameModel):
 
 def annual_energy(hourly: pd.DataFrame) -> "pd.Series[float]":
     """Energy in GWh of the complete hours of a grid.Hourly frame, or of a frame that extends it,
-    in each Europe/Paris calendar year, the years of Eurostat; Berlin time has the same offsets."""
+    in each Europe/Paris calendar year, the years of Eurostat; Berlin, Copenhagen and Amsterdam
+    time have the same offsets."""
     local = pd.DatetimeIndex(hourly.index).tz_convert(TIMEZONE)
     energy = hourly["energy_mwh"].groupby(local.year).sum() / 1000
     return energy.rename("gwh").rename_axis("year")
