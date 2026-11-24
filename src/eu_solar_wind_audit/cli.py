@@ -586,13 +586,8 @@ def feed_in_signature(output: Path, calibration_fr: Path, calibration_de: Path) 
     """Contrasts of the feed-in signature of éCO2mix, SMARD and Energy-Charts total power, from
     the solar predictions that calibrate wrote to `calibration_fr` and `calibration_de`, and its
     controls (evaluation plan, axis 3, evidence 4)."""
-    paths = {
-        country: directory / "solar-predictions.parquet"
-        for country, directory in {"FR": calibration_fr, "DE": calibration_de}.items()
-    }
-    french, german = (
-        evaluation.Predictions.validate(pd.read_parquet(path)) for path in paths.values()
-    )
+    predictions, files = solar_predictions(calibration_fr, calibration_de)
+    french, german = predictions["FR"], predictions["DE"]
     hours = pd.DatetimeIndex(german.index)
     total = energy_charts.fetch_hourly_power(hours[0], hours[-1] + grid.HOUR)["total.solar"]
     tables = {
@@ -608,10 +603,7 @@ def feed_in_signature(output: Path, calibration_fr: Path, calibration_de: Path) 
     )
     summary = {
         "git_describe": git_describe(),
-        "predictions": {
-            country: {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-            for country, path in paths.items()
-        },
+        "predictions": files,
         "level": signature.LEVEL,
         "controls": signature.controls(rows),
         "contrasts": rows[rows["season"] == "all"].to_dict(orient="records"),
@@ -622,6 +614,26 @@ def feed_in_signature(output: Path, calibration_fr: Path, calibration_de: Path) 
     summary_path = output / "feed-in-signature.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return [rows_path, summary_path]
+
+
+def solar_predictions(
+    calibration_fr: Path, calibration_de: Path
+) -> tuple[dict[str, pd.DataFrame], dict[str, dict[str, str]]]:
+    """The solar predictions that calibrate wrote to `calibration_fr` and `calibration_de`, by
+    country, and the path and SHA-256 of each file."""
+    paths = {
+        country: directory / "solar-predictions.parquet"
+        for country, directory in {"FR": calibration_fr, "DE": calibration_de}.items()
+    }
+    predictions: dict[str, pd.DataFrame] = {
+        country: evaluation.Predictions.validate(pd.read_parquet(path))
+        for country, path in paths.items()
+    }
+    files = {
+        country: {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+        for country, path in paths.items()
+    }
+    return predictions, files
 
 
 def draw_week(output: Path, parameters: Country, fits_dir: Path, drawn: str) -> list[Path]:
