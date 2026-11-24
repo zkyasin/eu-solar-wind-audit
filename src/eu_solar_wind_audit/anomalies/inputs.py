@@ -44,6 +44,8 @@ SPLIT: tuple[odre.RegionalSeries, ...] = ("wind_onshore", "wind_offshore")
 
 # Germany and its four control areas on SMARD. Offshore wind is published where farms connect.
 SMARD_AREAS: tuple[smard.Region, ...] = ("DE", "50Hertz", "Amprion", "TenneT", "TransnetBW")
+# The German series that a model covers.
+GERMAN_MODELS: tuple[physics.Technology, ...] = ("solar", "wind_onshore")
 
 # Saint-Nazaire, the first French offshore farm (odre.FIRST_OFFSHORE_POWER), is in Pays de la Loire.
 FIRST_FARM_REGION = "52"
@@ -194,9 +196,11 @@ def germany_inputs(
     client: httpx.Client,
     start: pd.Timestamp,
     end: pd.Timestamp,
+    parameters: Country,
     *,
     smard_cache_dir: Path = smard.CACHE_DIR,
     energy_charts_cache_dir: Path = energy_charts.CACHE_DIR,
+    era5_cache_dir: Path = physics.ERA5_CACHE_DIR,
     margin: pd.Timedelta = MARGIN,
 ) -> DetectionInputs:
     """Inputs of a detection run over the hours [start, end) of Germany, both hour starts in UTC:
@@ -204,9 +208,11 @@ def germany_inputs(
     and the public and total power of Germany from Energy-Charts,
     `energy_charts.DE.<endpoint>.<technology>`, with the price classes of the DE-LU bidding zone.
 
-    There is no German model yet, so no series has a modelled output or an offshore mask. The
-    series of Germany as a whole get the Energy-Charts installed capacity of their technology; the
-    control areas get none, since no capacity is published for them.
+    Solar and onshore wind are compared with the model of their area, offshore wind with none:
+    one call of physics.model_germany_areas per technology models Germany and its four control
+    areas. Onshore wind holds no offshore output. The series of Germany as a whole get the
+    Energy-Charts installed capacity of their technology; the control areas get none, since no
+    capacity is published for them.
     """
     grid.check_period(start, end)
     hours = pd.date_range(
@@ -219,6 +225,11 @@ def germany_inputs(
 
     def capacity_mw(technology: str) -> pd.Series:
         return energy_charts.hourly_capacity(installed, technology, first, last)
+
+    modelled = {
+        technology: physics.model_germany_areas(technology, first, last, parameters, era5_cache_dir)
+        for technology in GERMAN_MODELS
+    }
 
     rows: list[Rows] = []
     series: dict[str, SeriesInputs] = {}
@@ -248,9 +259,9 @@ def germany_inputs(
                 published=(
                     Published(series_id, provenance, False, _on_hours(hourly, first, last)),
                 ),
-                modelled=None,
+                modelled=modelled[technology][area] if technology in modelled else None,
                 capacity_mw=capacity_mw(technology) if area == "DE" else None,
-                offshore=None,
+                offshore=pd.Series(False, index=hours) if technology == "wind_onshore" else None,
             )
         provenance = f"Bundesnetzagentur | SMARD.de, filter {filter_id}"
         rows.append(

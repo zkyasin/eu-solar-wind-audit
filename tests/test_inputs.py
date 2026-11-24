@@ -186,7 +186,7 @@ def test_france_inputs_give_each_series_its_datasets_model_and_offshore_hours(
 
 
 @pytest.mark.parametrize("margin", [inputs.MARGIN, pd.Timedelta(0)], ids=["margin", "none"])
-def test_germany_inputs_give_smard_and_energy_charts_series_without_a_model(
+def test_germany_inputs_give_smard_series_their_model_and_energy_charts_series(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, margin: pd.Timedelta
 ) -> None:
     start, end = utc("2025-06-01 00:00"), utc("2025-06-02 00:00")
@@ -208,6 +208,25 @@ def test_germany_inputs_give_smard_and_energy_charts_series_without_a_model(
         stamps = pd.DatetimeIndex(local.tz_convert("UTC"), name="time")
         return pd.DataFrame({"solar": 100.0, "wind_onshore": 200.0, "wind_offshore": 50.0}, stamps)
 
+    modelled_technologies: list[str] = []
+
+    def modelled_areas(
+        technology: str, first: pd.Timestamp, last: pd.Timestamp, *_: object
+    ) -> dict[str, pd.DataFrame]:
+        modelled_technologies.append(technology)
+        frame = pd.DataFrame(
+            {
+                "energy_mwh": 1.0,
+                "complete": True,
+                "capacity_mw": 10.0,
+                "capacity_provisional": False,
+                "era5_source": "ERA5",
+            },
+            index=hours_of(first, last),
+        )
+        return {area: physics.Modelled.validate(frame) for area in inputs.SMARD_AREAS}
+
+    monkeypatch.setattr(physics, "model_germany_areas", modelled_areas)
     cache = tmp_path / "energy_charts"
     cache.mkdir()
     installed = "installed_power_de_monthly.json"
@@ -220,6 +239,7 @@ def test_germany_inputs_give_smard_and_energy_charts_series_without_a_model(
             client,
             start,
             end,
+            load_country(CONFIG_DIR / "de.toml"),
             smard_cache_dir=tmp_path / "smard",
             energy_charts_cache_dir=cache,
             margin=margin,
@@ -237,7 +257,17 @@ def test_germany_inputs_give_smard_and_energy_charts_series_without_a_model(
     }
     assert set(found.series) == smard_series | energy_charts_series
     assert found.hours.equals(hours_of(first, last))
-    assert all(item.modelled is None and item.offshore is None for item in found.series.values())
+    assert modelled_technologies == ["solar", "wind_onshore"]
+    for series, item in found.series.items():
+        modelled = series.startswith("smard.") and not series.endswith("wind_offshore")
+        assert (item.modelled is not None) == modelled, series
+        # Onshore wind holds no offshore output; other series get no mask.
+        if series.startswith("smard.") and series.endswith("wind_onshore"):
+            assert item.offshore is not None
+            assert item.offshore.index.equals(found.hours)
+            assert not item.offshore.any()
+        else:
+            assert item.offshore is None, series
     # Capacity is published for Germany as a whole only.
     assert found.series["smard.DE.solar"].capacity_mw is not None
     assert found.series["smard.Amprion.solar"].capacity_mw is None

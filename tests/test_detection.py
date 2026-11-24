@@ -430,6 +430,39 @@ def test_values_above_capacity_are_checked_where_the_capacity_is_positive() -> N
     assert (above["start"] >= utc("2019-01-10")).all()
 
 
+def test_the_command_reads_germany_from_the_first_day_with_its_thresholds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls = []
+
+    def germany_inputs(
+        client: object, start: pd.Timestamp, end: pd.Timestamp, parameters: object
+    ) -> DetectionInputs:
+        calls.append((start, end, parameters))
+        return german_models()
+
+    monkeypatch.setattr(inputs, "germany_inputs", germany_inputs)
+    fixed_path = tmp_path / "DE.json"
+    thresholds.write(fixed_path, german_thresholds())
+
+    cli.main(
+        [
+            "detect-anomalies",
+            "DE",
+            "2019-01-01",
+            "2019-03-01",
+            str(tmp_path / "out"),
+            "--thresholds",
+            str(fixed_path),
+        ]
+    )
+
+    assert calls == [(breaks.FIRST_DAY, END, load_country(CONFIG_DIR / "de.toml"))]
+    run = json.loads((tmp_path / "out" / "DE-detection.json").read_text())
+    assert run["thresholds"]["path"] == str(fixed_path)
+    assert run["findings"]["level_break"] >= 2
+
+
 def test_the_command_reads_france_from_the_first_day_and_writes_the_run(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

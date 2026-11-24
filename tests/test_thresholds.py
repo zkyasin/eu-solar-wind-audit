@@ -184,7 +184,7 @@ def test_the_command_fixes_the_thresholds_of_2019_2022_without_margins(
 
     monkeypatch.setattr(inputs, "france_inputs", france_inputs)
 
-    cli.main(["fix-anomaly-thresholds", "--output", str(tmp_path / "FR.json")])
+    cli.main(["fix-anomaly-thresholds", "FR", "--output", str(tmp_path / "FR.json")])
 
     assert calls == [(thresholds.FIX_START, thresholds.FIX_END, pd.Timedelta(0))]
     assert thresholds.read(tmp_path / "FR.json").country == "FR"
