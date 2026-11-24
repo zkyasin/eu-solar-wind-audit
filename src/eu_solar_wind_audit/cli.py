@@ -156,6 +156,19 @@ def main(argv: list[str] | None = None) -> None:
     feed_in.add_argument(
         "--calibration-de", type=Path, default=Path("data/processed/calibration-de")
     )
+    consumption = commands.add_parser(
+        "consumption-signature",
+        help="measure how much the published load of éCO2mix and SMARD falls as the raw solar "
+        "model rises within the day, from the predictions of calibrate, and check the negative "
+        "and positive controls",
+    )
+    consumption.add_argument("output", type=Path, help="directory of the results")
+    consumption.add_argument(
+        "--calibration-fr", type=Path, default=Path("data/processed/calibration-fr")
+    )
+    consumption.add_argument(
+        "--calibration-de", type=Path, default=Path("data/processed/calibration-de")
+    )
     draw = commands.add_parser(
         "draw-figures",
         help="draw the figures of the README, in a light and a dark version, from the results of "
@@ -254,6 +267,9 @@ def main(argv: list[str] | None = None) -> None:
             print(path)
     elif args.command == "feed-in-signature":
         for path in feed_in_signature(args.output, args.calibration_fr, args.calibration_de):
+            print(path)
+    elif args.command == "consumption-signature":
+        for path in consumption_signature(args.output, args.calibration_fr, args.calibration_de):
             print(path)
     elif args.command == "draw-figures":
         drawn = f"Drawn on {date.today().isoformat()} at commit {(git_commit() or 'unknown')[:12]}."
@@ -612,6 +628,53 @@ def feed_in_signature(output: Path, calibration_fr: Path, calibration_de: Path) 
     rows_path = output / "feed-in-signature.parquet"
     rows.to_parquet(rows_path)
     summary_path = output / "feed-in-signature.json"
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    return [rows_path, summary_path]
+
+
+def consumption_signature(output: Path, calibration_fr: Path, calibration_de: Path) -> list[Path]:
+    """Dips of the consumption signature of the éCO2mix and SMARD load, from the solar
+    predictions that calibrate wrote to `calibration_fr` and `calibration_de`, and its controls
+    (evaluation plan, axis 3, evidence 5)."""
+    predictions, files = solar_predictions(calibration_fr, calibration_de)
+    french, german = predictions["FR"], predictions["DE"]
+    french_hours, german_hours = (pd.DatetimeIndex(frame.index) for frame in (french, german))
+    with odre.make_client() as client:
+        french_load = odre.national_hourly(
+            client, "load", french_hours[0], french_hours[-1] + grid.HOUR
+        )
+        german_load = smard.fetch_hourly_load(
+            "DE", german_hours[0], german_hours[-1] + grid.HOUR, client=client
+        )
+    tables = {
+        "eco2mix_consumption": signature.consumption_table(
+            french_load["energy_mwh"].reindex(french_hours), french, "FR"
+        ),
+        "smard_consumption": signature.consumption_table(
+            german_load["energy_mwh"].reindex(german_hours), german, "DE"
+        ),
+    }
+    rows = pd.concat(
+        [signature.dips(table).assign(series=name) for name, table in tables.items()],
+        ignore_index=True,
+    )
+    summary = {
+        "git_describe": git_describe(),
+        "predictions": files,
+        "level": signature.LEVEL,
+        "controls": signature.consumption_controls(rows),
+        "dips": rows[rows["season"] == "all"].to_dict(orient="records"),
+        # The same relative response of the load to the weather gives a smaller dip where the
+        # modelled output is larger against the load.
+        "modelled_over_load": {
+            name: float(table["raw_mwh"].sum() / table["load_mwh"].sum())
+            for name, table in tables.items()
+        },
+    }
+    output.mkdir(parents=True, exist_ok=True)
+    rows_path = output / "consumption-signature.parquet"
+    rows.to_parquet(rows_path)
+    summary_path = output / "consumption-signature.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return [rows_path, summary_path]
 

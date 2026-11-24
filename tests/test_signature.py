@@ -8,7 +8,7 @@ from scipy.stats import norm
 
 from eu_solar_wind_audit import cli, signature
 from eu_solar_wind_audit.evaluation import SEASON_OF_MONTH
-from eu_solar_wind_audit.sources import energy_charts
+from eu_solar_wind_audit.sources import energy_charts, odre, smard
 
 # Raw model output of each sky class at the midday hours, for a capacity of 2,000 MW.
 POTENTIAL_MWH = {"clear": 1000.0, "mixed": 600.0, "overcast": 300.0}
@@ -321,3 +321,52 @@ def test_the_consumption_evidence_is_used_only_when_both_controls_pass(
     found = signature.consumption_controls(consumption_control_rows(eco2mix, smard))
 
     assert (found["negative_control"], found["positive_control"], found["used"]) == expected
+
+
+def test_the_consumption_command_writes_the_dips_and_the_controls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    french_load, french = load_predictions(self_consumed=0.0)
+    german_load, german = load_predictions(self_consumed=0.2, seed=1)
+    for name, frame in {"calibration-fr": french, "calibration-de": german}.items():
+        (tmp_path / name).mkdir()
+        frame.to_parquet(tmp_path / name / "solar-predictions.parquet")
+    period = (french.index[0], french.index[-1] + pd.Timedelta(hours=1))
+
+    def national_hourly(
+        client: object, series: str, start: pd.Timestamp, end: pd.Timestamp
+    ) -> pd.DataFrame:
+        assert (series, start, end) == ("load", *period)
+        return pd.DataFrame({"energy_mwh": french_load, "complete": True})
+
+    def fetch_hourly_load(
+        region: str, start: pd.Timestamp, end: pd.Timestamp, **_: object
+    ) -> pd.DataFrame:
+        assert (region, start, end) == ("DE", *period)
+        return pd.DataFrame({"energy_mwh": german_load, "complete": True})
+
+    monkeypatch.setattr(odre, "national_hourly", national_hourly)
+    monkeypatch.setattr(smard, "fetch_hourly_load", fetch_hourly_load)
+    output = tmp_path / "signature"
+
+    cli.main(
+        [
+            "consumption-signature",
+            str(output),
+            "--calibration-fr",
+            str(tmp_path / "calibration-fr"),
+            "--calibration-de",
+            str(tmp_path / "calibration-de"),
+        ]
+    )
+
+    summary = json.loads((output / "consumption-signature.json").read_text(encoding="utf-8"))
+    assert summary["controls"] == {"negative_control": True, "positive_control": True, "used": True}
+    assert set(summary["predictions"]) == {"FR", "DE"}
+    dips = {row["series"]: row["sign"] for row in summary["dips"]}
+    assert dips == {"eco2mix_consumption": "none", "smard_consumption": "negative"}
+    assert len(pd.read_parquet(output / "consumption-signature.parquet")) == 4
+    # Over the hours of the dip, those with modelled output.
+    daylight = french["raw_mwh"] > 0
+    french_share = french["raw_mwh"][daylight].sum() / french_load[daylight].sum()
+    assert summary["modelled_over_load"]["eco2mix_consumption"] == pytest.approx(french_share)
