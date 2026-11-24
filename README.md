@@ -31,8 +31,9 @@ Solar and onshore wind in mainland France and Germany, 2019-2025:
    files: an empty half-hour in all 26 éCO2mix solar and wind series, and a German control area
    published as zero for more than a week while the national total kept its output.
 3. **Content.** SMARD, feed-in only, and Energy-Charts total power, which adds self-consumption,
-   land in the cells their producers state. French self-consumption, 1 to 7 % of solar output, is
-   too small for yearly statistics to confirm.
+   land in the cells their producers state, and so do the two Danish series of Energinet, with
+   and without its self-consumption estimate. French self-consumption, 1 to 7 % of solar output,
+   is too small for yearly statistics to confirm.
 4. **Negative prices.** Mainland France held back an estimated 1.58 TWh of solar output in 2025
    (90 % interval 1.32 to 1.84) and 1.25 TWh of onshore wind (1.15 to 1.34), where RTE publishes
    1.46 and 1.20 TWh. The yearly volumes agree; the monthly tests of the plan fail.
@@ -46,8 +47,9 @@ Solar and onshore wind in mainland France and Germany, 2019-2025:
 | 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete |
 | 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) |
 
-The Netherlands and Denmark follow, then Belgium, Spain, Portugal, Italy, Austria and Poland, each
-published with the level of evidence the plan allows.
+Denmark and the Netherlands already serve axis 3 as validation series; their other axes follow,
+then Belgium, Spain, Portugal, Italy, Austria and Poland, each published with the level of
+evidence the plan allows.
 
 ## Results, 2019-2025
 
@@ -141,10 +143,17 @@ quoted in `references/documentation`. A self-consumed share of solar output is d
 | SMARD, Germany | Excluded, decided on 2022-2024 | Covered | Feed-in only |
 | Energy-Charts total power, Germany | Included, decided on 2022-2024 | Covered | Complete |
 | éCO2mix, mainland France | Inconclusive: 1.0 % to 7.1 % of solar output | Covered | Inconclusive |
+| Energinet size classes, Denmark | Excluded, decided on 2020-2024 | Covered | Feed-in only |
+| Energinet with self-consumption, Denmark | Included, decided on 2020-2024 | Covered | Complete |
+| Transparency Platform, Netherlands | Inconclusive: no published share | Inconclusive: not covered by its level, no statement of its producer | Inconclusive |
 
 The two German series share their fleet and weather and land in different cells, as their
-producers state. RTE counts self-consumption in its production figures, but the French share is
-too small for yearly statistics to confirm it.
+producers state, and so do the two Danish ones. RTE counts self-consumption in its production
+figures, but the French share is too small for yearly statistics to confirm it. The Dutch series
+of the Transparency Platform has 59 % to 69 % of Eurostat's wind output and 1 % to 4 % of its
+solar output, and its level is decided as not covering the distribution grids in every year. No
+statement of TenneT, its producer, is archived to confirm it, and the plan publishes no other
+country until this validation case passes.
 
 Two more types of evidence each fail a control. Self-consumption barely depends on the sky, so a
 feed-in series should rise more than the modelled output from overcast to clear days. Against the
@@ -224,8 +233,9 @@ when home batteries and self-consumption take the midday output. Details in
 
 ## Reproduce
 
-Python 3.12 and [uv](https://docs.astral.sh/uv/). No account is needed: ERA5 comes from two
-anonymous cloud copies, the other sources from their public interfaces. Downloads are cached under
+Python 3.12 and [uv](https://docs.astral.sh/uv/). ERA5 comes from two anonymous cloud copies, the
+other sources from their public interfaces; only the audit of axis 3 needs a free token of the
+ENTSO-E Transparency Platform, in `ENTSOE_API_TOKEN`. Downloads are cached under
 `data/raw`, about 3 GB of ERA5 for France and 1.7 GB for Germany over 2019-2025.
 
 ```sh
@@ -243,8 +253,8 @@ uv run eu-solar-wind-audit estimate-modulation DE wind_onshore data/processed/mo
 # Anomalies, with the frozen thresholds of config/anomaly-thresholds.
 uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
-# Self-consumption in the published solar series, against Eurostat and references/sdes.
-uv run eu-solar-wind-audit audit-perimeter data/processed/perimeter
+# What the published series contain, against Eurostat, references/sdes and references/documentation.
+ENTSOE_API_TOKEN=... uv run eu-solar-wind-audit audit-perimeter data/processed/perimeter
 # The feed-in and consumption signatures, from the solar predictions of calibrate.
 uv run eu-solar-wind-audit feed-in-signature data/processed/signature
 uv run eu-solar-wind-audit consumption-signature data/processed/signature
@@ -280,6 +290,8 @@ Germany, unit register: Bundesnetzagentur, Marktstammdatenregister, dl-de/by-2-0
 Germany, administrative boundaries: © BKG (2026) dl-de/by-2-0 (Daten verändert).
 Germany, market-based curtailment: Hirth, L. (2026), Do wind and solar curtail at negative electricity prices?, arXiv 2609.10053v2.
 Energy-Charts.info, Fraunhofer ISE, CC BY 4.0.
+Source: Energinet (www.energidataservice.dk). CC BY 4.0.
+Source of publication: ENTSO-E Transparency Platform (transparency.entsoe.eu). Values shown are derived from the published data.
 Source: Eurostat, nrg_bal_peh (doi.org/10.2908/NRG_BAL_PEH), accessed on 24 November 2026. Data modified by this project; Eurostat is not responsible for the modified data.
 Contains modified Copernicus Climate Change Service information 2026. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.
 ERA5 accessed through Icechunk ERA5 (Earthmover), https://registry.opendata.aws/earthmover-era5, CC BY 4.0, and ARCO-ERA5 (Google Research).

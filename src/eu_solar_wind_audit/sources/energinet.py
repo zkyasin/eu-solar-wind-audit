@@ -46,6 +46,9 @@ RATE_LIMIT_SECONDS = 300.0
 SETTLED_AFTER = pd.Timedelta(days=90)
 
 SETTLEMENT = "ProductionConsumptionSettlement"
+# First year whose solar output is split between the size classes and self-consumption: "Before
+# 2020 all solar power is placed in SolarPowerSelfConMWh" (comment of the dataset).
+SOLAR_SPLIT_YEAR = 2020
 CAPACITY = "CapacityPerMunicipality"
 
 Area = Literal["DK1", "DK2", "DK"]

@@ -10,6 +10,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pandas as pd
 
 from eu_solar_wind_audit import (
@@ -31,7 +32,9 @@ from eu_solar_wind_audit import (
 from eu_solar_wind_audit.anomalies import breaks, detection, inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
 from eu_solar_wind_audit.sources import (
+    energinet,
     energy_charts,
+    entsoe,
     eurostat,
     mastr,
     natural_earth,
@@ -54,6 +57,14 @@ HIRTH_TECHNOLOGIES: dict[physics.Technology, str] = {"solar": "solar", "wind_ons
 # offshore wind.
 SDES_WORKBOOKS = {"solar": sdes.SOLAR_2026_Q2, "wind": sdes.WIND_2026_Q2}
 WIND_TECHNOLOGIES = ("wind_onshore", "wind_offshore")
+# Bidding zones of the countries whose distribution share comes from the Transparency Platform.
+LISTED_AREAS: dict[str, tuple[entsoe.Area, ...]] = {"DK": ("DK1", "DK2"), "NL": ("NL",)}
+DANISH_QUANTITIES: tuple[energinet.Quantity, ...] = (
+    "solar",
+    "solar_self_consumption",
+    "wind_onshore",
+    "wind_offshore",
+)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -138,7 +149,8 @@ def main(argv: list[str] | None = None) -> None:
         "audit-perimeter",
         help="set the yearly solar and wind output of the published series against Eurostat gross "
         "production, decide whether they include self-consumption and cover the distribution "
-        "grids, and combine both with what their producers state",
+        "grids, and combine both with what their producers state; reads the Transparency Platform "
+        f"with the token of {entsoe.TOKEN_VARIABLE}",
     )
     audit.add_argument("output", type=Path, help="directory of the results")
     audit.add_argument("--self-consumption", type=Path, default=Path("references/sdes"))
@@ -477,6 +489,29 @@ def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> li
         name: perimeter.annual_energy(hourly)
         for name, hourly in energy_charts.fetch_hourly_power(start, end).items()
     }
+    settlement = pd.DataFrame(
+        {
+            quantity: perimeter.annual_energy(
+                energinet.fetch_hourly_settlement("DK", quantity, start, end)
+            )
+            for quantity in DANISH_QUANTITIES
+        }
+    ).loc[energinet.SOLAR_SPLIT_YEAR :]
+    danish_wind = settlement["wind_onshore"] + settlement["wind_offshore"]
+    danish_solar = settlement["solar"] + settlement["solar_self_consumption"]
+    # The lists of units for the year after the last one hold the fleet at its end.
+    capacity_year = int(gross["year"].max()) + 1
+    with entsoe.make_client() as client:
+        dutch = {
+            technology: perimeter.annual_energy(
+                entsoe.fetch_hourly_generation("NL", technology, start, end, client=client)
+            )
+            for technology in entsoe.PRODUCTION_TYPES
+        }
+        listed = {
+            country: listed_wind_share(client, areas, capacity_year)
+            for country, areas in LISTED_AREAS.items()
+        }
     published = (
         pd.concat(
             [
@@ -493,6 +528,19 @@ def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> li
                         "solar": power["total.solar"],
                         "wind": power["total.wind_onshore"] + power["total.wind_offshore"],
                         "series": "energy_charts_total",
+                    }
+                ),
+                pd.DataFrame(
+                    {"solar": settlement["solar"], "wind": danish_wind, "series": "energinet"}
+                ),
+                pd.DataFrame(
+                    {"solar": danish_solar, "wind": danish_wind, "series": "energinet_total"}
+                ),
+                pd.DataFrame(
+                    {
+                        "solar": dutch["solar"],
+                        "wind": dutch["wind_onshore"] + dutch["wind_offshore"],
+                        "series": "entsoe_nl",
                     }
                 ),
             ]
@@ -514,8 +562,7 @@ def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> li
         pd.concat(
             [
                 pd.DataFrame(french).assign(series="eco2mix"),
-                whole.assign(series="smard"),
-                whole.assign(series="energy_charts_total"),
+                *(whole.assign(series=name) for name in perimeter.SERIES if name != "eco2mix"),
             ]
         )
         .rename_axis("year")
@@ -536,6 +583,10 @@ def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> li
                 .rename("share")
                 .to_frame()
                 .assign(country="DE"),
+                (settlement["solar_self_consumption"] / danish_solar)
+                .rename("share")
+                .to_frame()
+                .assign(country="DK"),
             ]
         )
         .rename_axis("year")
@@ -551,6 +602,7 @@ def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> li
         {
             "FR": 1 - odre.transmission_share(register, "Eolien"),
             "DE": 1 - mastr.transmission_share(units, WIND_TECHNOLOGIES, last_year_end),
+            **{country: 1 - share for country, share in listed.items()},
         }
     )
 
@@ -579,7 +631,13 @@ def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> li
             "FR": f"ODRÉ {odre.REGISTER}, wind outside the grid of RTE",
             "DE": f"Marktstammdatenregister export of {mastr_export}, wind on land below "
             f"extra-high voltage, at {last_year_end.date()}",
+            **{
+                country: f"Transparency Platform, wind capacity of {' and '.join(areas)} for "
+                f"{capacity_year} outside the wind farms of 100 MW or more it lists"
+                for country, areas in LISTED_AREAS.items()
+            },
         },
+        "energinet": {"dataset": energinet.SETTLEMENT, "first_year": energinet.SOLAR_SPLIT_YEAR},
         "errors": {
             dimension: values.reset_index().to_dict(orient="records")
             for dimension, values in errors.items()
@@ -596,6 +654,18 @@ def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> li
     summary_path = output / "perimeter.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     return [levels_path, cells_path, summary_path]
+
+
+def listed_wind_share(client: httpx.Client, areas: tuple[entsoe.Area, ...], year: int) -> float:
+    """Share of the wind capacity of the bidding zones `areas` for `year` held by the wind farms
+    of 100 MW or more that the Transparency Platform lists."""
+    from eu_solar_wind_audit import perimeter
+
+    capacity = pd.concat(
+        [entsoe.fetch_capacity(area, year, client=client) for area in areas], axis="columns"
+    ).sum(axis="columns")
+    units = pd.concat([entsoe.fetch_unit_capacity(area, year, client=client) for area in areas])
+    return perimeter.listed_share(capacity, units)
 
 
 def feed_in_signature(output: Path, calibration_fr: Path, calibration_de: Path) -> list[Path]:

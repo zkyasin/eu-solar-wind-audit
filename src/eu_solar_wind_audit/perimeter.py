@@ -17,7 +17,8 @@ inconclusive.
 
 A series takes the content that its decided years agree on. A dimension of the matrix is decided
 when this content agrees with the statement of the producer, the second type of evidence; the
-cell of the series combines both dimensions (evaluation plan, axis 3, Decision rules).
+cell of the series combines both dimensions (evaluation plan, axis 3, Decision rules). A
+validation series is checked on the dimensions whose content is known.
 """
 
 from typing import ClassVar, Literal
@@ -32,8 +33,16 @@ from eu_solar_wind_audit.sources import sdes
 
 # Published national series and their countries. Energy-Charts total power is the SMARD feed-in
 # times a monthly factor plus the self-consumption estimated by Fraunhofer ISE
-# (sources/energy_charts.py).
-SERIES = {"eco2mix": "FR", "smard": "DE", "energy_charts_total": "DE"}
+# (sources/energy_charts.py). The Energinet series is the sum of the solar size classes of the
+# settlement data, and its total adds their self-consumption column (sources/energinet.py).
+SERIES = {
+    "eco2mix": "FR",
+    "smard": "DE",
+    "energy_charts_total": "DE",
+    "energinet": "DK",
+    "energinet_total": "DK",
+    "entsoe_nl": "NL",
+}
 DIMENSIONS = ("self_consumption", "distribution")
 # The cell of each content of the two dimensions (evaluation plan, axis 3).
 CELLS = {
@@ -42,8 +51,16 @@ CELLS = {
     ("excluded", "covered"): "feed_in_only",
     ("excluded", "not_covered"): "partial_feed_in",
 }
-# Expected cells of the validation series (evaluation plan, axis 3, and Deviations).
-EXPECTED = {"eco2mix": "complete", "smard": "feed_in_only", "energy_charts_total": "complete"}
+# Expected content of the validation series on each dimension they check (evaluation plan, axis
+# 3, and Deviations): the Dutch series is expected without its distribution grids, in either row.
+EXPECTED: dict[str, dict[str, str]] = {
+    "eco2mix": {"self_consumption": "included", "distribution": "covered"},
+    "smard": {"self_consumption": "excluded", "distribution": "covered"},
+    "energy_charts_total": {"self_consumption": "included", "distribution": "covered"},
+    "energinet": {"self_consumption": "excluded", "distribution": "covered"},
+    "energinet_total": {"self_consumption": "included", "distribution": "covered"},
+    "entsoe_nl": {"distribution": "not_covered"},
+}
 # The series whose years measure the errors: those of Energy-Charts total power are SMARD's.
 ERROR_SERIES = ("eco2mix", "smard")
 Technology = Literal["solar", "wind"]
@@ -57,7 +74,8 @@ class Levels(pa.DataFrameModel):
     the series, the published output over the gross production inside that perimeter, the gap
     log(solar ratio / wind ratio), the self-consumed share s of solar output, with the gap it gives
     to a series that leaves it out, log(1 - s), and the share d of wind capacity connected to the
-    distribution grids, with the log wind ratio of a series that leaves them out, log(1 - d)."""
+    distribution grids, with the log wind ratio of a series that leaves them out, log(1 - d). s is
+    null where no estimate is published."""
 
     series: Series[str] = pa.Field(isin=list(SERIES))
     year: Series[int]
@@ -70,8 +88,8 @@ class Levels(pa.DataFrameModel):
     solar_ratio: Series[float]
     wind_ratio: Series[float]
     gap: Series[float]
-    self_consumption_share: Series[float] = pa.Field(ge=0, lt=1)
-    gap_if_excluded: Series[float] = pa.Field(le=0)
+    self_consumption_share: Series[float] = pa.Field(ge=0, lt=1, nullable=True)
+    gap_if_excluded: Series[float] = pa.Field(le=0, nullable=True)
     distribution_share: Series[float] = pa.Field(ge=0, lt=1)
     log_wind_ratio_if_not_covered: Series[float] = pa.Field(le=0)
 
@@ -82,7 +100,8 @@ class Levels(pa.DataFrameModel):
 
 def annual_energy(hourly: pd.DataFrame) -> "pd.Series[float]":
     """Energy in GWh of the complete hours of a grid.Hourly frame, or of a frame that extends it,
-    in each Europe/Paris calendar year, the years of Eurostat; Berlin time has the same offsets."""
+    in each Europe/Paris calendar year, the years of Eurostat; Berlin, Copenhagen and Amsterdam
+    time have the same offsets."""
     local = pd.DatetimeIndex(hourly.index).tz_convert(TIMEZONE)
     energy = hourly["energy_mwh"].groupby(local.year).sum() / 1000
     return energy.rename("gwh").rename_axis("year")
@@ -108,6 +127,16 @@ def inside_shares(panel: pd.DataFrame, totals: pd.DataFrame) -> "pd.Series[float
     return share.groupby(years).mean().rename("inside").rename_axis("year")
 
 
+def listed_share(capacity: "pd.Series[float]", units: pd.DataFrame) -> float:
+    """Share of the wind capacity of a country, in MW indexed by technology as
+    sources.entsoe.fetch_capacity gives it, held by the wind farms of `units`, a
+    sources.entsoe.UnitCapacity table: the list of units of 100 MW or more that the Transparency
+    Platform publishes."""
+    wind = ["wind_onshore", "wind_offshore"]
+    listed = units.loc[units["technology"].isin(wind), "capacity_mw"].sum()
+    return float(listed / capacity.reindex(wind).sum())
+
+
 def levels(
     published: pd.DataFrame,
     gross: pd.DataFrame,
@@ -117,13 +146,13 @@ def levels(
 ) -> DataFrame[Levels]:
     """`Levels` of each series and year found in all the inputs: `published` and `inside` with the
     columns series, year, solar and wind; `gross` with country, year, solar and wind in GWh;
-    `self_consumption` with country, year and share; and `distribution`, the distribution share of
-    wind capacity, indexed by country."""
+    `self_consumption` with country, year and share, for the countries that publish one; and
+    `distribution`, the distribution share of wind capacity, indexed by country."""
     table = (
         published.merge(inside, on=["series", "year"], suffixes=("", "_inside"))
         .assign(country=lambda frame: frame["series"].map(SERIES))
         .merge(gross, on=["country", "year"], suffixes=("", "_gross"))
-        .merge(self_consumption, on=["country", "year"])
+        .merge(self_consumption, on=["country", "year"], how="left")
         .merge(distribution.rename("distribution"), left_on="country", right_index=True)
     )
     solar_ratio = table["solar"] / (table["solar_gross"] * table["solar_inside"])
@@ -183,12 +212,13 @@ def detection_threshold(error: float) -> float:
 
 def decide_self_consumption(table: DataFrame[Levels], threshold: float) -> "pd.Series[str]":
     """Whether the solar output of each row of `table` includes self-consumption: inconclusive
-    when the self-consumed share is below `threshold`, otherwise the content whose gap is closer to
-    the observed one."""
+    when the self-consumed share is unknown or below `threshold`, otherwise the content whose gap
+    is closer to the observed one."""
+    share = table["self_consumption_share"]
     return _decide(
         table["gap"],
         table["gap_if_excluded"],
-        table["self_consumption_share"] < threshold,
+        share.isna() | (share < threshold),
         ("included", "excluded"),
     )
 
@@ -231,7 +261,7 @@ def cells(decided: pd.DataFrame, documentation: pd.DataFrame) -> pd.DataFrame:
     """Matrix of axis 3, one row per series of `decided`, the Levels with the decision of each
     year in a column per dimension: for each dimension, the content from the level, the content
     that the producer states (references.load_documentation) and their combination; then the cell
-    of the series, its expected cell, and the validation, pass, fail or inconclusive."""
+    of the series, its expected cells, and the validation, pass, fail or inconclusive."""
     stated = documentation.set_index(["series", "dimension"])["content"].to_dict()
     rows = []
     for series, years in decided.groupby("series"):
@@ -253,17 +283,39 @@ def cells(decided: pd.DataFrame, documentation: pd.DataFrame) -> pd.DataFrame:
             "ambiguous" if "ambiguous" in combined else "inconclusive"
         )
         expected = EXPECTED.get(name)
-        row |= {"cell": cell, "expected_cell": expected, "validation": _validation(cell, expected)}
+        row |= {
+            "cell": cell,
+            "expected_cell": None if expected is None else " or ".join(_cells_of(expected)),
+            "validation": _validation(dict(zip(DIMENSIONS, combined, strict=True)), expected),
+        }
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def _validation(cell: str, expected: str | None) -> str | None:
+def _cells_of(expected: dict[str, str]) -> list[str]:
+    """The cells whose contents are those `expected` on the dimensions it gives."""
+    return [
+        cell
+        for contents, cell in CELLS.items()
+        if all(
+            expected.get(dimension, content) == content
+            for dimension, content in zip(DIMENSIONS, contents, strict=True)
+        )
+    ]
+
+
+def _validation(contents: dict[str, str], expected: dict[str, str] | None) -> str | None:
+    """Fail when a checked dimension is ambiguous or takes another content, inconclusive when
+    one is inconclusive, pass otherwise."""
     if expected is None:
         return None
-    if cell == expected:
-        return "pass"
-    return "inconclusive" if cell == "inconclusive" else "fail"
+    checked = [contents[dimension] for dimension in expected]
+    if "ambiguous" in checked:
+        return "fail"
+    if "inconclusive" in checked:
+        return "inconclusive"
+    agree = all(contents[dimension] == content for dimension, content in expected.items())
+    return "pass" if agree else "fail"
 
 
 def _error_rows(table: DataFrame[Levels]) -> pd.DataFrame:
@@ -272,9 +324,8 @@ def _error_rows(table: DataFrame[Levels]) -> pd.DataFrame:
 
 def _expected(rows: pd.DataFrame, dimension: str) -> "pd.Series[str]":
     """Expected content of `dimension` for each row of the error series."""
-    contents = {cell: dict(zip(DIMENSIONS, key, strict=True)) for key, cell in CELLS.items()}
     series = rows.index.get_level_values("series").to_series(index=rows.index)
-    return series.map(lambda name: contents[EXPECTED[name]][dimension])
+    return series.map(lambda name: EXPECTED[name][dimension])
 
 
 def _decide(

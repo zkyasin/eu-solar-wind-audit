@@ -4,10 +4,10 @@ Axis 3 of the [evaluation plan](evaluation-plan.md): does a published solar and 
 include the output that producers consume on site, and does it cover the plants connected to the
 distribution grids? Each question is answered from two types of evidence, the yearly level of the
 series against Eurostat gross production and what its producer states, and decided only when they
-agree.
+agree. The validation series come from France, Germany, Denmark and the Netherlands.
 
 ```
-eu-solar-wind-audit audit-perimeter data/processed/perimeter
+ENTSOE_API_TOKEN=... eu-solar-wind-audit audit-perimeter data/processed/perimeter
 ```
 
 ## Matrix
@@ -17,14 +17,22 @@ eu-solar-wind-audit audit-perimeter data/processed/perimeter
 | SMARD, Germany | Excluded | Excluded | Excluded | Covered | Covered | Covered | Feed-in only | Feed-in only | Pass |
 | Energy-Charts total power, Germany | Included | Included | Included | Covered | Covered | Covered | Complete | Complete | Pass |
 | éCO2mix, mainland France | Inconclusive | Included | Inconclusive | Covered | Covered | Covered | Inconclusive | Complete | Inconclusive |
+| Energinet size classes, Denmark | Excluded | Excluded | Excluded | Covered | Covered | Covered | Feed-in only | Feed-in only | Pass |
+| Energinet with self-consumption, Denmark | Included | Included | Included | Covered | Covered | Covered | Complete | Complete | Pass |
+| ENTSO-E, Netherlands | Inconclusive | None | Inconclusive | Not covered | None | Inconclusive | Inconclusive | Partial or partial feed-in | Inconclusive |
 
 - The method sets two German series with the same fleet and weather in different cells: the SMARD
-  feed-in leaves self-consumption out, Energy-Charts total power adds it back.
+  feed-in leaves self-consumption out, Energy-Charts total power adds it back. It does the same in
+  Denmark, where the size classes of the settlement data leave it out and Energinet's
+  self-consumption column adds it back.
 - France covers its distribution grids, but its self-consumed share stays below the detection
   threshold in every year: the level cannot confirm what RTE states, so the cell stays
   inconclusive rather than complete.
-- No validation series is placed in a wrong cell. The Netherlands, the validation case of a series
-  without its distribution grids, waits for access to the ENTSO-E Transparency Platform.
+- No validation series is placed in a wrong cell. The Dutch series of the Transparency Platform,
+  the validation case of a series without its distribution grids, is decided as not covering
+  them in every year, but no statement of TenneT, its producer, on what it covers is archived:
+  the dimension stays inconclusive. Until it passes, the content "not covered" has no passing
+  validation series, and no other country is published (evaluation plan, axis 3).
 - The feed-in signature, a third type of evidence, fails its positive control and is not used
   ([Feed-in signature](#feed-in-signature)). The consumption signature, a fourth one, fails its
   negative control ([Consumption signature](#consumption-signature)).
@@ -42,6 +50,12 @@ Each statement is quoted from the document listed, with its SHA-256, in
 | Energy-Charts total power | Distribution: covered | « Total net electricity production (including industrial self supply) […] » (Energy-Charts API description, `/v2/total_power`) |
 | éCO2mix | Self-consumption: included | « la production nette nationale (toute filière confondue, nette de la consommation des auxiliaires et avec prise en compte de l’autoproduction/autoconsommation) » (RTE, Bilan électrique 2025, page 12) |
 | éCO2mix | Distribution: covered | « la visibilité de RTE sur les injections de productions à partir de comptages RPT et RPD permet de constituer de manière plus précise les rubriques » (éCO2mix file specification, June 2025, section 1.2.2) |
+| Energinet, both series | Self-consumption: excluded from the size classes, included with SolarPowerSelfConMWh | « The estimated production from solar panels, which has been consumed rather than released to the grid. » (Energi Data Service, metadata of ProductionConsumptionSettlement, column SolarPowerSelfConMWh) |
+| Energinet, both series | Distribution: covered | « In addition, DataHub handles metered values for all metering points as well as master data from the market participants. » (Energinet, The Danish electricity retail market, page 7) |
+
+The settlement dataset is « based on settlement data from Datahub » (its description). TenneT
+publishes the Dutch series on the Transparency Platform; no statement of TenneT on what it leaves
+out is archived.
 
 RTE's statement covers national net production in its annual review; the review gives 32.9 TWh of
 solar output in 2025, and the éCO2mix national series 32.5 TWh without Corsica.
@@ -56,14 +70,16 @@ the wind ratio likewise.
 The national éCO2mix series cover mainland France without Corsica, while Eurostat's France
 includes Corsica and the five overseas departments. Gross production is cut to the share of the
 national capacity inside the perimeter (SDES quarterly capacity, mean of the year's quarter ends):
-94.1 % of solar capacity in 2019 and 96.4 % in 2024, 99.5 % of wind capacity.
+94.1 % of solar capacity in 2019 and 96.4 % in 2024, 99.5 % of wind capacity. The Danish and
+Dutch series cover their whole countries, as Eurostat does.
 
 Each dimension has its own statistic, error and detection threshold. The error is the root mean
 square, over 2019-2024, of the statistic of the series whose content is known, éCO2mix and SMARD,
 minus its value for that content. A one-sided test at 5 % detects a share left out of a series
 with 80 % power from the detection threshold. A year below it is inconclusive; a year at or above
 it goes to the content whose value is closer to the observed one, and a series takes the content
-that its decided years agree on.
+that its decided years agree on. The Danish and Dutch series are checked against these
+thresholds and do not count in the errors.
 
 ### Self-consumption
 
@@ -76,7 +92,13 @@ estimates that the producers of statistics publish:
   ([L'autoconsommation d'électricité en France](https://www.statistiques.developpement-durable.gouv.fr/lautoconsommation-delectricite-en-france),
   2 October 2026) over Eurostat gross production, 1.0 % in 2019 and 7.1 % in 2024;
 - Germany: the estimate of Fraunhofer ISE that Energy-Charts publishes, total minus public solar
-  power over total, 6.0 % in 2019 and 19.7 % in 2024.
+  power over total, 6.0 % in 2019 and 19.7 % in 2024;
+- Denmark: Energinet's SolarPowerSelfConMWh, its model of solar output minus the metered output,
+  over the sum of the size classes and that column, from 2020: « Before 2020 all solar power is
+  placed in SolarPowerSelfConMWh » (comment of the dataset).
+
+No self-consumed share of Dutch solar output is published by year, so the Dutch series stays
+inconclusive on this dimension.
 
 The error of the gap is 0.039 (0.050 for éCO2mix, 0.021 for SMARD), and the detection threshold
 9.1 %.
@@ -104,6 +126,23 @@ The error of the gap is 0.039 (0.050 for éCO2mix, 0.021 for SMARD), and the det
   country, Corsica and the overseas departments included. The gap between the two official
   sources exceeds the French self-consumed share of any year.
 
+| Year | Energinet size classes gap | Energinet with self-consumption gap | s, Denmark | log(1 − s), Denmark |
+|---|---|---|---|---|
+| 2020 | −0.541 | 0.000 | 41.8 % | −0.541 |
+| 2021 | −0.119 | +0.072 | 17.4 % | −0.191 |
+| 2022 | −0.138 | 0.000 | 12.9 % | −0.138 |
+| 2023 | −0.111 | 0.000 | 10.5 % | −0.111 |
+| 2024 | −0.129 | 0.000 | 12.1 % | −0.129 |
+
+- Every Danish year is above the threshold and decided as expected for both series.
+- The size classes and the self-consumption column add up to Eurostat gross production in 2020 and
+  2022-2024, so their gaps equal log(1 − s) and zero by construction in those years. In 2021
+  their sum is 7.7 % above it (1,410 GWh against 1,309 GWh), and the size classes are decided as
+  excluding self-consumption by 0.023, 0.6 times the error of the gap.
+- In 2020, the first year of the split, the self-consumed share is 41.8 %, two to four times that
+  of later years. On 1 November 2020 the output of the class of 40 kW and more moves into the
+  class below 10 kW; their sum, used here, is unaffected.
+
 ### Distribution grids
 
 A series that leaves out the plants connected to the distribution grids, where a share d of wind
@@ -114,6 +153,13 @@ Germany (Marktstammdatenregister: onshore wind below extra-high voltage; offshor
 transmission, since the transmission system operators connect it). The error of the log wind ratio
 is 0.017 (0.021 for éCO2mix, 0.010 for SMARD), and the detection threshold 4.1 %.
 
+No open register gives the connection of every Danish or Dutch wind farm. The Transparency
+Platform lists the farms of 100 MW or more with the voltage of their connection, all counted as
+connected to the transmission grid; d is the share of the wind capacity of the bidding zones for
+2025 outside them: 55.8 % in Denmark and 49.6 % in the Netherlands. Smaller farms can connect to
+the transmission grid too, so d is an upper bound, which can only move a decision towards
+covered.
+
 | Year | éCO2mix wind ratio | SMARD wind ratio | Energy-Charts total wind ratio |
 |---|---|---|---|
 | 2019 | 0.958 | 0.986 | 0.981 |
@@ -123,8 +169,32 @@ is 0.017 (0.021 for éCO2mix, 0.010 for SMARD), and the detection threshold 4.1 
 | 2023 | 0.993 | 1.005 | 0.984 |
 | 2024 | 0.990 | 0.995 | 0.981 |
 
-Every year of every series is decided as covering the distribution grids: a series without them
-would give a wind ratio near 0.15.
+Every year of the French and German series is decided as covering the distribution grids: a
+series without them would give a wind ratio near 0.15.
+
+| Year | Energinet wind ratio | ENTSO-E Netherlands wind ratio | ENTSO-E Netherlands solar ratio |
+|---|---|---|---|
+| 2019 | | 0.587 | 0.012 |
+| 2020 | 1.000 | 0.650 | 0.025 |
+| 2021 | 1.002 | 0.693 | 0.036 |
+| 2022 | 1.000 | 0.684 | 0.030 |
+| 2023 | 1.000 | 0.672 | 0.028 |
+| 2024 | 1.000 | 0.682 | 0.022 |
+
+- A Dutch series without its distribution grids would give a wind ratio of about 1 − d = 0.50, one
+  with them a ratio of one. The ENTSO-E series is decided as not covering them in every year. The
+  closest year is 2021: its log wind ratio, −0.367, lies 0.024 below the boundary log(1 − d) / 2,
+  1.4 times the error.
+- The Dutch decision depends on the list of units. The list for 2024 gives Hollandse Kust Zuid
+  657 MW instead of 1,420 MW: with the platform's list and capacity for 2024, d would be 55.2 %,
+  and 2021 to 2024 would be decided as covered. Counting on the distribution grids the one
+  onshore farm listed at 66 kV keeps every year not covered.
+- Dutch solar output on the platform is 1.2 % to 3.6 % of Eurostat's, far below what
+  self-consumption alone could leave out.
+- The Danish wind ratio is one in every year, so the decision holds for any d above the
+  threshold. The platform's capacity for 2025 gives Danish onshore wind 2,999 MW, against 4,860 MW
+  in its value for 2024 and 4,861 MW in Energinet's register on 1 January 2025; with Energinet's
+  capacity, d would be 66.8 %.
 
 ## Feed-in signature
 
@@ -224,7 +294,12 @@ MWh of load per MWh of modelled solar output, with the 90 % interval.
 - The capacity share stands for the production share of Corsica and the overseas departments,
   whose yields differ from those of the mainland, and the capacity share on the distribution
   grids for their share of wind output.
-- The self-consumed shares are estimates of the SDES and of Fraunhofer ISE, not measurements.
+- The self-consumed shares are estimates of the SDES, Fraunhofer ISE and Energinet, not
+  measurements.
+- No statement of TenneT on what the Dutch series covers is archived, so the only validation series
+  of a series without its distribution grids stays inconclusive.
+- In Denmark and the Netherlands, d is an upper bound drawn from the farms of 100 MW or more, and
+  the Dutch decision depends on which year's list is read.
 - Twelve validation years give imprecise errors, and so imprecise thresholds.
 - The load series have no cell: besides what their producers state, their only evidence, the
   consumption signature, fails its negative control.

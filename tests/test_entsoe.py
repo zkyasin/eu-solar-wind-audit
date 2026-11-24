@@ -204,3 +204,93 @@ def test_a_missing_token_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
     with pytest.raises(entsoe.EntsoeError, match=entsoe.TOKEN_VARIABLE):
         entsoe.make_client()
+
+
+def yearly(
+    production_type: str, capacities: dict[int, float], unit: str = "", voltage: str = ""
+) -> str:
+    """A capacity time series with one yearly period per item of `capacities`, for the unit
+    `unit` connected at `voltage` kV when they are given."""
+    periods = "".join(
+        f"<Period><timeInterval><start>{year - 1}-12-31T23:00Z</start>"
+        f"<end>{year}-12-31T23:00Z</end></timeInterval><resolution>P1Y</resolution>"
+        f"<Point><position>1</position><quantity>{capacity}</quantity></Point></Period>"
+        for year, capacity in capacities.items()
+    )
+    resource = (
+        f"<registeredResource.mRID>{unit}</registeredResource.mRID>"
+        f"<registeredResource.name>Farm {unit}</registeredResource.name>"
+        if unit
+        else ""
+    )
+    limit = (
+        f'<voltage_PowerSystemResources.highVoltageLimit unit="KVT">{voltage}'
+        "</voltage_PowerSystemResources.highVoltageLimit>"
+        if voltage
+        else ""
+    )
+    return (
+        f"<TimeSeries>{resource}<quantity_Measure_Unit.name>MAW</quantity_Measure_Unit.name>"
+        f"<MktPSRType><psrType>{production_type}</psrType>{limit}</MktPSRType>{periods}"
+        "</TimeSeries>"
+    )
+
+
+def test_the_capacity_of_each_technology_is_that_of_the_year() -> None:
+    content = document(
+        yearly("B16", {2024: 900.0, 2025: 1000.0}),
+        yearly("B19", {2024: 380.0, 2025: 400.0}),
+        yearly("B18", {2025: 600.0}),
+        yearly("B04", {2025: 5000.0}),
+    )
+
+    capacity = entsoe.parse_capacity(content, 2025)
+
+    assert capacity.to_dict() == {"solar": 1000.0, "wind_onshore": 400.0, "wind_offshore": 600.0}
+
+
+def test_units_of_the_year_keep_their_connection_voltage() -> None:
+    content = document(
+        yearly("B18", {2024: 300.0, 2025: 600.0}, unit="49W2", voltage="380"),
+        yearly("B19", {2025: 120.0}, unit="49W1"),
+        yearly("B19", {2024: 110.0}, unit="49W3", voltage="110"),
+        yearly("B14", {2025: 485.0}, unit="49W4", voltage="150"),
+    )
+
+    units = entsoe.parse_unit_capacity(content, 2025)
+
+    assert units["unit"].tolist() == ["49W1", "49W2"]
+    assert units["technology"].tolist() == ["wind_onshore", "wind_offshore"]
+    assert units["capacity_mw"].tolist() == [120.0, 600.0]
+    assert np.isnan(units["voltage_kv"].iloc[0])
+    assert units["voltage_kv"].iloc[1] == 380.0
+
+
+def test_capacity_requests_cover_a_year_of_market_time_and_settled_years_are_cached(
+    tmp_path: Path,
+) -> None:
+    queries: list[httpx.QueryParams] = []
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        queries.append(request.url.params)
+        return httpx.Response(200, content=document(yearly("B19", {2024: 380.0})))
+
+    for _ in range(2):
+        capacity = entsoe.fetch_capacity("NL", 2024, client=serving(answer), cache_dir=tmp_path)
+
+    assert [(query["periodStart"], query["periodEnd"]) for query in queries] == [
+        ("202312312300", "202412312300")
+    ]
+    assert capacity.to_dict() == {"wind_onshore": 380.0}
+    assert [path.name for path in tmp_path.iterdir()] == [
+        "A68_A33_10YNL----------L_202312312300_202412312300.xml"
+    ]
+
+
+def test_a_year_without_listed_units_gives_an_empty_table(tmp_path: Path) -> None:
+    client = serving(lambda request: httpx.Response(200, content=acknowledgement("999", "")))
+
+    units = entsoe.fetch_unit_capacity("DK2", 2024, client=client, cache_dir=tmp_path)
+
+    assert units.empty
+    assert list(units.columns) == list(entsoe.UnitCapacity.to_schema().columns)
