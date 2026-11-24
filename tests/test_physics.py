@@ -816,7 +816,7 @@ def test_the_german_perimeter_keeps_every_district(
 
 def mastr_units(path: Path) -> Path:
     """A unit table as mastr.write_capacity writes it, for an export of 2025-07-01: two solar
-    units in one district, and three wind turbines of three windows."""
+    units in one district and two control areas, and three wind turbines of three windows."""
     units = pd.DataFrame(
         {
             "technology": ["solar", "solar", "wind_onshore", "wind_onshore", "wind_onshore"],
@@ -828,6 +828,7 @@ def mastr_units(path: Path) -> Path:
             ),
             "decommissioned": pd.DatetimeIndex([pd.NaT, pd.NaT, pd.NaT, pd.NaT, "2025-03-15"]),
             "district": "09162",
+            "control_area": ["TenneT", "Amprion", "TenneT", "TenneT", None],
         }
     )
     units.to_parquet(path / "mastr_units.parquet", index=False)
@@ -853,6 +854,15 @@ def test_german_capacity_is_the_inverter_power_per_district(tmp_path: Path) -> N
     provisional = found.set_index("month_end")["provisional"]
     assert not provisional[pd.Timestamp("2025-03-31")]
     assert provisional[pd.Timestamp("2025-04-30")]
+
+
+def test_the_capacity_of_a_control_area_counts_its_units_only(tmp_path: Path) -> None:
+    found = physics.load_germany_capacity(
+        "solar", GERMANY, mastr_units(tmp_path), control_area="Amprion"
+    )
+
+    assert capacity_at(found, "2025-01-31") == pytest.approx(0.0)
+    assert capacity_at(found, "2025-02-28") == pytest.approx(2.0)
 
 
 def test_german_wind_is_split_by_the_commissioning_of_its_units(tmp_path: Path) -> None:

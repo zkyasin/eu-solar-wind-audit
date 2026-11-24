@@ -333,7 +333,10 @@ def load_monthly_capacity(technology: Technology, until: pd.Timestamp) -> pd.Dat
 
 
 def load_germany_capacity(
-    technology: Technology, parameters: Country, units_path: Path | None = None
+    technology: Technology,
+    parameters: Country,
+    units_path: Path | None = None,
+    control_area: str | None = None,
 ) -> pd.DataFrame:
     """Month-end MaStR capacity per district in the columns of sdes.monthly_capacity, the district
     code standing for the department code and the code of its Land for the region, with the
@@ -343,7 +346,8 @@ def load_germany_capacity(
     export are provisional.
 
     `units_path` is the unit table that mastr.write_capacity writes, extracted from the pinned
-    export when it is missing.
+    export when it is missing. With a `control_area`, the capacity is that of its units only, on
+    the rows of Germany.
     """
     path = units_path or mastr.OUTPUT_DIR / "mastr_units.parquet"
     if not path.exists():
@@ -352,6 +356,13 @@ def load_germany_capacity(
     last = export_date - pd.offsets.MonthEnd(1)
     units = pd.read_parquet(path)
     units = units[units["technology"].eq(technology)]
+    if control_area is not None:
+        # Units of other control areas count with no power, so that the panel keeps the rows of
+        # Germany and a control area without units has no capacity.
+        others = units["control_area"].ne(control_area)
+        units = units.assign(
+            net_kw=units["net_kw"].mask(others, 0.0), gross_kw=units["gross_kw"].mask(others, 0.0)
+        )
     year = units["commissioned"].dt.year.to_numpy()
     windows = (
         [None]
@@ -386,11 +397,13 @@ def model_germany(
     parameters: Country,
     cache_dir: Path = ERA5_CACHE_DIR,
     units_path: Path | None = None,
+    control_area: str | None = None,
 ) -> DataFrame[Modelled]:
-    """Hourly modelled output of the onshore fleet of Germany for hours [start, end), both hour
-    starts in UTC, computed one calendar year at a time; see `model`."""
+    """Hourly modelled output of the onshore fleet of Germany, or of its units in `control_area`,
+    for hours [start, end), both hour starts in UTC, computed one calendar year at a time; see
+    `model`."""
     grid.check_period(start, end)
-    monthly = load_germany_capacity(technology, parameters, units_path)
+    monthly = load_germany_capacity(technology, parameters, units_path, control_area)
     districts = bkg.load_districts()
     years = [
         model(technology, first, stop, parameters, monthly, districts, cache_dir)
