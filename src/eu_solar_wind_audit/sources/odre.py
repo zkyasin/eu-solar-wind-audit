@@ -33,6 +33,20 @@ CACHE_DIR = Path("data/raw/odre")
 NATIONAL_CONSOLIDATED = "eco2mix-national-cons-def"
 NATIONAL_REALTIME = "eco2mix-national-tr"
 REGIONAL_CONSOLIDATED = "eco2mix-regional-cons-def"
+# National register of production and storage installations at the end of 2024 (RTE, Enedis, EDF
+# SEI and the local distribution operators), installations of 36 kW or less aggregated.
+REGISTER = "registre-national-installation-production-stockage-electricite-agrege-311224"
+REGISTER_FIELDS = {
+    "coderegion": "region_code",
+    "filiere": "sector",
+    "codegestionnaire": "grid_operator",
+    "puismaxinstallee": "capacity_kw",
+}
+# The EIC code of RTE, the transmission system operator, in the register.
+RTE_EIC = "10XFR-RTE------Q"
+# INSEE codes of the regions that the national éCO2mix series leave out: the five overseas regions
+# and Corsica.
+OUTSIDE_NATIONAL = ("01", "02", "03", "04", "06", "94")
 
 # Layout of the rows. RTE's "Spécification des fichiers de données en puissance pour éCO2mix"
 # (2025, linked from https://www.rte-france.com/en/data-publications/eco2mix/download-indicators)
@@ -400,6 +414,29 @@ def complete_end(hourly: pd.DataFrame, start: pd.Timestamp) -> pd.Timestamp:
     has the date of the next one."""
     complete = hourly.index[hourly["complete"].to_numpy()]
     return start if complete.empty else complete[-1] + grid.HOUR
+
+
+def fetch_register(client: httpx.Client, *, cache_dir: Path = CACHE_DIR) -> pd.DataFrame:
+    """Wind ("Eolien") and solar ("Solaire") rows of the register at the end of 2024: region code,
+    sector, EIC code of the grid operator and maximum installed capacity in kW."""
+    path = download_export(
+        client,
+        REGISTER,
+        select=",".join(REGISTER_FIELDS),
+        where="filiere in ('Solaire','Eolien')",
+        cache_dir=cache_dir,
+    )
+    return pd.read_parquet(path).rename(columns=REGISTER_FIELDS)
+
+
+def transmission_share(register: pd.DataFrame, sector: str) -> float:
+    """Share of the capacity of `sector` in mainland France without Corsica that is connected to
+    the grid of RTE, from rows of `fetch_register`; rows without a region count as mainland."""
+    rows = register[
+        (register["sector"] == sector) & ~register["region_code"].isin(OUTSIDE_NATIONAL)
+    ]
+    on_rte = rows["grid_operator"] == RTE_EIC
+    return float(rows.loc[on_rte, "capacity_kw"].sum() / rows["capacity_kw"].sum())
 
 
 def snapshot_realtime(client: httpx.Client, directory: Path) -> Snapshot:

@@ -22,6 +22,9 @@ NATIONAL_REALTIME = FIXTURES / "eco2mix-national-tr_2026-10-24_2026-10-25.parque
 REGIONAL_CONSOLIDATED = FIXTURES / "eco2mix-regional-cons-def_2025-12-31.parquet"
 # Same query for 2012-12-31, retrieved 2026-11-22: the first stamp of the regional dataset.
 REGIONAL_FIRST_DAY = FIXTURES / "eco2mix-regional-cons-def_2012-12-31.parquet"
+# Eleven rows of the export of odre.fetch_register, retrieved 2026-11-24: Corsica, La Réunion,
+# mainland wind and solar on the grids of RTE and Enedis, and a row without a region.
+REGISTER = FIXTURES / f"{odre.REGISTER}_cut.parquet"
 
 
 def serving(content: bytes, requests: list[httpx.Request]) -> httpx.Client:
@@ -377,3 +380,26 @@ def test_snapshot_realtime_saves_the_full_export_and_its_checksum(tmp_path: Path
     assert metadata["sha256"] == snapshot.sha256
     assert datetime.fromisoformat(metadata["retrieved_at"]) == snapshot.retrieved_at
     assert metadata["dataset"] == "eco2mix-national-tr"
+
+
+def test_fetch_register_asks_for_the_wind_and_solar_rows(tmp_path: Path) -> None:
+    requests: list[httpx.Request] = []
+    with serving(REGISTER.read_bytes(), requests) as client:
+        register = odre.fetch_register(client, cache_dir=tmp_path)
+
+    (request,) = requests
+    assert request.url.path.endswith(f"/{odre.REGISTER}/exports/parquet")
+    assert request.url.params["select"] == "coderegion,filiere,codegestionnaire,puismaxinstallee"
+    assert request.url.params["where"] == "filiere in ('Solaire','Eolien')"
+    assert register.columns.tolist() == ["region_code", "sector", "grid_operator", "capacity_kw"]
+
+
+def test_transmission_share_is_that_of_the_rte_grid_in_mainland_france(tmp_path: Path) -> None:
+    with serving(REGISTER.read_bytes(), []) as client:
+        register = odre.fetch_register(client, cache_dir=tmp_path)
+
+    # Wind: 68,000 and 10,800 kW on the grid of RTE, 11,750 and 10,000 kW on that of Enedis; the
+    # Corsican farm does not count.
+    assert odre.transmission_share(register, "Eolien") == pytest.approx(78_800 / 100_550)
+    # Solar: 9,749 kW on the grid of RTE, 4,455 kW on that of Enedis and 309.11 kW without a region.
+    assert odre.transmission_share(register, "Solaire") == pytest.approx(9_749 / 14_513.11)
