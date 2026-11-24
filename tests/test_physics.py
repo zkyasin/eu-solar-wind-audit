@@ -865,6 +865,23 @@ def test_the_capacity_of_a_control_area_counts_its_units_only(tmp_path: Path) ->
     assert capacity_at(found, "2025-02-28") == pytest.approx(2.0)
 
 
+def test_units_without_a_control_area_take_the_shares_of_their_district() -> None:
+    units = pd.DataFrame(
+        {
+            "district": ["09162", "09162", "09162", "05374", "05374"],
+            "net_kw": [300.0, 100.0, 50.0, 200.0, 40.0],
+            "control_area": ["TenneT", "Amprion", None, "Amprion", None],
+        }
+    )
+
+    tennet = physics._control_area_weights(units, "TenneT")
+    amprion = physics._control_area_weights(units, "Amprion")
+
+    assert tennet.tolist() == pytest.approx([1.0, 0.0, 0.75, 0.0, 0.0])
+    assert amprion.tolist() == pytest.approx([0.0, 1.0, 0.25, 1.0, 1.0])
+    assert physics._control_area_weights(units, "50Hertz").tolist() == [0.0] * 5
+
+
 def test_german_wind_is_split_by_the_commissioning_of_its_units(tmp_path: Path) -> None:
     found = physics.load_germany_capacity("wind_onshore", GERMANY, mastr_units(tmp_path))
 

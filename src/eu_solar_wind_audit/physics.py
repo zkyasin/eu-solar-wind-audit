@@ -373,8 +373,9 @@ def load_germany_capacity(
     export are provisional.
 
     `units_path` is the unit table that mastr.write_capacity writes, extracted from the pinned
-    export when it is missing. With a `control_area`, the capacity is that of its units only, on
-    the rows of Germany.
+    export when it is missing. With a `control_area`, the capacity is that of its units and its
+    share of the units without a control area, on the rows of Germany; see
+    _control_area_weights.
     """
     path = units_path or mastr.OUTPUT_DIR / "mastr_units.parquet"
     if not path.exists():
@@ -384,12 +385,8 @@ def load_germany_capacity(
     units = pd.read_parquet(path)
     units = units[units["technology"].eq(technology)]
     if control_area is not None:
-        # Units of other control areas count with no power, so that the panel keeps the rows of
-        # Germany and a control area without units has no capacity.
-        others = units["control_area"].ne(control_area)
-        units = units.assign(
-            net_kw=units["net_kw"].mask(others, 0.0), gross_kw=units["gross_kw"].mask(others, 0.0)
-        )
+        weight = _control_area_weights(units, control_area)
+        units = units.assign(net_kw=units["net_kw"] * weight, gross_kw=units["gross_kw"] * weight)
     year = units["commissioned"].dt.year.to_numpy()
     windows = (
         [None]
@@ -415,6 +412,24 @@ def load_germany_capacity(
             "generation": rows["generation"],
         }
     )
+
+
+def _control_area_weights(units: pd.DataFrame, control_area: str) -> "pd.Series[float]":
+    """The part of each unit of one technology in `control_area`: 1 for its own units, 0 for those
+    of other control areas, and for a unit without a control area, the share of `control_area` in
+    the capacity of the units of its district that have one. Most of these units are recent: their
+    grid operator has not yet entered the connection point of their location."""
+    known = units[units["control_area"].notna()]
+    capacity = known.groupby(["district", "control_area"])["net_kw"].sum()
+    shares = (capacity / capacity.groupby(level="district").transform("sum")).unstack().fillna(0.0)
+    share = shares[control_area] if control_area in shares else pd.Series(dtype=float)
+    weight: pd.Series[float] = (
+        units["control_area"]
+        .eq(control_area)
+        .astype(float)
+        .mask(units["control_area"].isna(), units["district"].map(share).fillna(0.0))
+    )
+    return weight
 
 
 def model_germany(
