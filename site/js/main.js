@@ -1,3 +1,4 @@
+import { renderAnomalies } from "./anomalies.js";
 import { load } from "./data.js";
 import { renderHero } from "./hero.js";
 import { renderModel } from "./model.js";
@@ -48,7 +49,7 @@ async function renderMeta() {
 
 watchScroll();
 watchChapters();
-const chapters = [renderMeta, renderHero, renderModel];
+const chapters = [renderMeta, renderHero, renderModel, renderAnomalies];
 const results = await Promise.allSettled(chapters.map((render) => render()));
 for (const result of results) {
   if (result.status === "rejected") console.error(result.reason);

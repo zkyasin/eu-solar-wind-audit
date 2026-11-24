@@ -1008,3 +1008,96 @@ h3 {
     border-left: 0;
   }
 }
+
+/* Chart details shared by the chapters. */
+
+.plot .lane {
+  fill: rgb(124 180 255 / 0.035);
+}
+
+.plot .axis-note {
+  fill: var(--dim);
+  font-size: 10.5px;
+}
+
+/* Chapter 02: the tickets, each one a case checked against the raw files. */
+
+.tickets {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 1rem 0 1.25rem;
+}
+
+.ticket {
+  position: relative;
+  padding: 1rem 1.125rem 1.125rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--surface), rgb(15 26 44 / 0.4));
+}
+
+.ticket::before {
+  content: "";
+  position: absolute;
+  top: 1.125rem;
+  bottom: 1.125rem;
+  left: -1px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--flag);
+}
+
+.ticket p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.ticket .ticket-id {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.125rem 0.625rem;
+  color: var(--flag);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.ticket .ticket-id span {
+  color: var(--muted);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.ticket .ticket-figure {
+  margin: 0.5rem 0 0.375rem;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 500;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.ticket-figure small {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+@media (max-width: 40rem) {
+  .tickets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 34rem) {
+  #anomaly-readout {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

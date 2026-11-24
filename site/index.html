@@ -34,6 +34,7 @@
       <nav aria-label="Chapters">
         <ul>
           <li><a href="#model">Model</a></li>
+          <li><a href="#anomalies">Anomalies</a></li>
         </ul>
       </nav>
       <a class="repo-link" href="https://github.com/zkyasin/eu-solar-wind-audit">
@@ -114,6 +115,48 @@
       </div>
     </section>
 
+    <section class="chapter" id="anomalies" aria-labelledby="anomalies-title">
+      <div class="chapter-head">
+        <p class="chapter-number">02 <span>Anomalies</span></p>
+        <h2 id="anomalies-title">Where the published series go wrong</h2>
+        <p class="intro">Every hourly series of éCO2mix (France and its 12 regions) and SMARD (Germany and its four control areas, with Energy-Charts as a second source) goes through rule-based detectors, and statistical detectors on its residual against the model.</p>
+        <p class="intro">Thresholds were fixed on 2019–2022 before any later year was read. A finding is not a defect: each one is either checked against the raw files and written as a ticket, or set aside with its reason.</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/anomalies-2019-2025.md">All findings and the tickets</a>
+      </div>
+      <div class="chapter-body">
+        <dl class="readout" id="anomaly-readout"></dl>
+        <figure class="chart">
+          <ul class="legend" id="anomaly-legend"></ul>
+          <div class="plot" id="anomaly-plot"></div>
+          <figcaption>Each mark is a finding, from its first to its last hour. In each group, solar above and wind below.</figcaption>
+        </figure>
+
+        <h3>Four tickets, checked against the raw files</h3>
+        <div class="tickets">
+          <article class="ticket">
+            <p class="ticket-id">FR-1 <span>éCO2mix, all 26 solar and wind series</span></p>
+            <p class="ticket-figure">1 empty half-hour</p>
+            <p>The row that closes 31 December 2025 has no solar, wind or consumption value, nationally and in each of the 12 regions. Every earlier year closes complete.</p>
+          </article>
+          <article class="ticket">
+            <p class="ticket-id">FR-4 <span>Nouvelle-Aquitaine wind, January 2023</span></p>
+            <p class="ticket-figure">231 GWh <small>for about 414 expected</small></p>
+            <p>A drop on 2 January and its reversal on 31 January, while the neighbouring regions do not move. The national total, the sum of the regions, carries the deficit.</p>
+          </article>
+          <article class="ticket">
+            <p class="ticket-id">DE-1 <span>TransnetBW solar, December 2025</span></p>
+            <p class="ticket-figure">207 hours at zero</p>
+            <p>Published as 0.0 while the German total keeps the output of the area: up to 15.5 GWh a day above the sum of its four control areas.</p>
+          </article>
+          <article class="ticket">
+            <p class="ticket-id">DE-4 <span>TransnetBW solar, 12 April 2019</span></p>
+            <p class="ticket-figure">about 3 GWh missing</p>
+            <p>Zero from 16:00 to 20:00 in the area and in the national total, which still equals the sum of its parts. Only the model shows the hole.</p>
+          </article>
+        </div>
+        <p class="note">Time conventions are checked too: éCO2mix publishes the same rows for every local day, as documented, which repeats the hour after each spring clock change and leaves out the hour before each autumn one. The daily figures of this page are built on local days, 23 or 25 hours long at the changes.</p>
+      </div>
+    </section>
 
 
 
