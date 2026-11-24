@@ -115,6 +115,16 @@ def inside_shares(panel: pd.DataFrame, totals: pd.DataFrame) -> "pd.Series[float
     return share.groupby(years).mean().rename("inside").rename_axis("year")
 
 
+def listed_share(capacity: "pd.Series[float]", units: pd.DataFrame) -> float:
+    """Share of the wind capacity of a country, in MW indexed by technology as
+    sources.entsoe.fetch_capacity gives it, held by the wind farms of `units`, a
+    sources.entsoe.UnitCapacity table: the list of units of 100 MW or more that the Transparency
+    Platform publishes."""
+    wind = ["wind_onshore", "wind_offshore"]
+    listed = units.loc[units["technology"].isin(wind), "capacity_mw"].sum()
+    return float(listed / capacity.reindex(wind).sum())
+
+
 def levels(
     published: pd.DataFrame,
     gross: pd.DataFrame,

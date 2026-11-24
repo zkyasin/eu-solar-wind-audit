@@ -73,6 +73,15 @@ def test_inside_shares_leave_out_corsica_and_overseas_departments() -> None:
     assert shares.to_dict() == {2024: pytest.approx(0.85)}
 
 
+def test_the_listed_share_is_the_wind_capacity_of_the_listed_farms() -> None:
+    capacity = pd.Series({"solar": 900.0, "wind_onshore": 700.0, "wind_offshore": 300.0})
+    units = pd.DataFrame(
+        {"technology": ["wind_offshore", "wind_onshore", "solar"], "capacity_mw": [300, 200, 150]}
+    )
+
+    assert perimeter.listed_share(capacity, units) == pytest.approx(0.5)
+
+
 def inputs(
     solar_gwh: float, wind_gwh: float, share: float
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, "pd.Series[float]"]:
