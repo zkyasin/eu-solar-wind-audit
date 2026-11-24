@@ -16,7 +16,8 @@ from eu_solar_wind_audit.sources import mastr
 # original UTF-16 LE records byte for byte: 25 units of EinheitenWind.xml plus SEE973525112162 and
 # SEE901254459012 (former district keys), 6 + 5 units of EinheitenSolar_30.xml split into
 # EinheitenSolar_1.xml and EinheitenSolar_2.xml, and the Katalogwerte.xml values of categories 4,
-# 39, 87, 107 and 108.
+# 39, 87, 107 and 108. The values of categories 33, 34, 52, 65 and 76 and Netzanschlusspunkte_1.xml,
+# the 23 grid connection points of the units' locations, were added from parsed records.
 FIXTURES = Path(__file__).parent / "fixtures" / "mastr"
 EXPORT = FIXTURES / "Gesamtdatenexport_20261001_26.1.zip"
 ZIP_TYPE = "application/x-zip-compressed"
@@ -307,12 +308,49 @@ def test_offshore_units_have_a_sea_and_cluster_but_no_district(units: pd.DataFra
     assert on_land[["sea", "cluster"]].isna().all().all()
 
 
-@pytest.mark.parametrize(("old", "new"), [("In Betrieb", "Aktiv"), ("Ost-West", "Ost/West")])
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [("In Betrieb", "Aktiv"), ("Ost-West", "Ost/West"), ("TransnetBW", "Transnet BW")],
+)
 def test_a_changed_catalogue_is_refused(tmp_path: Path, old: str, new: str) -> None:
     export = export_with(tmp_path, mastr.CATALOGUE_MEMBER, old, new)
 
     with pytest.raises(ValueError, match="catalogue values changed"):
         mastr.read_units(export)
+
+
+def test_units_take_the_control_area_of_their_location(units: pd.DataFrame) -> None:
+    # Solar units in Bavaria, North Rhine-Westphalia and Thuringia, and a Baltic Sea turbine.
+    assert unit(units, "SEE945477027818")["control_area"] == "TenneT"
+    assert unit(units, "SEE996242407533")["control_area"] == "Amprion"
+    assert unit(units, "SEE983469276431")["control_area"] == "50Hertz"
+    assert unit(units, "SEE919087229481")["control_area"] == "50Hertz"
+
+
+def test_a_unit_without_a_connection_point_has_no_control_area(units: pd.DataFrame) -> None:
+    # A unit without a location, and a turbine whose location has no connection point.
+    assert pd.isna(unit(units, "SEE996415330668")["location_id"])
+    assert pd.isna(unit(units, "SEE996415330668")["control_area"])
+    assert unit(units, "SEE921643140857")["location_id"] == "SEL946752943823"
+    assert pd.isna(unit(units, "SEE921643140857")["control_area"])
+
+
+def test_a_location_in_two_control_areas_has_none(tmp_path: Path) -> None:
+    point_in_tennet = (
+        "<Netzanschlusspunkt><LokationMaStRNummer>SEL921339176207</LokationMaStRNummer>"
+        "<RegelzoneNetzanschlusspunkt>1001564</RegelzoneNetzanschlusspunkt></Netzanschlusspunkt>"
+    )
+    export = export_with(
+        tmp_path,
+        "Netzanschlusspunkte_1.xml",
+        "</Netzanschlusspunkte>",
+        point_in_tennet + "</Netzanschlusspunkte>",
+    )
+
+    units = mastr.read_units(export)
+
+    assert pd.isna(unit(units, "SEE983469276431")["control_area"])
+    assert unit(units, "SEE945477027818")["control_area"] == "TenneT"
 
 
 @pytest.mark.parametrize(
