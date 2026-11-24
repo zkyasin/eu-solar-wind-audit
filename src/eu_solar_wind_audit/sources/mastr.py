@@ -10,6 +10,9 @@ Powers are in kW in the export and in MW in the outputs. For solar units the gro
 (Bruttoleistung) is the module power in kWp, so DC (MaStR registration help for solar units), and
 the net rated power (Nettonennleistung) is the lesser of the gross power and the inverter active
 power, so AC: this holds for every solar unit with an inverter power in the pinned export.
+
+The control area of a unit is that of the grid connection points of its location
+(Netzanschlusspunkte), null when its location has none or has points in several control areas.
 """
 
 import hashlib
@@ -45,6 +48,7 @@ RETRY_DELAYS_SECONDS = (10.0, 60.0)
 SOLAR_MEMBER = re.compile(r"EinheitenSolar(_\d+)?\.xml")
 WIND_MEMBER = "EinheitenWind.xml"
 CATALOGUE_MEMBER = "Katalogwerte.xml"
+CONNECTION_MEMBER = re.compile(r"Netzanschlusspunkte(_\d+)?\.xml")
 
 TECHNOLOGIES = ("solar", "wind_onshore", "wind_offshore")
 STATUSES = ("planned", "operating", "temporarily_shut_down", "decommissioned")
@@ -61,6 +65,14 @@ WIND_LOCATION_CODES = {
     889: ("Windkraft auf See", "wind_offshore"),
 }
 SEA_CODES = {639: ("Ostsee", "baltic"), 640: ("Nordsee", "north")}
+# The control areas of the four German transmission system operators.
+CONTROL_AREA_CODES = {
+    1000001: ("50Hertz", "50Hertz"),
+    1000010: ("Amprion", "Amprion"),
+    1001564: ("TenneT", "TenneT"),
+    1001572: ("TransnetBW", "TransnetBW"),
+}
+CONTROL_AREAS = tuple(name for _, name in CONTROL_AREA_CODES.values())
 # Main orientation and tilt of the modules of a solar unit, whether a unit feeds all its output
 # or only what its owner does not consume, and the limit on its feed-in (EEG 2012 to 2021: 70 %
 # of the module power for small units without remote control).
@@ -111,6 +123,11 @@ COMMON_FIELDS = {
     "Laengengrad": "longitude",
     "Breitengrad": "latitude",
     "Einspeisungsart": "feed_in",
+    "LokationMaStRNummer": "location_id",
+}
+CONNECTION_FIELDS = {
+    "LokationMaStRNummer": "location_id",
+    "RegelzoneNetzanschlusspunkt": "control_area",
 }
 SOLAR_FIELDS = {
     **COMMON_FIELDS,
@@ -171,6 +188,9 @@ class Units(pa.DataFrameModel):
     feed_in_limit: Series[str] = pa.Field(nullable=True, isin=_names(FEED_IN_LIMIT_CODES))
     hub_height_m: Series[float] = pa.Field(nullable=True)
     rotor_diameter_m: Series[float] = pa.Field(nullable=True)
+    # Most units point to a generation location (SEL), some to a consumption location (SVL).
+    location_id: Series[str] = pa.Field(nullable=True, str_matches=r"^[A-Z]{3}\d{12}$")
+    control_area: Series[str] = pa.Field(nullable=True, isin=_names(CONTROL_AREA_CODES))
 
     class Config:
         strict = True
@@ -322,12 +342,13 @@ def download_export(client: httpx.Client, cache_dir: Path = CACHE_DIR) -> Path:
 
 
 def read_units(path: Path) -> DataFrame[Units]:
-    """Solar and wind units of the export, one row per unit."""
+    """Solar and wind units of the export, one row per unit, with their control area."""
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
         solar = sorted(name for name in names if SOLAR_MEMBER.fullmatch(name))
-        if not solar or WIND_MEMBER not in names or CATALOGUE_MEMBER not in names:
-            raise ValueError(f"{path}: missing solar, wind or catalogue members")
+        connections = sorted(name for name in names if CONNECTION_MEMBER.fullmatch(name))
+        if not solar or not connections or {WIND_MEMBER, CATALOGUE_MEMBER} - set(names):
+            raise ValueError(f"{path}: missing solar, wind, connection or catalogue members")
         catalogue = _read_catalogue(archive)
         frames = [
             _solar_units(_read_member(archive, name, "EinheitSolar", SOLAR_FIELDS))
@@ -336,8 +357,13 @@ def read_units(path: Path) -> DataFrame[Units]:
         frames.append(
             _wind_units(_read_member(archive, WIND_MEMBER, "EinheitWind", WIND_FIELDS), catalogue)
         )
+        points = pd.concat(
+            _read_member(archive, name, "Netzanschlusspunkt", CONNECTION_FIELDS)
+            for name in connections
+        )
     text = ["sea", "cluster", "wind_farm", "feed_in", "orientation", "tilt", "feed_in_limit"]
     units = pd.concat(frames, ignore_index=True).astype(dict.fromkeys(text, "str"))
+    units["control_area"] = units["location_id"].map(_control_areas(points)).astype("str")
     return Units.validate(units[list(Units.to_schema().columns)])
 
 
@@ -539,6 +565,7 @@ def _read_catalogue(archive: zipfile.ZipFile) -> dict[int, str]:
         TILT_CODES,
         FEED_IN_CODES,
         FEED_IN_LIMIT_CODES,
+        CONTROL_AREA_CODES,
     )
     expected = {code: name for codes in tables for code, (name, _) in codes.items()}
     changed = {
@@ -599,9 +626,20 @@ def _common(raw: pd.DataFrame) -> pd.DataFrame:
             "longitude": raw["longitude"].astype("float64"),
             "latitude": raw["latitude"].astype("float64"),
             "feed_in": _decode(raw["feed_in"], FEED_IN_CODES),
+            "location_id": raw["location_id"],
         }
     )
     return frame
+
+
+def _control_areas(points: pd.DataFrame) -> "pd.Series[str]":
+    """The control area of each location of the grid connection `points`, those of a single
+    control area only."""
+    found = points.assign(control_area=_decode(points["control_area"], CONTROL_AREA_CODES))
+    found = found.dropna().drop_duplicates()
+    single = found[~found["location_id"].duplicated(keep=False)]
+    areas: pd.Series[str] = single.set_index("location_id")["control_area"]
+    return areas
 
 
 def _decode(codes: "pd.Series[str]", table: dict[int, tuple[str, str]]) -> "pd.Series[str]":

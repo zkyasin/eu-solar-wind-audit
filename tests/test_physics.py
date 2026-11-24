@@ -816,7 +816,7 @@ def test_the_german_perimeter_keeps_every_district(
 
 def mastr_units(path: Path) -> Path:
     """A unit table as mastr.write_capacity writes it, for an export of 2025-07-01: two solar
-    units in one district, and three wind turbines of three windows."""
+    units in one district and two control areas, and three wind turbines of three windows."""
     units = pd.DataFrame(
         {
             "technology": ["solar", "solar", "wind_onshore", "wind_onshore", "wind_onshore"],
@@ -828,6 +828,7 @@ def mastr_units(path: Path) -> Path:
             ),
             "decommissioned": pd.DatetimeIndex([pd.NaT, pd.NaT, pd.NaT, pd.NaT, "2025-03-15"]),
             "district": "09162",
+            "control_area": ["TenneT", "Amprion", "TenneT", "TenneT", None],
         }
     )
     units.to_parquet(path / "mastr_units.parquet", index=False)
@@ -855,6 +856,32 @@ def test_german_capacity_is_the_inverter_power_per_district(tmp_path: Path) -> N
     assert provisional[pd.Timestamp("2025-04-30")]
 
 
+def test_the_capacity_of_a_control_area_counts_its_units_only(tmp_path: Path) -> None:
+    found = physics.load_germany_capacity(
+        "solar", GERMANY, mastr_units(tmp_path), control_area="Amprion"
+    )
+
+    assert capacity_at(found, "2025-01-31") == pytest.approx(0.0)
+    assert capacity_at(found, "2025-02-28") == pytest.approx(2.0)
+
+
+def test_units_without_a_control_area_take_the_shares_of_their_district() -> None:
+    units = pd.DataFrame(
+        {
+            "district": ["09162", "09162", "09162", "05374", "05374"],
+            "net_kw": [300.0, 100.0, 50.0, 200.0, 40.0],
+            "control_area": ["TenneT", "Amprion", None, "Amprion", None],
+        }
+    )
+
+    tennet = physics._control_area_weights(units, "TenneT")
+    amprion = physics._control_area_weights(units, "Amprion")
+
+    assert tennet.tolist() == pytest.approx([1.0, 0.0, 0.75, 0.0, 0.0])
+    assert amprion.tolist() == pytest.approx([0.0, 1.0, 0.25, 1.0, 1.0])
+    assert physics._control_area_weights(units, "50Hertz").tolist() == [0.0] * 5
+
+
 def test_german_wind_is_split_by_the_commissioning_of_its_units(tmp_path: Path) -> None:
     found = physics.load_germany_capacity("wind_onshore", GERMANY, mastr_units(tmp_path))
 
@@ -880,3 +907,21 @@ def test_model_germany_reads_the_mastr_units_and_the_districts(
     assert found["capacity_mw"].iloc[0] == pytest.approx(3.0)
     assert found["energy_mwh"].iloc[0] == pytest.approx(1.5)
     assert not found["capacity_provisional"].any()
+
+
+def test_each_control_area_gets_the_output_of_its_units(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(pv, "capacity_factor", constant_factor(0.5))
+    monkeypatch.setattr(bkg, "load_districts", lambda: DISTRICTS)
+
+    found = physics.model_germany_areas(
+        "solar", utc("2025-03-01"), utc("2025-03-02"), GERMANY, tmp_path, mastr_units(tmp_path)
+    )
+
+    assert list(found) == ["DE", "50Hertz", "Amprion", "TenneT", "TransnetBW"]
+    # 1 MW in TenneT and 2 MW in Amprion from the end of February; none in the other two.
+    expected = {"DE": 1.5, "50Hertz": 0.0, "Amprion": 1.0, "TenneT": 0.5, "TransnetBW": 0.0}
+    assert {name: frame["energy_mwh"].iloc[0] for name, frame in found.items()} == pytest.approx(
+        expected
+    )
