@@ -199,6 +199,11 @@ when home batteries and self-consumption take the midday output. Details in
 - **Modulation.** Signed sums over the negative-price hours; 90 % intervals from a stationary
   bootstrap of days that refits the calibration and draws the capacity and the DC/AC ratio; a
   minimal detectable effect; a placebo on low positive prices and an injection-recovery test.
+- **R recomputation.** `R/recompute.R` recomputes the monthly modulation sums and refits both
+  signatures with fixest from the tables that Python writes. On the 2019-2025 results the largest
+  relative difference is about 1e-15 for the sums and 3e-11 for the coefficients and standard
+  errors, against the 1e-6 and 1e-3 that the plan allows. CI runs the comparison on synthetic
+  data.
 
 ## Reproduce
 
@@ -226,6 +231,8 @@ uv run eu-solar-wind-audit audit-perimeter data/processed/perimeter
 # The feed-in and consumption signatures, from the solar predictions of calibrate.
 uv run eu-solar-wind-audit feed-in-signature data/processed/signature
 uv run eu-solar-wind-audit consumption-signature data/processed/signature
+# The same statistics recomputed in R, with the packages fixest, jsonlite and nanoparquet.
+Rscript R/recompute.R --modulation data/processed/modulation-fr --modulation data/processed/modulation-de --signature data/processed/signature --output data/processed/r-recomputation.json
 # The figures of this page.
 uv run eu-solar-wind-audit draw-figures docs/figures
 ```
