@@ -37,6 +37,7 @@
           <li><a href="#anomalies">Anomalies</a></li>
           <li><a href="#content">Content</a></li>
           <li><a href="#modulation">Negative prices</a></li>
+          <li><a href="#method">Method</a></li>
         </ul>
       </nav>
       <a class="repo-link" href="https://github.com/zkyasin/eu-solar-wind-audit">
@@ -219,6 +220,30 @@
       </div>
     </section>
 
+    <section class="chapter" id="method" aria-labelledby="method-title">
+      <div class="chapter-head">
+        <p class="chapter-number">05 <span>Method</span></p>
+        <h2 id="method-title">Built to be rerun, and to take the next country</h2>
+        <p class="intro">One command per step, each recording the version of the code and of its inputs beside its tables. A country is a configuration file; Denmark and the Netherlands already serve the matrix of chapter 03, and Belgium, Spain, Portugal, Italy, Austria and Poland follow, each published with the level of evidence the plan allows.</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit#reproduce">How to reproduce every figure</a>
+      </div>
+      <div class="chapter-body">
+        <ol class="pipeline">
+          <li><span>Inputs</span>ERA5 weather, SDES and MaStR capacity, éCO2mix, SMARD, Energy-Charts, Energinet, ENTSO-E, Eurostat, day-ahead prices</li>
+          <li><span>Physics model</span>pvlib by département or Kreis, turbine power curves by commissioning period</li>
+          <li><span>Calibration</span>Huber loss, one year left out, fits frozen under a tag</li>
+          <li><span>Audits</span>Anomaly detectors, content matrix, modulation with bootstrap</li>
+          <li><span>Publication</span>Tables, figures and the data of this page</li>
+        </ol>
+        <ul class="guarantees">
+          <li><strong>Rules before results.</strong> The evaluation plan was tagged before the first result; every later change is listed with its date and reason.</li>
+          <li><strong>No leakage.</strong> Fits and anomaly thresholds are frozen under tags, and a test checks that the calibration never reads the series it is compared with.</li>
+          <li><strong>Falsifiable.</strong> A placebo on hours priced 5 to 15 €/MWh, an injection-recovery test and a minimal detectable effect come with the modulation estimates.</li>
+          <li><strong>Recomputed in R.</strong> The modulation sums and both signature regressions are refitted with fixest: relative differences of about 1e-15 and 3e-11, against 1e-6 and 1e-3 allowed.</li>
+          <li><strong>Checked on every change.</strong> Ruff, strict mypy and the test suite run in CI on each pull request, and a daily job archives the éCO2mix real-time export before RTE replaces it.</li>
+        </ul>
+      </div>
+    </section>
   </main>
 
   <footer class="colophon">
