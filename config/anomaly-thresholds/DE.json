@@ -1,0 +1,500 @@
+{
+ "country": "DE",
+ "fixed_on": [
+  2019,
+  2022
+ ],
+ "reference_model": {
+  "parameters_sha256": "99990f1434bc2ccfb5c54ba833d94ff5e365eb40e956feacc9b36f739583e55f",
+  "mastr_export": "https://download.marktstammdatenregister.de/Stichtag/Gesamtdatenexport_20261001_26.1.zip",
+  "era5_store": {
+   "final": "s3://earthmover-icechunk-era5/icechunkV2, group single/temporal",
+   "recent": "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
+  },
+  "regions": "BKG VG5000 districts, state of 2026-01-01",
+  "git_describe": "calibration-de-v1-6-gab24dee"
+ },
+ "timestamp": {
+  "centroid_bias_minutes": -1.1404801680596677,
+  "shift_series": [
+   "smard.DE.solar",
+   "smard.50Hertz.solar",
+   "smard.Amprion.solar",
+   "smard.TenneT.solar",
+   "smard.TransnetBW.solar"
+  ]
+ },
+ "residual_thresholds": {
+  "solar": 8.0,
+  "wind": 10.0
+ },
+ "level_break_penalties": {
+  "solar": 600.0,
+  "wind": 100.0,
+  "joint": 400.0
+ },
+ "profiles": {
+  "smard.50Hertz.solar": {
+   "coefficients": [
+    -0.22815980254409926,
+    -0.230601776647519,
+    -0.034835050355769843,
+    -0.10122120155312997,
+    -0.0056995602348154355
+   ],
+   "sigma": 0.1183921198972525
+  },
+  "smard.50Hertz.wind_onshore": {
+   "coefficients": [
+    -0.3235970440580335,
+    0.0023289801769099715,
+    0.040016945569153764,
+    -0.004870714836669937,
+    0.008674532632558723
+   ],
+   "sigma": 0.08317687699578277
+  },
+  "smard.Amprion.solar": {
+   "coefficients": [
+    -0.3983555907757043,
+    -0.2949950868823335,
+    0.013534808943748807,
+    -0.11572918731690213,
+    0.030121027029112363
+   ],
+   "sigma": 0.1180980607734202
+  },
+  "smard.Amprion.wind_onshore": {
+   "coefficients": [
+    -0.250070008239293,
+    0.02771706954970288,
+    0.0394649813259436,
+    -0.011016974023847026,
+    0.006651020383743211
+   ],
+   "sigma": 0.09481563476931808
+  },
+  "smard.DE.solar": {
+   "coefficients": [
+    -0.338168761799311,
+    -0.28120367662578855,
+    -0.009656244713522218,
+    -0.11714055533510231,
+    0.019307282258295897
+   ],
+   "sigma": 0.09998159685510426
+  },
+  "smard.DE.wind_onshore": {
+   "coefficients": [
+    -0.36615720790253564,
+    0.019586963574763736,
+    0.0502710667655932,
+    -0.012523583136854708,
+    0.0016822076431617366
+   ],
+   "sigma": 0.07661714337336019
+  },
+  "smard.TenneT.solar": {
+   "coefficients": [
+    -0.3656682588432839,
+    -0.2894604027955943,
+    -0.011868835691077228,
+    -0.11863507241120623,
+    0.025503994234211052
+   ],
+   "sigma": 0.11690301416013703
+  },
+  "smard.TenneT.wind_onshore": {
+   "coefficients": [
+    -0.47714704767906574,
+    0.02545224996324887,
+    0.058851520743603454,
+    -0.018832849441441504,
+    -0.006423945098675018
+   ],
+   "sigma": 0.09214656052069359
+  },
+  "smard.TransnetBW.solar": {
+   "coefficients": [
+    -0.3866791183983381,
+    -0.32047525004188565,
+    -0.012500430423860526,
+    -0.13441028470792996,
+    0.02587696253464422
+   ],
+   "sigma": 0.13943775957689405
+  },
+  "smard.TransnetBW.wind_onshore": {
+   "coefficients": [
+    0.0267644616954611,
+    -0.02039583020920991,
+    -0.0012983416022722502,
+    -0.027572137893647198,
+    0.004509341804017589
+   ],
+   "sigma": 0.1352137346768334
+  }
+ },
+ "false_alarms": [
+  {
+   "series": "smard.DE.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.DE.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.DE.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.DE.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.50Hertz.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.50Hertz.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.50Hertz.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.50Hertz.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.Amprion.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.Amprion.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.Amprion.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.Amprion.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "smard.TenneT.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TenneT.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TenneT.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "smard.TenneT.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TransnetBW.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "smard.TransnetBW.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TransnetBW.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "smard.TransnetBW.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "smard.DE.wind_onshore",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.DE.wind_onshore",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.DE.wind_onshore",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.DE.wind_onshore",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.50Hertz.wind_onshore",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.50Hertz.wind_onshore",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "smard.50Hertz.wind_onshore",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.50Hertz.wind_onshore",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.Amprion.wind_onshore",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.Amprion.wind_onshore",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.Amprion.wind_onshore",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.Amprion.wind_onshore",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TenneT.wind_onshore",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TenneT.wind_onshore",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TenneT.wind_onshore",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TenneT.wind_onshore",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TransnetBW.wind_onshore",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TransnetBW.wind_onshore",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TransnetBW.wind_onshore",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "smard.TransnetBW.wind_onshore",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  }
+ ]
+}

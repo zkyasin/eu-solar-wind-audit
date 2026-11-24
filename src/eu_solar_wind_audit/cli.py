@@ -90,11 +90,14 @@ def main(argv: list[str] | None = None) -> None:
     )
     fix = commands.add_parser(
         "fix-anomaly-thresholds",
-        help="fix the thresholds of the statistical anomaly detectors of mainland France on "
-        "2019-2022 and write them with the reference model they rest on",
+        help="fix the thresholds of the statistical anomaly detectors of a country on 2019-2022 "
+        "and write them with the reference model they rest on",
     )
-    fix.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
-    fix.add_argument("--output", type=Path, default=thresholds.THRESHOLDS_DIR / "FR.json")
+    fix.add_argument("country", choices=["FR", "DE"])
+    fix.add_argument("--config", type=Path, help="config/countries/<country>.toml by default")
+    fix.add_argument(
+        "--output", type=Path, help="config/anomaly-thresholds/<COUNTRY>.json by default"
+    )
     anomalies = commands.add_parser(
         "detect-anomalies",
         help="run the anomaly detectors on the published series of a country over a period, and "
@@ -106,8 +109,10 @@ def main(argv: list[str] | None = None) -> None:
     anomalies.add_argument(
         "output", type=Path, help="directory of the findings and their description"
     )
-    anomalies.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
-    anomalies.add_argument("--thresholds", type=Path, default=thresholds.THRESHOLDS_DIR / "FR.json")
+    anomalies.add_argument("--config", type=Path, help="config/countries/<country>.toml by default")
+    anomalies.add_argument(
+        "--thresholds", type=Path, help="config/anomaly-thresholds/<COUNTRY>.json by default"
+    )
     draw = commands.add_parser(
         "draw-figures",
         help="draw the figures of the README, in a light and a dark version, from the results of "
@@ -160,9 +165,10 @@ def main(argv: list[str] | None = None) -> None:
         ):
             print(path)
     elif args.command == "fix-anomaly-thresholds":
-        parameters = load_country(args.config)
+        parameters = load_country(args.config or CONFIG_DIR / f"{args.country.lower()}.toml")
+        country_inputs = inputs.france_inputs if args.country == "FR" else inputs.germany_inputs
         with odre.make_client() as client:
-            found = inputs.france_inputs(
+            found = country_inputs(
                 client,
                 thresholds.FIX_START,
                 thresholds.FIX_END,
@@ -170,31 +176,28 @@ def main(argv: list[str] | None = None) -> None:
                 margin=pd.Timedelta(0),
             )
         reference = thresholds.reference_model(parameters, git_describe())
-        thresholds.write(args.output, thresholds.fix(found, reference))
-        print(args.output)
+        output = args.output or thresholds.THRESHOLDS_DIR / f"{args.country}.json"
+        thresholds.write(output, thresholds.fix(found, reference))
+        print(output)
     elif args.command == "detect-anomalies":
         start, end = pd.Timestamp(args.start, tz="UTC"), pd.Timestamp(args.end, tz="UTC")
         run: dict[str, Any] = {
             "git_describe": git_describe(),
             "ran_at": pd.Timestamp.now(tz="UTC").floor("s").isoformat(),
         }
-        fixed = None
+        parameters = load_country(args.config or CONFIG_DIR / f"{args.country.lower()}.toml")
+        thresholds_path = args.thresholds or thresholds.THRESHOLDS_DIR / f"{args.country}.json"
+        fixed = thresholds.read(thresholds_path)
+        thresholds.check_reference(fixed, thresholds.reference_model(parameters, git_describe()))
+        run["thresholds"] = {
+            "path": str(thresholds_path),
+            "sha256": hashlib.sha256(thresholds_path.read_bytes()).hexdigest(),
+            "git_describe": fixed.reference_model["git_describe"],
+        }
+        country_inputs = inputs.france_inputs if args.country == "FR" else inputs.germany_inputs
         with odre.make_client() as client:
-            if args.country == "FR":
-                parameters = load_country(args.config)
-                fixed = thresholds.read(args.thresholds)
-                thresholds.check_reference(
-                    fixed, thresholds.reference_model(parameters, git_describe())
-                )
-                run["thresholds"] = {
-                    "path": str(args.thresholds),
-                    "sha256": hashlib.sha256(args.thresholds.read_bytes()).hexdigest(),
-                    "git_describe": fixed.reference_model["git_describe"],
-                }
-                # The level breaks read the daily ratios from their first day on.
-                found = inputs.france_inputs(client, breaks.FIRST_DAY, end, parameters)
-            else:
-                found = inputs.germany_inputs(client, start, end)
+            # The level breaks read the daily ratios from their first day on.
+            found = country_inputs(client, breaks.FIRST_DAY, end, parameters)
         detected = detection.detect(found, fixed, start, end)
         for path in detection.write(args.output, found, detected, start, end, run):
             print(path)

@@ -10,11 +10,11 @@ publishes zeros for the regions and the months without offshore farms. Values ab
 checked where the capacity is positive: the SDES capacity of a region grows from zero over the
 quarter of its first farm.
 
-Statistical detectors run on the series with a model, which only France has: timestamp shifts and
-clock-change jumps of the solar series that the thresholds make eligible, residual outliers, and
-the level breaks of the solar and the wind series of each area. They read the wind of an area as
-`onshore_wind` gives it, with the thresholds and the profile of its wind series (detector design),
-so that no hour is judged twice.
+Statistical detectors run on the series with a model, the solar and onshore wind of the areas of
+France and Germany: timestamp shifts and clock-change jumps of the solar series that the thresholds
+make eligible, residual outliers, and the level breaks of the solar and the wind series of each
+area. They read the wind of an area as `onshore_wind` gives it, with the thresholds and the profile
+of its wind series (detector design), so that no hour is judged twice.
 """
 
 import hashlib
@@ -45,6 +45,9 @@ from eu_solar_wind_audit.anomalies.inputs import (
 )
 from eu_solar_wind_audit.anomalies.thresholds import Thresholds
 from eu_solar_wind_audit.sources import energy_charts, odre, smard
+
+# The local time of the clock changes of each country.
+TIME_ZONES = {"FR": odre.TIMEZONE, "DE": energy_charts.TIMEZONE}
 
 
 @dataclass(frozen=True)
@@ -111,9 +114,12 @@ def onshore_wind(found: DetectionInputs, area: str) -> OnshoreWind:
     """The wind of `area`, such as odre.FR, as the statistical detectors read it: its wind series
     up to breaks.WIND_SWITCH and, when the inputs have it, its onshore wind series from it. The
     hours of the wind series that contain offshore output are flagged. Findings before the switch
-    are named after the wind series, those from it after the onshore wind series.
+    are named after the wind series, those from it after the onshore wind series. An area without
+    a wind series, such as smard.DE, reads its onshore wind series throughout.
     """
     wind_id, onshore_id = f"{area}.wind", f"{area}.wind_onshore"
+    if wind_id not in found.series:
+        wind_id = onshore_id
     wind = found.series[wind_id]
     published = _hours(wind)
     modelled = _modelled(wind, wind_id)
@@ -122,7 +128,7 @@ def onshore_wind(found: DetectionInputs, area: str) -> OnshoreWind:
     offshore = wind.offshore
     first, last = found.hours[0], found.hours[-1] + grid.HOUR
     onshore = found.series.get(onshore_id)
-    if onshore is None or last <= breaks.WIND_SWITCH:
+    if wind_id == onshore_id or onshore is None or last <= breaks.WIND_SWITCH:
         whole = Period(wind_id, wind.published[0].provenance, first, last)
         return OnshoreWind(published, modelled, offshore, (whole,))
     switch = breaks.WIND_SWITCH
@@ -300,7 +306,10 @@ def _statistical(
         frames.append(timestamp.shifts(centroids, series=solar_id, provenance=solar_provenance))
         frames.append(
             timestamp.clock_change_jumps(
-                centroids, time_zone=odre.TIMEZONE, series=solar_id, provenance=solar_provenance
+                centroids,
+                time_zone=TIME_ZONES[found.country],
+                series=solar_id,
+                provenance=solar_provenance,
             )
         )
 
@@ -336,7 +345,7 @@ def _statistical(
             breaks.daily_log_ratios(
                 wind.published, wind.modelled, classes, technology="wind", offshore=wind.offshore
             ),
-            _profile(fixed, f"{area}.wind"),
+            _profile(fixed, wind.periods[0].series),
         ),
     }
     junctions = pd.concat(
