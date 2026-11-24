@@ -27,7 +27,7 @@ its date and reason in the plan's Deviations section.
 | 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 |
 | 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 |
 | 3. Content of the series | Next | Next |
-| 4. Modulation at negative prices | Estimated and compared with RTE | Next |
+| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) |
 
 The Netherlands and Denmark follow, then Belgium, Spain, Portugal, Italy, Austria and Poland, each
 published with the level of evidence the plan allows.
@@ -137,6 +137,16 @@ there, published solar exceeds the potential by 1.4 to 4.6 % in five years of si
 estimate may be too low by a few percent of the potential. The intervals, the verdict and the
 limits are in [docs/modulation-france.md](docs/modulation-france.md).
 
+### Output modulated during negative prices in Germany
+
+The same estimate for Germany sets its yearly volumes beside the market-based curtailment of Hirth
+(2026), without a verdict, as the plan says. The share of the onshore wind potential held back at
+negative prices is within 3 points of his curtailment rate each year from 2022 (15 to 25 %), and
+the volumes are 79 to 90 % of his, which also hold offshore wind. Solar in 2025 is 2.4 times his
+0.6 TWh: the estimate keeps grid-related curtailment, and the feed-in that SMARD publishes falls
+when home batteries and self-consumption take the midday output. Details in
+[docs/modulation-germany.md](docs/modulation-germany.md).
+
 ## How it works
 
 - **Physics model.** ERA5 hourly weather on its 0.25° grid. Solar output comes from pvlib, on the
@@ -169,9 +179,11 @@ uv run eu-solar-wind-audit calibrate FR solar data/processed/calibration-fr --fi
 uv run eu-solar-wind-audit calibrate FR wind_onshore data/processed/calibration-fr --fits-dir data/processed/fits-fr
 uv run eu-solar-wind-audit calibrate DE solar data/processed/calibration-de --fits-dir data/processed/fits-de
 uv run eu-solar-wind-audit calibrate DE wind_onshore data/processed/calibration-de --fits-dir data/processed/fits-de
-# Modulation, with the frozen fits and the RTE files of references/rte.
+# Modulation, with the frozen fits and the references of references/rte and references/hirth.
 uv run eu-solar-wind-audit estimate-modulation FR solar data/processed/modulation-fr
 uv run eu-solar-wind-audit estimate-modulation FR wind_onshore data/processed/modulation-fr
+uv run eu-solar-wind-audit estimate-modulation DE solar data/processed/modulation-de
+uv run eu-solar-wind-audit estimate-modulation DE wind_onshore data/processed/modulation-de
 # Anomalies, with the frozen thresholds of config/anomaly-thresholds.
 uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
@@ -200,6 +212,9 @@ France: RTE, éCO2mix data via ODRÉ, Licence Ouverte 2.0, retrieved on 22 and 2
 France, negative-price modulation: source RTE, analysesetdonnees.rte-france.com, last updated 20 November 2026.
 Service des données et études statistiques (SDES), quarterly solar and wind capacity tables.
 Germany: Bundesnetzagentur | SMARD.de, CC BY 4.0.
+Germany, unit register: Bundesnetzagentur, Marktstammdatenregister, dl-de/by-2-0 (www.govdata.de/dl-de/by-2-0), export of 2026-10-01; data changed.
+Germany, administrative boundaries: © BKG (2026) dl-de/by-2-0 (Daten verändert).
+Germany, market-based curtailment: Hirth, L. (2026), Do wind and solar curtail at negative electricity prices?, arXiv 2609.10053v2.
 Energy-Charts.info, Fraunhofer ISE, CC BY 4.0.
 Contains modified Copernicus Climate Change Service information 2026. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.
 ERA5 accessed through Icechunk ERA5 (Earthmover), https://registry.opendata.aws/earthmover-era5, CC BY 4.0, and ARCO-ERA5 (Google Research).
