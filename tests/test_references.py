@@ -6,9 +6,11 @@ import pandas as pd
 import pytest
 
 from eu_solar_wind_audit.references import (
+    DOCUMENTATION_FILE,
     RTE_FILES,
     SDES_FILE,
     SDES_SHEET,
+    load_documentation,
     load_hirth_curtailment,
     load_rte_modulation,
     load_sdes_self_consumption,
@@ -18,6 +20,7 @@ from eu_solar_wind_audit.references import (
 RTE = Path(__file__).parents[1] / "references" / "rte"
 HIRTH = Path(__file__).parents[1] / "references" / "hirth"
 SDES = Path(__file__).parents[1] / "references" / "sdes"
+DOCUMENTATION = Path(__file__).parents[1] / "references" / "documentation"
 # Positions in the SDES sheet, read without a header: the row of technology labels, the row of
 # 2020, and the photovoltaic column.
 SDES_LABELS_ROW = 20
@@ -216,3 +219,57 @@ def test_a_changed_sdes_value_breaks_the_total(sdes_copy: Path) -> None:
 
     with pytest.raises(ValueError, match="first in 2020"):
         load_sdes_self_consumption(sdes_copy)
+
+
+def test_documentation_files_match_their_manifest() -> None:
+    manifest = json.loads((DOCUMENTATION / "manifest.json").read_text(encoding="utf-8"))
+
+    assert set(manifest["files"]) == {DOCUMENTATION_FILE}
+    verify_manifest(DOCUMENTATION)
+
+
+def test_the_validation_series_are_documented_as_the_plan_expects() -> None:
+    statements = load_documentation(DOCUMENTATION).set_index(["series", "dimension"])["content"]
+
+    assert statements[("eco2mix", "self_consumption")] == "included"
+    assert statements[("eco2mix", "distribution")] == "covered"
+    assert statements[("smard", "self_consumption")] == "excluded"
+    assert statements[("smard", "distribution")] == "covered"
+    assert statements[("energy_charts_total", "self_consumption")] == "included"
+
+
+@pytest.fixture
+def documentation_copy(tmp_path: Path) -> Path:
+    for path in DOCUMENTATION.iterdir():
+        shutil.copy(path, tmp_path / path.name)
+    return tmp_path
+
+
+def rewrite_statements(directory: Path, statements: pd.DataFrame) -> None:
+    (directory / DOCUMENTATION_FILE).write_text(statements.to_csv(index=False), encoding="utf-8")
+
+
+def test_an_unknown_content_is_rejected(documentation_copy: Path) -> None:
+    statements = load_documentation(documentation_copy)
+    statements.loc[0, "content"] = "partial"
+    rewrite_statements(documentation_copy, statements)
+
+    with pytest.raises(ValueError, match="partial"):
+        load_documentation(documentation_copy)
+
+
+def test_a_second_statement_on_one_dimension_is_rejected(documentation_copy: Path) -> None:
+    statements = load_documentation(documentation_copy)
+    rewrite_statements(documentation_copy, pd.concat([statements, statements.iloc[[0]]]))
+
+    with pytest.raises(ValueError, match="two statements on eco2mix self_consumption"):
+        load_documentation(documentation_copy)
+
+
+def test_a_document_missing_from_the_manifest_is_rejected(documentation_copy: Path) -> None:
+    statements = load_documentation(documentation_copy)
+    statements.loc[0, "document"] = "press_article"
+    rewrite_statements(documentation_copy, statements)
+
+    with pytest.raises(ValueError, match="press_article"):
+        load_documentation(documentation_copy)
