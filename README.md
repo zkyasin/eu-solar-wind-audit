@@ -25,7 +25,7 @@ its date and reason in the plan's Deviations section.
 | Axis | Mainland France | Germany |
 |---|---|---|
 | 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 |
-| 2. Anomalies | All detectors, 2019-2025 | Rule-based detectors, 2019-2025 |
+| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 |
 | 3. Content of the series | Next | Next |
 | 4. Modulation at negative prices | Estimated and compared with RTE | Next |
 
@@ -85,11 +85,11 @@ solar output is the first candidate; axis 3 tests it.
 
 Every hourly solar and wind series of mainland France (national and 12 regions, éCO2mix) and
 Germany (national and four control areas, SMARD, with Energy-Charts as a second source) goes
-through rule-based detectors. The French series also go through statistical detectors on their
-residual against the model, with thresholds fixed on 2019-2022 (tag `anomaly-thresholds-fr-v1`).
-The 2019-2025 runs give 194 findings in France and 83 in Germany. The cases checked against the raw
-files are written as tickets in [docs/anomalies-2019-2025.md](docs/anomalies-2019-2025.md), among
-them:
+through rule-based detectors, and through statistical detectors on its residual against the model
+of its area, with thresholds fixed on 2019-2022 (tags `anomaly-thresholds-fr-v1` and
+`anomaly-thresholds-de-v1`). The 2019-2025 runs give 194 findings in France and 110 in Germany. The
+cases checked against the raw files are written as tickets in
+[docs/anomalies-2019-2025.md](docs/anomalies-2019-2025.md), among them:
 
 - éCO2mix: the half-hour ending at midnight on 31 December 2025 is empty in all 26 solar and wind
   series (FR-1).
@@ -98,6 +98,8 @@ them:
 - Nouvelle-Aquitaine wind, January 2023: 231 GWh published for about 414 GWh expected (FR-4).
 - Île-de-France wind above the SDES capacity from 2022 to 2025, up to 1.14 times (FR-5).
 - SMARD: Amprion solar at about 50 MWh an hour at night from 12 June to 14 July 2025 (DE-3).
+- SMARD: TransnetBW solar published as zero from 16:00 to 20:00 on 12 April 2019, a hole of about
+  3 GWh that the national total carries too, so that only the model shows it (DE-4).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/sum-of-parts-dark.svg">
@@ -144,8 +146,9 @@ limits are in [docs/modulation-france.md](docs/modulation-france.md).
 - **Calibrated potential.** Three parameters for solar and one for onshore wind, a scale on wind
   speed, fitted with a Huber loss on the hours priced 5 €/MWh or more, leaving one year out; then
   a ratio for each stratum of solar elevation, decile of the modelled capacity factor and day type,
-  shrunk towards the pooled ratio, and a level for each year. The fits of France are frozen in `fits/FR` (tag `calibration-fr-v1`),
-  and a test checks that the calibration never reads the reference series.
+  shrunk towards the pooled ratio, and a level for each year. The fits are frozen in `fits/FR` and
+  `fits/DE` (tags `calibration-fr-v1` and `calibration-de-v1`), and a test checks that the
+  calibration never reads the reference series.
 - **Anomaly detectors.** Completeness, timestamp shifts, negative, frozen and above-capacity
   values, outliers of the residual, level breaks (PELT), totals against the sum of their parts and
   against a second source.
