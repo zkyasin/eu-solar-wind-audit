@@ -24,10 +24,10 @@ its date and reason in the plan's Deviations section.
 
 | Axis | Mainland France | Germany |
 |---|---|---|
-| 1. Model quality | Calibrated on 2019-2025 | Physics model; calibration next |
+| 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 |
 | 2. Anomalies | All detectors, 2019-2025 | Rule-based detectors, 2019-2025 |
 | 3. Content of the series | Next | Next |
-| 4. Modulation at negative prices | Estimated and compared with RTE | After the calibration |
+| 4. Modulation at negative prices | Estimated and compared with RTE | Next |
 
 The Netherlands and Denmark follow, then Belgium, Spain, Portugal, Italy, Austria and Poland, each
 published with the level of evidence the plan allows.
@@ -46,20 +46,40 @@ hours. At the hours of this week with a negative price (45 for wind, 36 of them 
 solar), published onshore wind was 52 % of its potential and solar 76 %: an estimated 172 GWh and
 96 GWh held back.
 
-### Model quality in mainland France
+### Model quality
 
 Hourly error of the potential of each year, fitted on the other years, over hours priced 5 €/MWh
-or more. RMSE in capacity factor:
+or more. RMSE in capacity factor, 2023-2025:
 
-| Model | Solar, 2023-2025 | Onshore wind, 2024-2025 |
-|---|---|---|
-| Physics model, nominal parameters | 0.085 | 0.089 |
-| Climatology by month and hour | 0.078 | 0.161 |
-| Calibrated potential | 0.035 | 0.031 |
-| With stratum ratios and annual level | 0.031 | 0.028 |
+| Model | France, solar | France, onshore wind | Germany, solar | Germany, onshore wind |
+|---|---|---|---|---|
+| Physics model, nominal parameters | 0.085 | 0.089 | 0.094 | 0.098 |
+| Climatology by month and hour | 0.078 | 0.161 | 0.070 | 0.146 |
+| Calibrated potential | 0.035 | 0.031 | 0.040 | 0.027 |
+| With stratum ratios and annual level | 0.031 | 0.028 | 0.025 | 0.024 |
 
-The hourly correlation of the last model is 0.986 for both technologies. Onshore wind leaves out
-2023, when the published wind series includes offshore output.
+The hourly correlation of the last model is 0.986 for both French technologies, 0.981 for German
+solar and 0.988 for German onshore wind. French onshore wind leaves out 2023, when the published
+wind series includes offshore output. Germany is calibrated on the feed-in that SMARD publishes,
+which leaves out self-consumed output; its frozen fits are in `fits/DE` (tag `calibration-de-v1`).
+
+Without its annual level, the potential fitted on the other years gives the published output of
+each year to within 10 %, except German solar since 2023. Published output over that potential:
+
+| Year | France, solar | Germany, solar | Germany, onshore wind |
+|---|---|---|---|
+| 2019 | 1.03 | 1.06 | 1.04 |
+| 2020 | 0.98 | 1.07 | 1.03 |
+| 2021 | 0.91 | 1.01 | 1.01 |
+| 2022 | 0.96 | 1.04 | 1.01 |
+| 2023 | 1.04 | 0.90 | 1.00 |
+| 2024 | 0.98 | 0.85 | 0.97 |
+| 2025 | 1.00 | 0.79 | 0.98 |
+
+German solar feed-in fell from 1.01 to 1.07 times its potential in 2019-2022 to 0.79 in 2025.
+Over the same years, French solar production, which includes self-consumption, stayed between 0.91
+and 1.04, and German wind, which has none, between 0.97 and 1.04. A growing share of self-consumed
+solar output is the first candidate; axis 3 tests it.
 
 ### Anomalies in the published series
 
@@ -137,13 +157,15 @@ limits are in [docs/modulation-france.md](docs/modulation-france.md).
 
 Python 3.12 and [uv](https://docs.astral.sh/uv/). No account is needed: ERA5 comes from two
 anonymous cloud copies, the other sources from their public interfaces. Downloads are cached under
-`data/raw`, about 3 GB of ERA5 for France over 2019-2025.
+`data/raw`, about 3 GB of ERA5 for France and 1.7 GB for Germany over 2019-2025.
 
 ```sh
 uv sync
-# Model quality, leaving one year out; --fits-dir keeps the frozen fits of fits/FR unchanged.
-uv run eu-solar-wind-audit calibrate FR solar data/processed/calibration-fr --fits-dir data/processed/fits
-uv run eu-solar-wind-audit calibrate FR wind_onshore data/processed/calibration-fr --fits-dir data/processed/fits
+# Model quality, leaving one year out; --fits-dir keeps the frozen fits of fits/ unchanged.
+uv run eu-solar-wind-audit calibrate FR solar data/processed/calibration-fr --fits-dir data/processed/fits-fr
+uv run eu-solar-wind-audit calibrate FR wind_onshore data/processed/calibration-fr --fits-dir data/processed/fits-fr
+uv run eu-solar-wind-audit calibrate DE solar data/processed/calibration-de --fits-dir data/processed/fits-de
+uv run eu-solar-wind-audit calibrate DE wind_onshore data/processed/calibration-de --fits-dir data/processed/fits-de
 # Modulation, with the frozen fits and the RTE files of references/rte.
 uv run eu-solar-wind-audit estimate-modulation solar data/processed/modulation-fr
 uv run eu-solar-wind-audit estimate-modulation wind_onshore data/processed/modulation-fr
