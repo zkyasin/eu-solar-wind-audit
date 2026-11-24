@@ -3,6 +3,7 @@ import { renderContent } from "./content.js";
 import { load } from "./data.js";
 import { renderHero } from "./hero.js";
 import { renderModel } from "./model.js";
+import { renderModulation } from "./modulation.js";
 
 const REPOSITORY = "https://github.com/zkyasin/eu-solar-wind-audit";
 
@@ -50,7 +51,14 @@ async function renderMeta() {
 
 watchScroll();
 watchChapters();
-const chapters = [renderMeta, renderHero, renderModel, renderAnomalies, renderContent];
+const chapters = [
+  renderMeta,
+  renderHero,
+  renderModel,
+  renderAnomalies,
+  renderContent,
+  renderModulation,
+];
 const results = await Promise.allSettled(chapters.map((render) => render()));
 for (const result of results) {
   if (result.status === "rejected") console.error(result.reason);

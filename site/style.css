@@ -1248,3 +1248,49 @@ tbody th small {
     font-size: 0.8125rem;
   }
 }
+
+/* Chapter 04: two small multiples and the verdict of the plan. */
+
+.multiples {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem 2rem;
+}
+
+.panel-title {
+  margin: 0 0 0.25rem;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 500;
+}
+
+@media (max-width: 40rem) {
+  .multiples {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.verdict {
+  padding: 1rem 1.25rem;
+  border-left: 2px solid var(--model);
+  border-radius: 0 10px 10px 0;
+  background: var(--surface);
+}
+
+.verdict p {
+  max-width: 44rem;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.verdict .verdict-title {
+  margin-bottom: 0.375rem;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.0625rem;
+  font-weight: 500;
+}

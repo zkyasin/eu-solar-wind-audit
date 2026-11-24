@@ -36,6 +36,7 @@
           <li><a href="#model">Model</a></li>
           <li><a href="#anomalies">Anomalies</a></li>
           <li><a href="#content">Content</a></li>
+          <li><a href="#modulation">Negative prices</a></li>
         </ul>
       </nav>
       <a class="repo-link" href="https://github.com/zkyasin/eu-solar-wind-audit">
@@ -190,6 +191,33 @@
       </div>
     </section>
 
+    <section class="chapter" id="modulation" aria-labelledby="modulation-title">
+      <div class="chapter-head">
+        <p class="chapter-number">04 <span>Curtailment and modulation</span></p>
+        <h2 id="modulation-title">Output held back at negative prices</h2>
+        <p class="intro">Over the hours with a negative day-ahead price, the potential minus the published output. The 90 % intervals come from a bootstrap of days that refits the calibration and redraws the capacity and the DC/AC ratio.</p>
+        <p class="intro">France is set against the monthly volumes RTE publishes, whose method is not public: agreement replicates its figures without proving either. Germany is set against the market-based curtailment of Hirth (2026).</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/modulation-france.md">Verdict and limits for France</a>
+      </div>
+      <div class="chapter-body">
+        <div class="controls">
+          <fieldset class="choice">
+            <legend>Country</legend>
+            <div class="options" data-name="modulation-country"></div>
+          </fieldset>
+        </div>
+        <dl class="readout" id="modulation-readout"></dl>
+        <figure class="chart">
+          <ul class="legend">
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><rect class="held" x="6" y="0" width="12" height="12"/></svg>Estimate and its 90 % interval</li>
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><line class="published" x1="4" y1="6" x2="20" y2="6"/></svg><span id="modulation-reference-key">RTE</span></li>
+          </ul>
+          <div class="multiples" id="modulation-plots"></div>
+          <figcaption id="modulation-caption">Output held back each year, GWh.</figcaption>
+        </figure>
+        <div class="verdict" id="modulation-verdict"></div>
+      </div>
+    </section>
 
   </main>
 
