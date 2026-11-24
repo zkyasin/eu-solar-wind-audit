@@ -1,7 +1,7 @@
 """Minimal detectable effect of the modulation estimate (evaluation plan, axis 4, and Deviations).
 
 The error of the potential on the N hours is measured on the P hours that resemble them: in the
-held-out years of MDE_YEARS, the eligible hours of clear-sky days with the sun at
+held-out years of the MDE_YEARS of the country, the eligible hours of clear-sky days with the sun at
 MIN_ELEVATION_DEG or more. The relative error of a Europe/Paris day is sum(y - p) / sum(p) over
 these hours, with y the published output and p the potential with strata and cross-fitted level
 of folds. With s the standard deviation of these daily errors and P_d the potential at the N hours
@@ -19,24 +19,28 @@ from scipy.stats import norm
 
 from eu_solar_wind_audit import days, evaluation, modulation, physics
 
-MDE_YEARS: dict[physics.Technology, tuple[int, ...]] = {
-    "solar": (2023, 2024, 2025),
-    "wind_onshore": (2024, 2025),
+# The fold years of 2023-2025: French onshore wind has no fold in 2023 (folds.FOLD_YEARS).
+MDE_YEARS: dict[str, dict[physics.Technology, tuple[int, ...]]] = {
+    "FR": {"solar": (2023, 2024, 2025), "wind_onshore": (2024, 2025)},
+    "DE": {"solar": (2023, 2024, 2025), "wind_onshore": (2023, 2024, 2025)},
 }
 MIN_ELEVATION_DEG = 30.0
 Z_SUM = float(norm.ppf(0.95) + norm.ppf(0.80))
 
 
 def daily_errors(
-    predictions: pd.DataFrame, covariates: pd.DataFrame, technology: physics.Technology
+    predictions: pd.DataFrame,
+    covariates: pd.DataFrame,
+    technology: physics.Technology,
+    country: str,
 ) -> "pd.Series[float]":
     """Relative error of each Europe/Paris day with selected hours, from `predictions`, the
-    evaluation.Predictions of the folds of `technology`, and `covariates`, the
+    evaluation.Predictions of the folds of `technology` in `country`, and `covariates`, the
     precompute.Covariates of their hours."""
     table = evaluation.Predictions.validate(predictions)
     elevation = covariates["sun_elevation_deg"].reindex(table.index)
     selected = table[
-        table["held_out_year"].isin(MDE_YEARS[technology]).to_numpy()
+        table["held_out_year"].isin(MDE_YEARS[country][technology]).to_numpy()
         & table["eligible"].to_numpy()
         & table["sky_class"].eq("clear").to_numpy()
         & (elevation >= MIN_ELEVATION_DEG).to_numpy()

@@ -61,6 +61,7 @@ def test_daily_errors_use_clear_high_sun_hours_of_the_recent_folds() -> None:
         ),
         covariates(hours, [50.0, 55.0, 10.0, 55.0, 55.0, 55.0]),
         "solar",
+        "FR",
     )
 
     assert found.index.tolist() == [pd.Timestamp("2024-06-03")]
@@ -97,3 +98,25 @@ def test_the_effect_detects_at_five_percent_with_eighty_percent_power() -> None:
     z_sum = detectability.Z_SUM
 
     assert z_sum == pytest.approx(1.6449 + 0.8416, abs=1e-4)
+
+
+def test_german_onshore_wind_keeps_its_fold_of_2023() -> None:
+    hours = utc_stamps(["2023-06-03 11:00", "2024-06-03 11:00"])
+    found = {
+        country: detectability.daily_errors(
+            predictions(
+                hours,
+                published=[110.0, 90.0],
+                potential=[100.0, 100.0],
+                sky_class=["clear", "clear"],
+                eligible=[True, True],
+            ),
+            covariates(hours, [55.0, 55.0]),
+            "wind_onshore",
+            country,
+        )
+        for country in ("FR", "DE")
+    }
+
+    assert found["FR"].index.tolist() == [pd.Timestamp("2024-06-03")]
+    assert found["DE"].index.tolist() == [pd.Timestamp("2023-06-03"), pd.Timestamp("2024-06-03")]

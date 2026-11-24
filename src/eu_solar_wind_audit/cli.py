@@ -269,7 +269,9 @@ def estimate_modulation(
         folds.solar(years, parameters.solar) if technology == "solar" else folds.wind_onshore(years)
     )
     covariates = pd.concat([inputs.arrays.covariates for inputs in years])
-    errors = detectability.daily_errors(report.predictions, covariates, technology)
+    errors = detectability.daily_errors(
+        report.predictions, covariates, technology, parameters.country
+    )
     mde_gwh = detectability.minimal_detectable_effects(errors, hours)
     references.verify_manifest(reference_dir)
     found = comparison.compare(months, references.load_rte_modulation(reference_dir), technology)
