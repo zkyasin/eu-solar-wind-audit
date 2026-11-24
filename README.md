@@ -146,11 +146,15 @@ The two German series share their fleet and weather and land in different cells,
 producers state. RTE counts self-consumption in its production figures, but the French share is
 too small for yearly statistics to confirm it.
 
-A third type of evidence fails its control. Self-consumption barely depends on the sky, so a
+Two more types of evidence each fail a control. Self-consumption barely depends on the sky, so a
 feed-in series should rise more than the modelled output from overcast to clear days. Against the
 physics model, SMARD does the opposite (−0.035, 90 % interval −0.054 to −0.016), and the French
-contrast, expected at zero, runs from −0.062 in winter to +0.061 in summer: the test is reported
-and not used. Details in [docs/perimeter-2019-2024.md](docs/perimeter-2019-2024.md).
+contrast, expected at zero, runs from −0.062 in winter to +0.061 in summer. A load net of
+self-consumption should fall as the modelled output rises within the day. The SMARD load does
+(−0.071 MWh per MWh), but so does French consumption, which includes self-consumption (−0.085),
+from −0.25 in winter to +0.08 in summer: lighting, heating and cooling follow the sun too. Both
+tests are reported and not used. Details in
+[docs/perimeter-2019-2024.md](docs/perimeter-2019-2024.md).
 
 ### Output modulated during negative prices in mainland France
 
@@ -205,12 +209,18 @@ when home batteries and self-consumption take the midday output. Details in
   against a second source.
 - **Content of the series.** Yearly published output against Eurostat gross production, solar
   against wind, with a detection threshold from the error measured on the series whose content is
-  known, combined with what each producer states. The feed-in signature, the rise of published
-  over modelled solar output from overcast to clear days within cells of fixed hour and calendar,
-  is tested against a negative and a positive control.
+  known, combined with what each producer states. Two signatures are tested against a negative
+  and a positive control: the rise of published over modelled solar output from overcast to clear
+  days within cells of fixed hour and calendar, and the fall of the load as the modelled output
+  rises, with effects of the day and of the hour and calendar.
 - **Modulation.** Signed sums over the negative-price hours; 90 % intervals from a stationary
   bootstrap of days that refits the calibration and draws the capacity and the DC/AC ratio; a
   minimal detectable effect; a placebo on low positive prices and an injection-recovery test.
+- **R recomputation.** `R/recompute.R` recomputes the monthly modulation sums and refits both
+  signatures with fixest from the tables that Python writes. On the 2019-2025 results the largest
+  relative difference is about 1e-15 for the sums and 3e-11 for the coefficients and standard
+  errors, against the 1e-6 and 1e-3 that the plan allows. CI runs the comparison on synthetic
+  data.
 
 ## Reproduce
 
@@ -235,8 +245,11 @@ uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/proces
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
 # Self-consumption in the published solar series, against Eurostat and references/sdes.
 uv run eu-solar-wind-audit audit-perimeter data/processed/perimeter
-# The feed-in signature, from the solar predictions of calibrate.
+# The feed-in and consumption signatures, from the solar predictions of calibrate.
 uv run eu-solar-wind-audit feed-in-signature data/processed/signature
+uv run eu-solar-wind-audit consumption-signature data/processed/signature
+# The same statistics recomputed in R, with the packages fixest, jsonlite and nanoparquet.
+Rscript R/recompute.R --modulation data/processed/modulation-fr --modulation data/processed/modulation-de --signature data/processed/signature --output data/processed/r-recomputation.json
 # The figures of this page.
 uv run eu-solar-wind-audit draw-figures docs/figures
 ```

@@ -20,6 +20,11 @@ jobs:
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run mypy
+      # R recomputes the key statistics in tests/test_r_recomputation.py.
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          use-public-rspm: true
+      - run: Rscript -e 'install.packages(c("fixest", "jsonlite", "nanoparquet"))'
       - run: uv run pytest
 
   commit-messages:
