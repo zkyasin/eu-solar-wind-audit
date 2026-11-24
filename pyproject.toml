@@ -10,6 +10,7 @@ dependencies = [
     "geopandas>=1.2.0",
     "httpx>=0.28.1",
     "icechunk>=2.3.1",
+    "linearmodels>=7.1",
     "matplotlib>=3.11.2",
     "numcodecs[pcodec]>=0.17.1",
     "numpy>=2.5.5",
