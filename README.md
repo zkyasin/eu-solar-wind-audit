@@ -170,8 +170,8 @@ uv run eu-solar-wind-audit calibrate FR wind_onshore data/processed/calibration-
 uv run eu-solar-wind-audit calibrate DE solar data/processed/calibration-de --fits-dir data/processed/fits-de
 uv run eu-solar-wind-audit calibrate DE wind_onshore data/processed/calibration-de --fits-dir data/processed/fits-de
 # Modulation, with the frozen fits and the RTE files of references/rte.
-uv run eu-solar-wind-audit estimate-modulation solar data/processed/modulation-fr
-uv run eu-solar-wind-audit estimate-modulation wind_onshore data/processed/modulation-fr
+uv run eu-solar-wind-audit estimate-modulation FR solar data/processed/modulation-fr
+uv run eu-solar-wind-audit estimate-modulation FR wind_onshore data/processed/modulation-fr
 # Anomalies, with the frozen thresholds of config/anomaly-thresholds.
 uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de

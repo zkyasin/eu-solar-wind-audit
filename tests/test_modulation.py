@@ -8,7 +8,7 @@ import pytest
 from synthetic import PV, solar_year
 
 from eu_solar_wind_audit import calibration, cli, eligibility, fits, folds, modulation, strata
-from eu_solar_wind_audit.sources import odre
+from eu_solar_wind_audit.sources import odre, smard
 
 YEARS = (2019, 2020, 2021)
 
@@ -146,6 +146,7 @@ def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
     cli.main(
         [
             "estimate-modulation",
+            "FR",
             "solar",
             str(tmp_path / "out"),
             "--fits-dir",
@@ -183,3 +184,47 @@ def test_the_command_writes_the_estimate_and_its_comparison_with_rte(
     intervals = pd.read_parquet(tmp_path / "out" / "solar-modulation-intervals.parquet")
     assert intervals.columns.tolist() == ["low_gwh", "high_gwh", "estimate_gwh"]
     assert {"2019", "2020", "2021"} <= set(intervals.index)
+
+
+def test_the_command_compares_germany_with_hirth_without_a_verdict(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fit: fits.Fit
+) -> None:
+    def year_inputs(
+        client: object, technology: str, year: int, parameters: object
+    ) -> eligibility.YearInputs:
+        return solar_year(year, country="DE")
+
+    def load(region: str, start: pd.Timestamp, end: pd.Timestamp, **_: object) -> pd.DataFrame:
+        hours = pd.date_range(start, end, freq="h", inclusive="left", name="time")
+        return pd.DataFrame({"energy_mwh": 50e3, "complete": True}, index=hours)
+
+    monkeypatch.setattr(eligibility, "year_inputs", year_inputs)
+    monkeypatch.setattr(smard, "fetch_hourly_load", load)
+    fits.write(tmp_path / "fits" / "solar.json", fit)
+    hirth = Path(__file__).parents[1] / "references" / "hirth"
+
+    cli.main(
+        [
+            "estimate-modulation",
+            "DE",
+            "solar",
+            str(tmp_path / "out"),
+            "--fits-dir",
+            str(tmp_path / "fits"),
+            "--references",
+            str(hirth),
+            "--replicates",
+            "3",
+        ]
+    )
+
+    names = {path.name for path in (tmp_path / "out").iterdir()}
+    assert "solar-hirth-years.parquet" in names
+    assert not {"solar-rte-years.parquet", "solar-verdict-years.parquet"} & names
+    summary = json.loads((tmp_path / "out" / "solar-modulation.json").read_text())
+    assert summary["country"] == "DE"
+    assert summary["verdict"] is None
+    assert set(summary["hirth_ratios"]) == {"2025"}
+    years = pd.read_parquet(tmp_path / "out" / "solar-hirth-years.parquet")
+    assert years["reference_gwh"].tolist() == [600.0]
+    assert {"low_gwh", "high_gwh", "estimate_gwh", "ratio"} <= set(years.columns)

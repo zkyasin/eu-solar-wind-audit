@@ -91,7 +91,7 @@ def year_inputs(
     return eligibility.YearInputs(country, published, classes, arrays, rules)
 
 
-def solar_year(year: int, step: int = 5) -> eligibility.YearInputs:
+def solar_year(year: int, step: int = 5, country: str = "FR") -> eligibility.YearInputs:
     rng = np.random.default_rng(year)
     hours = utc_hours(year, step)
     arrays = precompute.SolarArrays(
@@ -101,7 +101,8 @@ def solar_year(year: int, step: int = 5) -> eligibility.YearInputs:
         covariates=covariates(hours, rng),
         centroid=(46.0, 2.0),
     )
-    return year_inputs(arrays, precompute.solar_energy(arrays, PV.dc_ac_ratio, *SOLAR_TRUTH), rng)
+    truth = precompute.solar_energy(arrays, PV.dc_ac_ratio, *SOLAR_TRUTH)
+    return year_inputs(arrays, truth, rng, country)
 
 
 def wind_year(year: int, country: str = "FR") -> eligibility.YearInputs:

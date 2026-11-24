@@ -36,6 +36,10 @@ WEEK_START = pd.Timestamp("2025-06-02", tz="Europe/Paris")
 # The year of findings DE-1 and DE-2 of docs/anomalies-2019-2025.md.
 SUM_OF_PARTS_YEAR = 2025
 TECHNOLOGIES: tuple[physics.Technology, ...] = ("solar", "wind_onshore")
+# The published modulation volumes each country is compared with, and the technology of Hirth
+# (2026) that holds onshore wind: his wind is onshore and offshore together.
+REFERENCES = {"FR": Path("references/rte"), "DE": Path("references/hirth")}
+HIRTH_TECHNOLOGIES: dict[physics.Technology, str] = {"solar": "solar", "wind_onshore": "wind"}
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -74,14 +78,17 @@ def main(argv: list[str] | None = None) -> None:
     )
     estimate = commands.add_parser(
         "estimate-modulation",
-        help="estimate the output of mainland France modulated during negative prices with the "
-        "frozen fit, and compare it with the volumes published by RTE",
+        help="estimate the output of a country modulated during negative prices with the frozen "
+        "fit, and compare it with the volumes of RTE for France or of Hirth (2026) for Germany",
     )
+    estimate.add_argument("country", choices=list(eligibility.PRICE_ZONES))
     estimate.add_argument("technology", choices=["solar", "wind_onshore"])
     estimate.add_argument("output", type=Path, help="directory of the tables and their summary")
-    estimate.add_argument("--config", type=Path, default=CONFIG_DIR / "fr.toml")
-    estimate.add_argument("--fits-dir", type=Path, default=fits.FITS_DIR)
-    estimate.add_argument("--references", type=Path, default=Path("references/rte"))
+    estimate.add_argument("--config", type=Path, help="config/countries/<country>.toml by default")
+    estimate.add_argument("--fits-dir", type=Path, help="fits/<COUNTRY> by default")
+    estimate.add_argument(
+        "--references", type=Path, help="references/rte or references/hirth by default"
+    )
     estimate.add_argument(
         "--replicates",
         type=int,
@@ -155,12 +162,17 @@ def main(argv: list[str] | None = None) -> None:
         for path in calibrate.write(calibrated, args.output, fits_dir, git_describe()):
             print(path)
     elif args.command == "estimate-modulation":
+        config = args.config or CONFIG_DIR / f"{args.country.lower()}.toml"
+        parameters = load_country(config)
+        if parameters.country != args.country:
+            parser.error(f"{config} describes {parameters.country}, not {args.country}")
+        fits_dir = args.fits_dir or fits.FITS_ROOT / args.country
         for path in estimate_modulation(
             args.technology,
             args.output,
-            load_country(args.config),
-            fits.read(args.fits_dir / f"{args.technology}.json"),
-            args.references,
+            parameters,
+            fits.read(fits_dir / f"{args.technology}.json"),
+            args.references or REFERENCES[args.country],
             args.replicates,
         ):
             print(path)
@@ -246,15 +258,18 @@ def estimate_modulation(
     reference_dir: Path,
     replicates: int,
 ) -> list[Path]:
-    """Estimate the modulation of `technology` over every year of evaluation.TRAINING_YEARS with
-    the frozen `fit`, its 90 % interval from `replicates` bootstrap replicates (none with 0), and,
-    for solar, the interval with the DC/AC ratios of the sensitivity; give the minimal detectable
-    effect of each year from the leave-one-year-out folds; compare the estimate with the RTE
-    volumes of `reference_dir` and, with an interval, give the verdict and run the placebo and the
-    injection. Write the tables and a JSON summary to `output`. Gives the paths written."""
+    """Estimate the modulation of `technology` in the country of `parameters` over every year of
+    evaluation.TRAINING_YEARS with the frozen `fit`, its 90 % interval from `replicates` bootstrap
+    replicates (none with 0), and, for solar, the interval with the DC/AC ratios of the
+    sensitivity; give the minimal detectable effect of each year from the leave-one-year-out
+    folds, and, with an interval, run the placebo and the injection. Compare the estimate with the
+    volumes of `reference_dir`: for France the RTE files, with the verdict of the plan when there
+    is an interval; for Germany the yearly volumes of Hirth (2026), by their ratio only. Write the
+    tables and a JSON summary to `output`. Gives the paths written."""
     # The reference series are imported here only, so that calibrate never loads them.
     from eu_solar_wind_audit import comparison, references
 
+    country = parameters.country
     first = pd.Timestamp(evaluation.TRAINING_YEARS[0], 1, 1, tz="UTC")
     end = pd.Timestamp(evaluation.TRAINING_YEARS[-1] + 1, 1, 1, tz="UTC")
     with odre.make_client() as client:
@@ -262,33 +277,42 @@ def estimate_modulation(
             eligibility.year_inputs(client, technology, year, parameters)
             for year in evaluation.TRAINING_YEARS
         ]
-        consumption = odre.national_hourly(client, "load", first, end)
+        consumption = (
+            odre.national_hourly(client, "load", first, end)
+            if country == "FR"
+            else smard.fetch_hourly_load("DE", first, end, client=client)
+        )
     hours = modulation.negative_hours(years, fit)
     months = modulation.months(hours)
+    estimate = months["modulation_gwh"]
+    by_year = estimate.groupby(estimate.index.str[:4]).sum()
+    estimates = pd.concat([estimate, by_year]).rename("estimate_gwh")
     report = (
         folds.solar(years, parameters.solar) if technology == "solar" else folds.wind_onshore(years)
     )
     covariates = pd.concat([inputs.arrays.covariates for inputs in years])
-    errors = detectability.daily_errors(
-        report.predictions, covariates, technology, parameters.country
-    )
+    errors = detectability.daily_errors(report.predictions, covariates, technology, country)
     mde_gwh = detectability.minimal_detectable_effects(errors, hours)
     references.verify_manifest(reference_dir)
-    found = comparison.compare(months, references.load_rte_modulation(reference_dir), technology)
 
     output.mkdir(parents=True, exist_ok=True)
-    tables: dict[str, pd.DataFrame] = {
-        "modulation-hours": hours,
-        "modulation-months": months,
-        "rte-months": found.months,
-        "rte-years": found.years,
-    }
+    tables: dict[str, pd.DataFrame] = {"modulation-hours": hours, "modulation-months": months}
+    against: dict[str, Any] = {}
+    found = None
+    if country == "FR":
+        found = comparison.compare(
+            months, references.load_rte_modulation(reference_dir), technology
+        )
+        tables |= {"rte-months": found.months, "rte-years": found.years}
+        against = {
+            "log_error": _finite(found.log_error),
+            "baseline_log_error": _finite(found.baseline_log_error),
+            "spearman": _finite(found.spearman),
+            "tests": found.tests,
+        }
     outcome = None
     placebo_years = None
     if replicates > 0:
-        estimate = months["modulation_gwh"]
-        by_year = estimate.groupby(estimate.index.str[:4]).sum()
-        estimates = pd.concat([estimate, by_year]).rename("estimate_gwh")
         ratios = {"intervals": bootstrap.DC_AC_RATIOS}
         if technology == "solar":
             ratios["intervals-dc-ac-sensitivity"] = bootstrap.DC_AC_SENSITIVITY
@@ -300,9 +324,10 @@ def estimate_modulation(
             tables[f"modulation-{name}"] = interval
             if name == "intervals":
                 tables["modulation-replicates"] = replicated
-        judged = comparison.verdict(found, tables["modulation-intervals"], mde_gwh)
-        tables["verdict-years"] = judged.years
-        outcome = judged.verdict
+        if found is not None:
+            judged = comparison.verdict(found, tables["modulation-intervals"], mde_gwh)
+            tables["verdict-years"] = judged.years
+            outcome = judged.verdict
         checked = placebo.evaluate(
             years,
             technology,
@@ -314,19 +339,28 @@ def estimate_modulation(
         tables["placebo-years"] = checked.years
         tables["placebo-pairs"] = checked.pairs.to_frame()
         placebo_years = checked.years
+    if country == "DE":
+        hirth = references.load_hirth_curtailment(reference_dir)
+        published = hirth[hirth["technology"] == HIRTH_TECHNOLOGIES[technology]]
+        yearly = tables.get("modulation-intervals", estimates.to_frame())
+        tables["hirth-years"] = comparison.annual_ratios(yearly, published.set_index("year")["gwh"])
+        against = {
+            "hirth_ratios": {
+                year: _finite(float(ratio))
+                for year, ratio in tables["hirth-years"]["ratio"].items()
+            }
+        }
     written = []
     for name, table in tables.items():
         path = output / f"{technology}-{name}.parquet"
         table.to_parquet(path)
         written.append(path)
     summary = {
+        "country": country,
         "technology": technology,
         "git_describe": git_describe(),
         "fit_git_describe": fit.git_describe,
-        "log_error": _finite(found.log_error),
-        "baseline_log_error": _finite(found.baseline_log_error),
-        "spearman": _finite(found.spearman),
-        "tests": found.tests,
+        **against,
         "bootstrap": {
             "replicates": replicates,
             "seed": bootstrap.SEED,
