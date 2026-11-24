@@ -624,12 +624,7 @@ def feed_in_signature(output: Path, calibration_fr: Path, calibration_de: Path) 
         "controls": signature.controls(rows),
         "contrasts": rows[rows["season"] == "all"].to_dict(orient="records"),
     }
-    output.mkdir(parents=True, exist_ok=True)
-    rows_path = output / "feed-in-signature.parquet"
-    rows.to_parquet(rows_path)
-    summary_path = output / "feed-in-signature.json"
-    summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    return [rows_path, summary_path]
+    return write_signature(output, "feed-in-signature", rows, tables, summary)
 
 
 def consumption_signature(output: Path, calibration_fr: Path, calibration_de: Path) -> list[Path]:
@@ -671,12 +666,28 @@ def consumption_signature(output: Path, calibration_fr: Path, calibration_de: Pa
             for name, table in tables.items()
         },
     }
+    return write_signature(output, "consumption-signature", rows, tables, summary)
+
+
+def write_signature(
+    output: Path,
+    name: str,
+    rows: pd.DataFrame,
+    tables: dict[str, pd.DataFrame],
+    summary: dict[str, Any],
+) -> list[Path]:
+    """Write to `output` the statistics `rows` of a signature as `<name>.parquet`, the hours of
+    each series of `tables` they are fitted on as `<name>-hours.parquet`, so that another
+    implementation can refit them, and `summary` as `<name>.json`. Gives the paths written."""
     output.mkdir(parents=True, exist_ok=True)
-    rows_path = output / "consumption-signature.parquet"
+    rows_path = output / f"{name}.parquet"
     rows.to_parquet(rows_path)
-    summary_path = output / "consumption-signature.json"
+    hours_path = output / f"{name}-hours.parquet"
+    hours = [table.assign(series=series) for series, table in tables.items()]
+    pd.concat(hours).to_parquet(hours_path)
+    summary_path = output / f"{name}.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    return [rows_path, summary_path]
+    return [rows_path, hours_path, summary_path]
 
 
 def solar_predictions(

@@ -201,6 +201,11 @@ def test_the_command_writes_the_contrasts_and_the_controls(
     estimates = overall.set_index("series")["estimate"]
     assert estimates["energy_charts_total"] == pytest.approx(estimates["smard"])
     assert len(summary["contrasts"]) == 6
+    # The hours each contrast is fitted on, for another implementation to refit them.
+    hours = pd.read_parquet(output / "feed-in-signature-hours.parquet")
+    assert (
+        hours.groupby("series").size().to_dict() == overall.set_index("series")["hours"].to_dict()
+    )
 
 
 # Modelled output from 6 to 16 UTC as a share of the peak of the day, and the peak of each class.
@@ -365,7 +370,11 @@ def test_the_consumption_command_writes_the_dips_and_the_controls(
     assert set(summary["predictions"]) == {"FR", "DE"}
     dips = {row["series"]: row["sign"] for row in summary["dips"]}
     assert dips == {"eco2mix_consumption": "none", "smard_consumption": "negative"}
-    assert len(pd.read_parquet(output / "consumption-signature.parquet")) == 4
+    rows = pd.read_parquet(output / "consumption-signature.parquet")
+    assert len(rows) == 4
+    hours = pd.read_parquet(output / "consumption-signature-hours.parquet")
+    overall = rows[rows["season"] == "all"].set_index("series")["hours"]
+    assert hours.groupby("series").size().to_dict() == overall.to_dict()
     # Over the hours of the dip, those with modelled output.
     daylight = french["raw_mwh"] > 0
     french_share = french["raw_mwh"][daylight].sum() / french_load[daylight].sum()
