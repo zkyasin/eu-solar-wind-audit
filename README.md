@@ -262,6 +262,9 @@ uv run eu-solar-wind-audit consumption-signature data/processed/signature
 Rscript R/recompute.R --modulation data/processed/modulation-fr --modulation data/processed/modulation-de --signature data/processed/signature --output data/processed/r-recomputation.json
 # The figures of this page.
 uv run eu-solar-wind-audit draw-figures docs/figures
+# The data of the web page: daily output and potential, model quality, modulation, findings and
+# the matrix of axis 3, in site/data.
+uv run eu-solar-wind-audit export-site-data site/data
 ```
 
 Each command records the version of the code and of its inputs in a JSON file beside its tables,
