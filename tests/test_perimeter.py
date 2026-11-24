@@ -249,6 +249,66 @@ def test_grids_are_covered_when_wind_is_closer_to_eurostat_than_to_its_distribut
 
 
 @pytest.mark.parametrize(
+    ("level", "documented", "expected"),
+    [
+        ("excluded", "excluded", "excluded"),
+        ("included", "excluded", "ambiguous"),
+        ("inconclusive", "included", "inconclusive"),
+        ("covered", None, "inconclusive"),
+        ("ambiguous", "covered", "ambiguous"),
+    ],
+)
+def test_a_dimension_is_decided_when_the_level_and_the_producer_agree(
+    level: str, documented: str | None, expected: str
+) -> None:
+    assert perimeter.combine(level, documented) == expected
+
+
+def test_the_matrix_gives_each_series_its_cell_and_validation() -> None:
+    decided = pd.DataFrame(
+        {
+            "series": ["smard", "smard", "eco2mix", "eco2mix"],
+            "self_consumption": ["inconclusive", "excluded", "inconclusive", "inconclusive"],
+            "distribution": ["covered", "covered", "covered", "covered"],
+        }
+    )
+    documentation = pd.DataFrame(
+        {
+            "series": ["smard", "smard", "eco2mix", "eco2mix"],
+            "dimension": ["self_consumption", "distribution"] * 2,
+            "content": ["excluded", "covered", "included", "covered"],
+        }
+    )
+
+    matrix = perimeter.cells(decided, documentation).set_index("series")
+
+    assert matrix.loc["smard", "cell"] == "feed_in_only"
+    assert matrix.loc["smard", "validation"] == "pass"
+    assert matrix.loc["eco2mix", "self_consumption"] == "inconclusive"
+    assert matrix.loc["eco2mix", "distribution"] == "covered"
+    assert matrix.loc["eco2mix", "cell"] == "inconclusive"
+    assert matrix.loc["eco2mix", "validation"] == "inconclusive"
+
+
+def test_a_series_classified_against_its_expected_cell_fails_the_validation() -> None:
+    decided = pd.DataFrame(
+        {"series": ["smard"], "self_consumption": ["included"], "distribution": ["covered"]}
+    )
+    documentation = pd.DataFrame(
+        {
+            "series": ["smard", "smard"],
+            "dimension": ["self_consumption", "distribution"],
+            "content": ["included", "covered"],
+        }
+    )
+
+    (row,) = perimeter.cells(decided, documentation).to_dict(orient="records")
+
+    assert row["cell"] == "complete"
+    assert row["validation"] == "fail"
+
+
+@pytest.mark.parametrize(
     ("decisions", "expected"),
     [
         (["inconclusive", "excluded", "excluded"], "excluded"),
@@ -263,7 +323,7 @@ def test_a_series_takes_the_content_its_decided_years_agree_on(
     assert perimeter.verdict(pd.Series(decisions)) == expected
 
 
-def test_the_command_writes_the_levels_and_the_content_of_each_series(
+def test_the_command_writes_the_levels_and_the_matrix(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     def constant(start: pd.Timestamp, end: pd.Timestamp, energy_mwh: float) -> pd.DataFrame:
@@ -320,12 +380,13 @@ def test_the_command_writes_the_levels_and_the_content_of_each_series(
     cli.main(["audit-perimeter", str(tmp_path / "out")])
 
     table = pd.read_parquet(tmp_path / "out" / "perimeter-levels.parquet")
+    matrix = pd.read_parquet(tmp_path / "out" / "perimeter-cells.parquet")
     summary = json.loads((tmp_path / "out" / "perimeter.json").read_text())
     assert set(table["series"]) == set(perimeter.SERIES)
     assert set(table["year"]) == set(range(2019, 2025))
     assert set(table["self_consumption"]) <= {"included", "excluded", "inconclusive"}
     assert set(table["distribution"]) <= {"covered", "not_covered", "inconclusive"}
-    assert set(summary["content"]) == set(perimeter.SERIES)
+    assert set(matrix["series"]) == set(perimeter.SERIES)
     assert set(summary["errors"]) == set(perimeter.DIMENSIONS)
     assert all(len(errors) == 12 for errors in summary["errors"].values())
     assert all(0 < value < 1 for value in summary["detection_threshold"].values())

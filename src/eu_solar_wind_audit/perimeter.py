@@ -13,8 +13,11 @@ root mean square, over their years, of the statistic minus its value for their c
 decided only when s, or d, reaches the detection threshold, the share that a one-sided test at 5 %
 detects with 80 % power given that error, as for the minimal detectable effect of axis 4. It then
 goes to the content whose value is closer to the observed one; below the threshold it is
-inconclusive. A series takes the content that its decided years agree on (evaluation plan, axis 3,
-Decision rules).
+inconclusive.
+
+A series takes the content that its decided years agree on. A dimension of the matrix is decided
+when this content agrees with the statement of the producer, the second type of evidence; the
+cell of the series combines both dimensions (evaluation plan, axis 3, Decision rules).
 """
 
 from typing import ClassVar, Literal
@@ -212,6 +215,55 @@ def verdict(decisions: "pd.Series[str]") -> str:
         return "ambiguous"
     (content,) = decided
     return content
+
+
+def combine(level: str, documented: str | None) -> str:
+    """Content of one dimension of a series from its two types of evidence: decided when the
+    level is decided and the producer states the same content, ambiguous when they differ."""
+    if level == "inconclusive" or documented is None:
+        return "inconclusive"
+    if level == "ambiguous" or level != documented:
+        return "ambiguous"
+    return level
+
+
+def cells(decided: pd.DataFrame, documentation: pd.DataFrame) -> pd.DataFrame:
+    """Matrix of axis 3, one row per series of `decided`, the Levels with the decision of each
+    year in a column per dimension: for each dimension, the content from the level, the content
+    that the producer states (references.load_documentation) and their combination; then the cell
+    of the series, its expected cell, and the validation, pass, fail or inconclusive."""
+    stated = documentation.set_index(["series", "dimension"])["content"].to_dict()
+    rows = []
+    for series, years in decided.groupby("series"):
+        name = str(series)
+        row: dict[str, str | None] = {"series": name}
+        combined = []
+        for dimension in DIMENSIONS:
+            level = verdict(years[dimension])
+            documented = stated.get((name, dimension))
+            content = combine(level, documented)
+            combined.append(content)
+            row |= {
+                f"{dimension}_level": level,
+                f"{dimension}_documented": documented,
+                dimension: content,
+            }
+        self_consumption, distribution = combined
+        cell = CELLS.get((self_consumption, distribution)) or (
+            "ambiguous" if "ambiguous" in combined else "inconclusive"
+        )
+        expected = EXPECTED.get(name)
+        row |= {"cell": cell, "expected_cell": expected, "validation": _validation(cell, expected)}
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def _validation(cell: str, expected: str | None) -> str | None:
+    if expected is None:
+        return None
+    if cell == expected:
+        return "pass"
+    return "inconclusive" if cell == "inconclusive" else "fail"
 
 
 def _error_rows(table: DataFrame[Levels]) -> pd.DataFrame:

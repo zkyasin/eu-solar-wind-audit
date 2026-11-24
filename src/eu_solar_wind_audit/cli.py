@@ -135,11 +135,12 @@ def main(argv: list[str] | None = None) -> None:
     audit = commands.add_parser(
         "audit-perimeter",
         help="set the yearly solar and wind output of the published series against Eurostat gross "
-        "production and decide whether they include self-consumption and cover the distribution "
-        "grids",
+        "production, decide whether they include self-consumption and cover the distribution "
+        "grids, and combine both with what their producers state",
     )
     audit.add_argument("output", type=Path, help="directory of the results")
     audit.add_argument("--self-consumption", type=Path, default=Path("references/sdes"))
+    audit.add_argument("--documentation", type=Path, default=Path("references/documentation"))
     draw = commands.add_parser(
         "draw-figures",
         help="draw the figures of the README, in a light and a dark version, from the results of "
@@ -234,7 +235,7 @@ def main(argv: list[str] | None = None) -> None:
         for path in detection.write(args.output, found, detected, start, end, run):
             print(path)
     elif args.command == "audit-perimeter":
-        for path in audit_perimeter(args.output, args.self_consumption):
+        for path in audit_perimeter(args.output, args.self_consumption, args.documentation):
             print(path)
     elif args.command == "draw-figures":
         drawn = f"Drawn on {date.today().isoformat()} at commit {(git_commit() or 'unknown')[:12]}."
@@ -409,10 +410,10 @@ def estimate_modulation(
     return [*written, path]
 
 
-def audit_perimeter(output: Path, sdes_dir: Path) -> list[Path]:
+def audit_perimeter(output: Path, sdes_dir: Path, documentation_dir: Path) -> list[Path]:
     """Levels of the published series against Eurostat gross production, the errors and detection
-    thresholds of both dimensions, and the content that each year and each series gives
-    (evaluation plan, axis 3)."""
+    thresholds of both dimensions, the decision of each year, and the matrix of axis 3 that
+    combines them with what the producers state (evaluation plan, axis 3)."""
     # The reference series are imported here only, so that calibrate never loads them.
     from eu_solar_wind_audit import perimeter, references
 
@@ -532,6 +533,7 @@ def audit_perimeter(output: Path, sdes_dir: Path) -> list[Path]:
         self_consumption=perimeter.decide_self_consumption(table, thresholds["self_consumption"]),
         distribution=perimeter.decide_distribution(table, thresholds["distribution"]),
     )
+    matrix = perimeter.cells(decided, references.load_documentation(documentation_dir))
     manifest = json.loads((sdes_dir / "manifest.json").read_text(encoding="utf-8"))
     mastr_export = json.loads(units_path.with_suffix(".json").read_text())["export_date"]
     summary = {
@@ -550,19 +552,16 @@ def audit_perimeter(output: Path, sdes_dir: Path) -> list[Path]:
         },
         "error_rms": rms,
         "detection_threshold": thresholds,
-        "content": {
-            series: {
-                dimension: perimeter.verdict(rows[dimension]) for dimension in perimeter.DIMENSIONS
-            }
-            for series, rows in decided.groupby("series")
-        },
+        "cells": matrix.to_dict(orient="records"),
     }
     output.mkdir(parents=True, exist_ok=True)
     levels_path = output / "perimeter-levels.parquet"
     decided.to_parquet(levels_path)
+    cells_path = output / "perimeter-cells.parquet"
+    matrix.to_parquet(cells_path)
     summary_path = output / "perimeter.json"
     summary_path.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
-    return [levels_path, summary_path]
+    return [levels_path, cells_path, summary_path]
 
 
 def draw_week(output: Path, parameters: Country, fits_dir: Path, drawn: str) -> list[Path]:
