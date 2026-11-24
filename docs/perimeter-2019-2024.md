@@ -25,6 +25,8 @@ eu-solar-wind-audit audit-perimeter data/processed/perimeter
   inconclusive rather than complete.
 - No validation series is placed in a wrong cell. The Netherlands, the validation case of a series
   without its distribution grids, waits for access to the ENTSO-E Transparency Platform.
+- The feed-in signature, a third type of evidence, fails its positive control and is not used
+  ([Feed-in signature](#feed-in-signature)).
 
 ## What the producers state
 
@@ -123,6 +125,54 @@ is 0.017 (0.021 for éCO2mix, 0.010 for SMARD), and the detection threshold 4.1 
 Every year of every series is decided as covering the distribution grids: a series without them
 would give a wind ratio near 0.15.
 
+## Feed-in signature
+
+```
+eu-solar-wind-audit feed-in-signature data/processed/signature
+```
+
+A producer that consumes part of its solar output on site feeds in what its consumption leaves
+over. At the same hour and date its consumption barely depends on the sky, so it feeds in a larger
+share of its output on a clear day than on an overcast one. A feed-in series should therefore rise
+more than the solar potential from overcast to clear days, and a series of the whole output should
+not (evidence 4 of the plan).
+
+The contrast of a series is the clear minus overcast difference of log(published / potential)
+within cells of the same local hour, month, year and day type, over the eligible hours of the
+2019-2025 calibration, all priced 5 €/MWh or more. The potential is the physics model with nominal
+parameters, never fitted to a series, and the sky class of a day comes from the fleet clear-sky
+index (clear from 0.9, overcast below 0.6). The fit has one effect per cell and standard errors
+clustered by day. A series shows the signature when the 90 % interval of its contrast lies above
+zero; the evidence counts only if éCO2mix, the negative control, does not show it and SMARD, the
+positive control, does.
+
+| Hours | Season | éCO2mix | SMARD |
+|---|---|---|---|
+| All eligible hours | Year | +0.006 (−0.008 to +0.021) | −0.035 (−0.054 to −0.016) |
+| | Winter | −0.062 (−0.095 to −0.029) | −0.071 (−0.135 to −0.007) |
+| | Spring | +0.060 (+0.033 to +0.088) | +0.039 (+0.010 to +0.068) |
+| | Summer | +0.061 (+0.034 to +0.089) | −0.009 (−0.026 to +0.007) |
+| | Autumn | −0.007 (−0.033 to +0.019) | −0.076 (−0.111 to −0.041) |
+| Modelled capacity factor from 0.05 | Year | +0.011 (−0.004 to +0.025) | +0.029 (+0.011 to +0.047) |
+
+- The positive control fails. Over all eligible hours, SMARD is lower against the model on clear
+  days than on overcast ones (−0.035), the opposite of the signature, so the evidence is not used.
+- The negative control holds over the year only. éCO2mix includes self-consumption, yet its
+  contrast runs from −0.062 in winter to +0.061 in summer: errors of the physics model that depend
+  on the sky and the season. On this model, a contrast of about 0.06 cannot be told from
+  self-consumption.
+- Without the hours whose modelled capacity factor is below 0.05, mostly the first and last hours
+  of daylight, SMARD turns positive (+0.029) and éCO2mix stays near zero over the year, but the
+  French seasons still run from −0.055 to +0.064. The verdict of the positive control turns on
+  hours that the plan does not single out.
+- The SMARD handbook lists the solar values of Amprion, TenneT and TransnetBW as extrapolations
+  (Hochrechnung), and those of 50Hertz as measurements and extrapolations (annex, table 4, coverage
+  of January 2026). Its hourly shape comes from an extrapolation and need not follow the feed-in of
+  each plant.
+- Energy-Charts total power has the contrast of SMARD to the third decimal. Within each month it is
+  the SMARD feed-in times one factor (from 1.04 to 1.75 over 2019-2025), so it holds
+  self-consumption in its monthly and yearly sums, not hour by hour.
+
 ## Limits
 
 - Eurostat has not published 2025 yet, and the SDES series ends in 2024.
@@ -131,5 +181,4 @@ would give a wind ratio near 0.15.
   grids for their share of wind output.
 - The self-consumed shares are estimates of the SDES and of Fraunhofer ISE, not measurements.
 - Twelve validation years give imprecise errors, and so imprecise thresholds.
-- The plan's other types of evidence, the feed-in signature from day-to-day sunshine and the
-  consumption signature, are not used yet.
+- The consumption signature, the last type of evidence of the plan, is not used yet.
