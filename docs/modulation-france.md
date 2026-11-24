@@ -5,8 +5,8 @@ held back in the hours of negative day-ahead prices, estimated from a weather-ba
 compared with the monthly volumes that RTE publishes.
 
 ```
-eu-solar-wind-audit estimate-modulation solar data/processed/modulation-fr
-eu-solar-wind-audit estimate-modulation wind_onshore data/processed/modulation-fr
+eu-solar-wind-audit estimate-modulation FR solar data/processed/modulation-fr
+eu-solar-wind-audit estimate-modulation FR wind_onshore data/processed/modulation-fr
 ```
 
 The estimate uses the fit frozen in `fits/FR` (tag `calibration-fr-v1`), 999 bootstrap replicates

@@ -104,6 +104,18 @@ def compare(
     return Comparison(table, years, log_error, baseline_log_error, spearman, tests)
 
 
+def annual_ratios(estimates: pd.DataFrame, reference_gwh: "pd.Series[float]") -> pd.DataFrame:
+    """The yearly estimate of `estimates`, indexed by "YYYY" with `estimate_gwh` and the columns
+    of its interval when it has one, beside a published yearly volume `reference_gwh`, indexed by
+    the year, and their ratio, on the years of the reference. Without a verdict: the reference
+    rests on another method and perimeter (evaluation plan, axis 4)."""
+    years = pd.Index(reference_gwh.index.astype(str), name="year")
+    table = estimates.reindex(years)
+    table["reference_gwh"] = reference_gwh.to_numpy()
+    table["ratio"] = table["estimate_gwh"] / table["reference_gwh"]
+    return table
+
+
 def _mean_log_error(estimate: pd.Series, reference: pd.Series) -> float:
     """Mean absolute log ratio of `estimate` to `reference`; infinite if an estimate is not
     positive, since it has no log ratio."""

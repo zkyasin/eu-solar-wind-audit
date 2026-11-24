@@ -20,6 +20,8 @@ RTE_FILES = {
 }
 RTE_COLUMNS = ["Date", "Filière", "Valeur (GWh)"]
 TOLERANCE_GWH = 1e-9
+HIRTH_FILE = "market_curtailment_germany.csv"
+HIRTH_COLUMNS = ["year", "technology", "twh", "source"]
 
 
 def load_rte_modulation(directory: Path) -> pd.DataFrame:
@@ -74,6 +76,22 @@ def _read_rte_modulation(path: Path, technology: str, label: str) -> pd.DataFram
             "block": np.repeat(RTE_BLOCKS, shape[1]),
             "gwh": raw["Valeur (GWh)"],
         }
+    )
+
+
+def load_hirth_curtailment(directory: Path) -> pd.DataFrame:
+    """Yearly market-based curtailment of Germany in Hirth (2026), in GWh, one row per year and
+    technology: `wind`, onshore and offshore together, and `solar`."""
+    path = directory / HIRTH_FILE
+    raw = pd.read_csv(path, dtype={"year": int, "technology": str, "twh": float, "source": str})
+    if list(raw.columns) != HIRTH_COLUMNS:
+        raise ValueError(
+            f"{path.name}: expected columns {HIRTH_COLUMNS}, found {list(raw.columns)}"
+        )
+    if not raw["technology"].isin(["wind", "solar"]).all():
+        raise ValueError(f"{path.name}: expected the technologies wind and solar")
+    return pd.DataFrame(
+        {"year": raw["year"], "technology": raw["technology"], "gwh": 1000.0 * raw["twh"]}
     )
 
 
