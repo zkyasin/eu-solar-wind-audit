@@ -128,6 +128,24 @@ def fetch_hourly_feed_in(
     return grid.Hourly.validate(grid.on_hours(hourly, start, end))
 
 
+def fetch_hourly_load(
+    region: Region,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    client: httpx.Client | None = None,
+    cache_dir: Path = CACHE_DIR,
+) -> DataFrame[grid.Hourly]:
+    """Load of the public grid (Netzlast) on the UTC hours of [start, end), published as
+    quarter-hour energy like the feed-in."""
+    grid.check_period(start, end)
+    energy = fetch_series(
+        LOAD, region, "quarterhour", start, end, client=client, cache_dir=cache_dir
+    )
+    hourly = grid.hourly_from_period_start_energy(energy)
+    return grid.Hourly.validate(grid.on_hours(hourly, start, end))
+
+
 def _weekly_rows(
     client: httpx.Client, url: str, path: Path, settled: bool
 ) -> list[tuple[int, float | None]]:

@@ -375,6 +375,25 @@ def test_feed_in_is_read_from_the_region_and_technology_files(tmp_path: Path) ->
     assert wind["complete"].tolist() == [True, True]
 
 
+def test_load_is_read_from_its_own_files(tmp_path: Path) -> None:
+    requests: list[str] = []
+    start = pd.Timestamp("2025-03-25", tz="UTC")
+    with serve(solar_files("DE", smard.LOAD), requests) as client:
+        load = smard.fetch_hourly_load(
+            "DE", start, start + pd.Timedelta(hours=2), client=client, cache_dir=tmp_path
+        )
+
+    assert requests == [
+        "/app/chart_data/410/DE/index_quarterhour.json",
+        f"/app/chart_data/410/DE/410_DE_quarterhour_{SPRING_WEEK_MS}.json",
+    ]
+    assert load["complete"].tolist() == [True, True]
+    quarters = published_quarter_hours(SPRING_WEEK_MS)
+    assert load["energy_mwh"].iloc[0] == pytest.approx(
+        quarters[start : start + pd.Timedelta(minutes=45)].sum()
+    )
+
+
 def test_a_missing_quarter_hour_leaves_its_hour_incomplete(tmp_path: Path) -> None:
     files = solar_files()
     rows = json.loads(files[f"4068_DE_quarterhour_{SPRING_WEEK_MS}.json"])
