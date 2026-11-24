@@ -1,31 +1,73 @@
-# Self-consumption in the published solar series, 2019-2024
+# What the published series contain, 2019-2024
 
-Axis 3 of the [evaluation plan](evaluation-plan.md), level evidence: does a published solar series
-include the output that producers consume on site? Its yearly level against Eurostat gross
-production answers when the self-consumed share is large enough.
+Axis 3 of the [evaluation plan](evaluation-plan.md): does a published solar and wind series
+include the output that producers consume on site, and does it cover the plants connected to the
+distribution grids? Each question is answered from two types of evidence, the yearly level of the
+series against Eurostat gross production and what its producer states, and decided only when they
+agree.
 
 ```
 eu-solar-wind-audit audit-perimeter data/processed/perimeter
 ```
 
-## Method
+## Matrix
+
+| Series | Self-consumption: level | Producer | Decided | Distribution grids: level | Producer | Decided | Cell | Expected cell | Validation |
+|---|---|---|---|---|---|---|---|---|---|
+| SMARD, Germany | Excluded | Excluded | Excluded | Covered | Covered | Covered | Feed-in only | Feed-in only | Pass |
+| Energy-Charts total power, Germany | Included | Included | Included | Covered | Covered | Covered | Complete | Complete | Pass |
+| éCO2mix, mainland France | Inconclusive | Included | Inconclusive | Covered | Covered | Covered | Inconclusive | Complete | Inconclusive |
+
+- The method sets two German series with the same fleet and weather in different cells: the SMARD
+  feed-in leaves self-consumption out, Energy-Charts total power adds it back.
+- France covers its distribution grids, but its self-consumed share stays below the detection
+  threshold in every year: the level cannot confirm what RTE states, so the cell stays
+  inconclusive rather than complete.
+- No validation series is placed in a wrong cell. The Netherlands, the validation case of a series
+  without its distribution grids, waits for access to the ENTSO-E Transparency Platform.
+
+## What the producers state
+
+Each statement is quoted from the document listed, with its SHA-256, in
+`references/documentation/manifest.json`.
+
+| Series | Dimension | Statement |
+|---|---|---|
+| SMARD | Self-consumption: excluded | « Ebenfalls umfassen die Daten nur die Einspeisungen in das Netz der allgemeinen Versorgung. » (SMARD handbook, November 2026, section 1.1) |
+| SMARD | Distribution: covered | « Die Realisierte Erzeugung in Relation zur installierten Leistung […] wird jedoch vollständig über alle Regelzonen hinweg abgedeckt (Abdeckungsgrad 100%). » (same section) |
+| Energy-Charts total power | Self-consumption: included | « Die gesamte Nettostromerzeugung beinhaltet neben der öffentlichen Nettostromerzeugung auch den solaren Selbstverbrauch […] » (Fraunhofer ISE, Stromerzeugung in Deutschland im Jahr 2025, page 4) |
+| Energy-Charts total power | Distribution: covered | « Total net electricity production (including industrial self supply) […] » (Energy-Charts API description, `/v2/total_power`) |
+| éCO2mix | Self-consumption: included | « la production nette nationale (toute filière confondue, nette de la consommation des auxiliaires et avec prise en compte de l’autoproduction/autoconsommation) » (RTE, Bilan électrique 2025, page 12) |
+| éCO2mix | Distribution: covered | « la visibilité de RTE sur les injections de productions à partir de comptages RPT et RPD permet de constituer de manière plus précise les rubriques » (éCO2mix file specification, June 2025, section 1.2.2) |
+
+RTE's statement covers national net production in its annual review; the review gives 32.9 TWh of
+solar output in 2025, and the éCO2mix national series 32.5 TWh without Corsica.
+
+## Level against Eurostat
 
 Eurostat gross production (dataset `nrg_bal_peh`, updated on 2 June 2026) counts all the output,
-self-consumption included. Each published series is set against it, solar against wind:
-
-- the solar ratio is the published output over the gross production inside the perimeter of the
-  series, and the wind ratio likewise;
-- the gap is the log of the solar ratio over the wind ratio. Wind has no self-consumption, so the
-  gap removes what the two ratios share;
-- a series that leaves out a self-consumed share s of solar output has a gap of log(1 − s); one
-  that includes it has a gap of zero.
+self-consumption included. Each published series is set against it, solar against wind: the solar
+ratio is the published output over the gross production inside the perimeter of the series, and
+the wind ratio likewise.
 
 The national éCO2mix series cover mainland France without Corsica, while Eurostat's France
 includes Corsica and the five overseas departments. Gross production is cut to the share of the
 national capacity inside the perimeter (SDES quarterly capacity, mean of the year's quarter ends):
 94.1 % of solar capacity in 2019 and 96.4 % in 2024, 99.5 % of wind capacity.
 
-The self-consumed share s comes from estimates that the producers of statistics publish:
+Each dimension has its own statistic, error and detection threshold. The error is the root mean
+square, over 2019-2024, of the statistic of the series whose content is known, éCO2mix and SMARD,
+minus its value for that content. A one-sided test at 5 % detects a share left out of a series
+with 80 % power from the detection threshold. A year below it is inconclusive; a year at or above
+it goes to the content whose value is closer to the observed one, and a series takes the content
+that its decided years agree on.
+
+### Self-consumption
+
+Wind has no self-consumption, so the gap, the log of the solar ratio over the wind ratio, removes
+what the two ratios share. A series that leaves out a self-consumed share s of solar output has a
+gap of log(1 − s); one that includes it has a gap of zero. The self-consumed share s comes from
+estimates that the producers of statistics publish:
 
 - France: the photovoltaic self-consumption of the SDES
   ([L'autoconsommation d'électricité en France](https://www.statistiques.developpement-durable.gouv.fr/lautoconsommation-delectricite-en-france),
@@ -33,14 +75,8 @@ The self-consumed share s comes from estimates that the producers of statistics 
 - Germany: the estimate of Fraunhofer ISE that Energy-Charts publishes, total minus public solar
   power over total, 6.0 % in 2019 and 19.7 % in 2024.
 
-The error of the gap is measured on the validation series whose solar content is known: éCO2mix,
-which includes self-consumption, and SMARD, which leaves it out. Each year gives the gap minus the
-gap of the known content. Their root mean square over 2019-2024 is 0.039 (0.050 for éCO2mix,
-0.021 for SMARD). With that error, a one-sided test at 5 % detects a self-consumed share with
-80 % power from 9.1 %: the detection threshold. A year below it is inconclusive; a year at or above
-it goes to the content whose gap is closer to the observed one.
-
-## Results
+The error of the gap is 0.039 (0.050 for éCO2mix, 0.021 for SMARD), and the detection threshold
+9.1 %.
 
 | Year | éCO2mix gap | s, France | SMARD gap | Energy-Charts total gap | s, Germany | log(1 − s), Germany |
 |---|---|---|---|---|---|---|
@@ -51,32 +87,49 @@ it goes to the content whose gap is closer to the observed one.
 | 2023 | +0.032 | 4.8 % | −0.152 | −0.018 | 13.2 % | −0.141 |
 | 2024 | +0.023 | 7.1 % | −0.172 | +0.006 | 19.7 % | −0.220 |
 
-| Series | Expected content (plan) | Decided years | Content from the level |
-|---|---|---|---|
-| éCO2mix, national solar | Included | None | Inconclusive |
-| SMARD, solar feed-in | Excluded | 2022-2024 | Excluded |
-| Energy-Charts, total solar power | Included | 2022-2024 | Included |
-
 - SMARD falls short of Eurostat by the self-consumed share: its gap stays within 0.015 of
   log(1 − s) up to 2023. In 2024 it is −0.172 against −0.220: Energy-Charts puts self-consumption
   at 19.7 % of German solar output, while the SMARD feed-in is 16.2 % below Eurostat's gross
-  production.
+  production. Its years are decided from 2022.
 - Energy-Charts total power, the feed-in plus the ISE estimate, has a gap within 0.021 of zero in
-  every year: a German series with the same fleet and weather as SMARD, classified the other way.
-- RTE counts self-consumption in its production figures, but the French self-consumed share
-  stays below the threshold, so the level cannot confirm it. Without its 2019 error, the largest
-  of the twelve, the threshold would fall to 5.5 % and 2024 would count éCO2mix as including
-  self-consumption: the French verdict rests on one year either way.
+  every year, decided from 2022.
+- The French self-consumed share stays below the threshold in every year. Without its 2019 error,
+  the largest of the twelve, the threshold would fall to 5.5 % and 2024 would count éCO2mix as
+  including self-consumption: the French verdict rests on one year either way.
 - In 2019, published French solar is 7 % above Eurostat gross production inside its perimeter
   (12.10 TWh against 11.31 TWh), while wind is 4 % below. Eurostat gives 12.03 TWh for the whole
   country, Corsica and the overseas departments included. The gap between the two official
   sources exceeds the French self-consumed share of any year.
 
+### Distribution grids
+
+A series that leaves out the plants connected to the distribution grids, where a share d of wind
+capacity is connected, has a wind ratio of about 1 − d; one that covers them has a wind ratio of
+one. The share d at the end of 2024 is 86.2 % in mainland France without Corsica (national
+register of production installations on ODRÉ: wind capacity outside the grid of RTE) and 84.3 % in
+Germany (Marktstammdatenregister: onshore wind below extra-high voltage; offshore wind counts as
+transmission, since the transmission system operators connect it). The error of the log wind ratio
+is 0.017 (0.021 for éCO2mix, 0.010 for SMARD), and the detection threshold 4.1 %.
+
+| Year | éCO2mix wind ratio | SMARD wind ratio | Energy-Charts total wind ratio |
+|---|---|---|---|
+| 2019 | 0.958 | 0.986 | 0.981 |
+| 2020 | 0.979 | 0.984 | 0.981 |
+| 2021 | 0.983 | 0.995 | 1.001 |
+| 2022 | 0.996 | 1.007 | 0.977 |
+| 2023 | 0.993 | 1.005 | 0.984 |
+| 2024 | 0.990 | 0.995 | 0.981 |
+
+Every year of every series is decided as covering the distribution grids: a series without them
+would give a wind ratio near 0.15.
+
 ## Limits
 
 - Eurostat has not published 2025 yet, and the SDES series ends in 2024.
 - The capacity share stands for the production share of Corsica and the overseas departments,
-  whose yields differ from those of the mainland.
+  whose yields differ from those of the mainland, and the capacity share on the distribution
+  grids for their share of wind output.
 - The self-consumed shares are estimates of the SDES and of Fraunhofer ISE, not measurements.
-- Twelve validation years give an imprecise error, and so an imprecise threshold.
-- The level is one type of evidence; the plan decides a cell only when two types agree.
+- Twelve validation years give imprecise errors, and so imprecise thresholds.
+- The plan's other types of evidence, the feed-in signature from day-to-day sunshine and the
+  consumption signature, are not used yet.
