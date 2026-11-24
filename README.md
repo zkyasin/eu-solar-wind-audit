@@ -20,6 +20,23 @@ The validation rules were written before the first result, in the
 [evaluation plan](docs/evaluation-plan.md) (tag `eval-plan-v1`). Every later change is listed with
 its date and reason in the plan's Deviations section.
 
+## Main results
+
+Solar and onshore wind in mainland France and Germany, 2019-2025:
+
+1. **Model.** Fitted on the other years, the hourly potential of each year follows the published
+   output with an error of 0.024 to 0.031 in capacity factor and a correlation of 0.98 to 0.99
+   (2023-2025, hours priced 5 €/MWh or more).
+2. **Anomalies.** 194 findings in France and 110 in Germany. Among those checked against the raw
+   files: an empty half-hour in all 26 éCO2mix solar and wind series, and a German control area
+   published as zero for more than a week while the national total kept its output.
+3. **Content.** SMARD, feed-in only, and Energy-Charts total power, which adds self-consumption,
+   land in the cells their producers state. French self-consumption, 1 to 7 % of solar output, is
+   too small for yearly statistics to confirm.
+4. **Negative prices.** Mainland France held back an estimated 1.58 TWh of solar output in 2025
+   (90 % interval 1.32 to 1.84) and 1.25 TWh of onshore wind (1.15 to 1.34), where RTE publishes
+   1.46 and 1.20 TWh. The yearly volumes agree; the monthly tests of the plan fail.
+
 ## Status
 
 | Axis | Mainland France | Germany |
