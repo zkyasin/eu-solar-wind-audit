@@ -17,7 +17,8 @@ inconclusive.
 
 A series takes the content that its decided years agree on. A dimension of the matrix is decided
 when this content agrees with the statement of the producer, the second type of evidence; the
-cell of the series combines both dimensions (evaluation plan, axis 3, Decision rules).
+cell of the series combines both dimensions (evaluation plan, axis 3, Decision rules). A
+validation series is checked on the dimensions whose content is known.
 """
 
 from typing import ClassVar, Literal
@@ -42,8 +43,13 @@ CELLS = {
     ("excluded", "covered"): "feed_in_only",
     ("excluded", "not_covered"): "partial_feed_in",
 }
-# Expected cells of the validation series (evaluation plan, axis 3, and Deviations).
-EXPECTED = {"eco2mix": "complete", "smard": "feed_in_only", "energy_charts_total": "complete"}
+# Expected content of the validation series on each dimension they check (evaluation plan, axis
+# 3, and Deviations).
+EXPECTED: dict[str, dict[str, str]] = {
+    "eco2mix": {"self_consumption": "included", "distribution": "covered"},
+    "smard": {"self_consumption": "excluded", "distribution": "covered"},
+    "energy_charts_total": {"self_consumption": "included", "distribution": "covered"},
+}
 # The series whose years measure the errors: those of Energy-Charts total power are SMARD's.
 ERROR_SERIES = ("eco2mix", "smard")
 Technology = Literal["solar", "wind"]
@@ -233,7 +239,7 @@ def cells(decided: pd.DataFrame, documentation: pd.DataFrame) -> pd.DataFrame:
     """Matrix of axis 3, one row per series of `decided`, the Levels with the decision of each
     year in a column per dimension: for each dimension, the content from the level, the content
     that the producer states (references.load_documentation) and their combination; then the cell
-    of the series, its expected cell, and the validation, pass, fail or inconclusive."""
+    of the series, its expected cells, and the validation, pass, fail or inconclusive."""
     stated = documentation.set_index(["series", "dimension"])["content"].to_dict()
     rows = []
     for series, years in decided.groupby("series"):
@@ -255,17 +261,39 @@ def cells(decided: pd.DataFrame, documentation: pd.DataFrame) -> pd.DataFrame:
             "ambiguous" if "ambiguous" in combined else "inconclusive"
         )
         expected = EXPECTED.get(name)
-        row |= {"cell": cell, "expected_cell": expected, "validation": _validation(cell, expected)}
+        row |= {
+            "cell": cell,
+            "expected_cell": None if expected is None else " or ".join(_cells_of(expected)),
+            "validation": _validation(dict(zip(DIMENSIONS, combined, strict=True)), expected),
+        }
         rows.append(row)
     return pd.DataFrame(rows)
 
 
-def _validation(cell: str, expected: str | None) -> str | None:
+def _cells_of(expected: dict[str, str]) -> list[str]:
+    """The cells whose contents are those `expected` on the dimensions it gives."""
+    return [
+        cell
+        for contents, cell in CELLS.items()
+        if all(
+            expected.get(dimension, content) == content
+            for dimension, content in zip(DIMENSIONS, contents, strict=True)
+        )
+    ]
+
+
+def _validation(contents: dict[str, str], expected: dict[str, str] | None) -> str | None:
+    """Fail when a checked dimension is ambiguous or takes another content, inconclusive when
+    one is inconclusive, pass otherwise."""
     if expected is None:
         return None
-    if cell == expected:
-        return "pass"
-    return "inconclusive" if cell == "inconclusive" else "fail"
+    checked = [contents[dimension] for dimension in expected]
+    if "ambiguous" in checked:
+        return "fail"
+    if "inconclusive" in checked:
+        return "inconclusive"
+    agree = all(contents[dimension] == content for dimension, content in expected.items())
+    return "pass" if agree else "fail"
 
 
 def _error_rows(table: DataFrame[Levels]) -> pd.DataFrame:
@@ -274,9 +302,8 @@ def _error_rows(table: DataFrame[Levels]) -> pd.DataFrame:
 
 def _expected(rows: pd.DataFrame, dimension: str) -> "pd.Series[str]":
     """Expected content of `dimension` for each row of the error series."""
-    contents = {cell: dict(zip(DIMENSIONS, key, strict=True)) for key, cell in CELLS.items()}
     series = rows.index.get_level_values("series").to_series(index=rows.index)
-    return series.map(lambda name: contents[EXPECTED[name]][dimension])
+    return series.map(lambda name: EXPECTED[name][dimension])
 
 
 def _decide(

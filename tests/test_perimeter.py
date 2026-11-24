@@ -308,6 +308,33 @@ def test_a_series_classified_against_its_expected_cell_fails_the_validation() ->
     assert row["validation"] == "fail"
 
 
+@pytest.mark.parametrize(
+    ("level", "documented", "validation"),
+    [
+        ("not_covered", "not_covered", "pass"),
+        ("covered", "covered", "fail"),
+        ("not_covered", "covered", "fail"),
+        ("inconclusive", "not_covered", "inconclusive"),
+    ],
+)
+def test_a_series_expected_on_one_dimension_is_validated_on_that_dimension(
+    monkeypatch: pytest.MonkeyPatch, level: str, documented: str, validation: str
+) -> None:
+    monkeypatch.setitem(perimeter.EXPECTED, "a_series", {"distribution": "not_covered"})
+    decided = pd.DataFrame(
+        {"series": ["a_series"], "self_consumption": ["inconclusive"], "distribution": [level]}
+    )
+    documentation = pd.DataFrame(
+        {"series": ["a_series"], "dimension": ["distribution"], "content": [documented]}
+    )
+
+    (row,) = perimeter.cells(decided, documentation).to_dict(orient="records")
+
+    assert row["cell"] in {"inconclusive", "ambiguous"}
+    assert row["expected_cell"] == "partial or partial_feed_in"
+    assert row["validation"] == validation
+
+
 def test_a_country_without_a_self_consumed_share_keeps_its_levels() -> None:
     published, gross, inside, self_consumption, distribution = inputs(
         solar_gwh=80.0, wind_gwh=95.0, share=0.2
