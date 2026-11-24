@@ -5,6 +5,8 @@
 Checks how comparable published solar and wind production data are across Europe, against a
 weather-based reference.
 
+Results online: [zkyasin.github.io/eu-solar-wind-audit](https://zkyasin.github.io/eu-solar-wind-audit/).
+
 Transmission system operators and data platforms publish hourly solar and wind output. The series
 differ in what they cover, they contain errors, and part of the output is held back when prices
 turn negative. This project models the output each fleet could have produced from ERA5 weather and
