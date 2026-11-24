@@ -28,6 +28,7 @@ from eu_solar_wind_audit import (
     physics,
     placebo,
     signature,
+    site_data,
 )
 from eu_solar_wind_audit.anomalies import breaks, detection, inputs, thresholds
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
@@ -52,6 +53,7 @@ TECHNOLOGIES: tuple[physics.Technology, ...] = ("solar", "wind_onshore")
 # The published modulation volumes each country is compared with, and the technology of Hirth
 # (2026) that holds onshore wind: his wind is onshore and offshore together.
 REFERENCES = {"FR": Path("references/rte"), "DE": Path("references/hirth")}
+REFERENCE_NAMES = {"FR": "RTE", "DE": "Hirth (2026)"}
 HIRTH_TECHNOLOGIES: dict[physics.Technology, str] = {"solar": "solar", "wind_onshore": "wind"}
 # The SDES workbook of each technology of the perimeter tests: the wind one holds onshore and
 # offshore wind.
@@ -181,6 +183,13 @@ def main(argv: list[str] | None = None) -> None:
     consumption.add_argument(
         "--calibration-de", type=Path, default=Path("data/processed/calibration-de")
     )
+    export = commands.add_parser(
+        "export-site-data",
+        help="write the JSON documents of the web page from the results of calibrate, "
+        "estimate-modulation and detect-anomalies for France and Germany, and of audit-perimeter",
+    )
+    export.add_argument("output", type=Path, help="directory of the JSON documents")
+    export.add_argument("--processed", type=Path, default=Path("data/processed"))
     draw = commands.add_parser(
         "draw-figures",
         help="draw the figures of the README, in a light and a dark version, from the results of "
@@ -282,6 +291,9 @@ def main(argv: list[str] | None = None) -> None:
             print(path)
     elif args.command == "consumption-signature":
         for path in consumption_signature(args.output, args.calibration_fr, args.calibration_de):
+            print(path)
+    elif args.command == "export-site-data":
+        for path in export_site_data(args.output, args.processed):
             print(path)
     elif args.command == "draw-figures":
         drawn = f"Drawn on {date.today().isoformat()} at commit {(git_commit() or 'unknown')[:12]}."
@@ -778,6 +790,103 @@ def solar_predictions(
         for country, path in paths.items()
     }
     return predictions, files
+
+
+def export_site_data(output: Path, processed: Path) -> list[Path]:
+    """Write the JSON documents of the web page from the results under `processed`: the daily
+    output and potential, the model quality, the modulation estimates and the findings of France
+    and Germany, the matrix of axis 3, and the versions of the runs they come from."""
+    written = []
+    quality = []
+    modulations = []
+    found = []
+    runs = {}
+    for country, time_zone in detection.TIME_ZONES.items():
+        calibration_dir = processed / f"calibration-{country.lower()}"
+        modulation_dir = processed / f"modulation-{country.lower()}"
+        anomalies_dir = processed / f"anomalies-{country.lower()}"
+        for technology in TECHNOLOGIES:
+            predictions = pd.read_parquet(calibration_dir / f"{technology}-predictions.parquet")
+            held_back = pd.read_parquet(modulation_dir / f"{technology}-modulation-hours.parquet")
+            days = site_data.daily(predictions, held_back, time_zone)
+            name = f"daily-{country}-{technology}.json"
+            written.append(
+                site_data.write(output, name, site_data.columns(days, site_data.GWH_DECIMALS))
+            )
+            summary = pd.read_parquet(calibration_dir / f"{technology}-summary.parquet")
+            quality.append(
+                site_data.quality(summary).assign(country=country, technology=technology)
+            )
+            run = json.loads(
+                (modulation_dir / f"{technology}-modulation.json").read_text(encoding="utf-8")
+            )
+            intervals = pd.read_parquet(
+                modulation_dir / f"{technology}-modulation-intervals.parquet"
+            )
+            periods = site_data.modulation_periods(
+                intervals, modulation_references(modulation_dir, technology, country)
+            )
+            modulations.append(
+                {
+                    "country": country,
+                    "technology": technology,
+                    "reference": REFERENCE_NAMES[country],
+                    "verdict": run.get("verdict"),
+                    "mde_gwh": run["mde_gwh"],
+                    "periods": site_data.records(periods, site_data.GWH_DECIMALS),
+                }
+            )
+            calibration = json.loads(
+                (calibration_dir / f"{technology}-calibration.json").read_text(encoding="utf-8")
+            )
+            runs[f"calibrate {country} {technology}"] = calibration["git_describe"]
+            runs[f"estimate-modulation {country} {technology}"] = run["git_describe"]
+        found.append(
+            site_data.findings(
+                pd.read_parquet(anomalies_dir / f"{country}-findings.parquet")
+            ).assign(country=country)
+        )
+        detected = json.loads(
+            (anomalies_dir / f"{country}-detection.json").read_text(encoding="utf-8")
+        )
+        # The French run of 2026-11-23 predates the version in the detection summary.
+        runs[f"detect-anomalies {country}"] = detected.get("git_describe")
+    perimeter_dir = processed / "perimeter"
+    audit = json.loads((perimeter_dir / "perimeter.json").read_text(encoding="utf-8"))
+    runs["audit-perimeter"] = audit["git_describe"]
+    documents = {
+        "quality.json": site_data.records(pd.concat(quality), site_data.RATIO_DECIMALS),
+        "modulation.json": modulations,
+        "findings.json": site_data.records(pd.concat(found), site_data.RATIO_DECIMALS),
+        "perimeter.json": site_data.perimeter(
+            pd.read_parquet(perimeter_dir / "perimeter-cells.parquet"),
+            pd.read_parquet(perimeter_dir / "perimeter-levels.parquet"),
+            audit,
+        ),
+        "meta.json": {
+            "exported": date.today().isoformat(),
+            "commit": (git_commit() or "unknown")[:12],
+            "runs": runs,
+        },
+    }
+    return written + [site_data.write(output, name, doc) for name, doc in documents.items()]
+
+
+def modulation_references(
+    modulation_dir: Path, technology: physics.Technology, country: str
+) -> "pd.Series[float]":
+    """The published volumes that the estimates of `modulation_dir` are compared with: RTE's by
+    year and month in France, Hirth's by year in Germany."""
+    if country == "FR":
+        rte = [
+            pd.read_parquet(modulation_dir / f"{technology}-rte-{period}.parquet")["rte_gwh"]
+            for period in ("years", "months")
+        ]
+        references: pd.Series[float] = pd.concat(rte)
+    else:
+        hirth = pd.read_parquet(modulation_dir / f"{technology}-hirth-years.parquet")
+        references = hirth["reference_gwh"]
+    return references
 
 
 def draw_week(output: Path, parameters: Country, fits_dir: Path, drawn: str) -> list[Path]:

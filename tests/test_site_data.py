@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from eu_solar_wind_audit import site_data
+from eu_solar_wind_audit import cli, site_data
 
 
 def hourly(start: str, end: str, **columns: float) -> pd.DataFrame:
@@ -134,3 +134,113 @@ def test_documents_are_written_as_strict_json(tmp_path: Path) -> None:
     }
     with pytest.raises(ValueError, match="JSON"):
         site_data.write(tmp_path, "nan.json", {"value": float("nan")})
+
+
+def write_results(root: Path) -> None:
+    """Results of calibrate, estimate-modulation and detect-anomalies for France and Germany, and
+    of audit-perimeter, reduced to what the page reads."""
+    for country in ("FR", "DE"):
+        calibration = root / f"calibration-{country.lower()}"
+        modulation = root / f"modulation-{country.lower()}"
+        anomalies = root / f"anomalies-{country.lower()}"
+        for directory in (calibration, modulation, anomalies):
+            directory.mkdir(parents=True)
+        for technology in ("solar", "wind_onshore"):
+            # The whole local days of 1 and 2 June 2024 in Paris and Berlin.
+            hourly(
+                "2024-05-31 22:00", "2024-06-02 22:00", published_mwh=1.0, calibrated_level_mwh=2.0
+            ).to_parquet(calibration / f"{technology}-predictions.parquet")
+            pd.DataFrame(
+                {
+                    "period": ["2023-2025"] * 2,
+                    "model": ["calibrated_level"] * 2,
+                    "metric": ["correlation", "rmse_cf"],
+                    "group": ["all"] * 2,
+                    "mean_value": [0.98, 0.03],
+                    "hours": [100, 100],
+                }
+            ).to_parquet(calibration / f"{technology}-summary.parquet")
+            (calibration / f"{technology}-calibration.json").write_text('{"git_describe": "c1"}')
+            hourly("2024-06-01 12:00", "2024-06-01 14:00", modulation_mwh=100.0).to_parquet(
+                modulation / f"{technology}-modulation-hours.parquet"
+            )
+            pd.DataFrame(
+                {"low_gwh": [1.0], "high_gwh": [3.0], "estimate_gwh": [2.0]},
+                index=pd.Index(["2024"], name="period"),
+            ).to_parquet(modulation / f"{technology}-modulation-intervals.parquet")
+            (modulation / f"{technology}-modulation.json").write_text(
+                '{"git_describe": "m1", "mde_gwh": {"2024": 0.5}}'
+            )
+            if country == "FR":
+                for period, label in (("years", 2024), ("months", "2024-06")):
+                    pd.DataFrame(
+                        {"rte_gwh": [2.5]}, index=pd.Index([label], name="month")
+                    ).to_parquet(modulation / f"{technology}-rte-{period}.parquet")
+            else:
+                pd.DataFrame(
+                    {"reference_gwh": [2.2]}, index=pd.Index([2024], name="year")
+                ).to_parquet(modulation / f"{technology}-hirth-years.parquet")
+        pd.DataFrame(
+            {
+                "series": [f"{country}.solar"],
+                "start": [pd.Timestamp("2024-06-01 10:00", tz="UTC")],
+                "end": [pd.Timestamp("2024-06-01 11:00", tz="UTC")],
+                "kind": ["gap"],
+                "score": [1.0],
+                "evidence": ['{"hours": 1}'],
+                "provisional": [False],
+            }
+        ).to_parquet(anomalies / f"{country}-findings.parquet")
+        (anomalies / f"{country}-detection.json").write_text('{"git_describe": "d1"}')
+    audit = root / "perimeter"
+    audit.mkdir()
+    pd.DataFrame({"series": ["smard"], "cell": ["feed_in_only"]}).to_parquet(
+        audit / "perimeter-cells.parquet"
+    )
+    levels = dict.fromkeys(site_data.LEVEL_COLUMNS, 0.5) | {"series": "smard", "year": 2024}
+    pd.DataFrame([levels]).to_parquet(audit / "perimeter-levels.parquet")
+    (audit / "perimeter.json").write_text(
+        json.dumps(
+            {
+                "git_describe": "p1",
+                "detection_threshold": {"self_consumption": 0.09, "distribution": 0.04},
+                "distribution_share": {"values": {"DE": 0.84}},
+            }
+        )
+    )
+
+
+def test_the_command_writes_the_documents_of_the_page(tmp_path: Path) -> None:
+    write_results(tmp_path / "processed")
+
+    cli.main(
+        ["export-site-data", str(tmp_path / "site"), "--processed", str(tmp_path / "processed")]
+    )
+
+    site = tmp_path / "site"
+    assert sorted(path.name for path in site.iterdir()) == sorted(
+        [
+            *(f"daily-{c}-{t}.json" for c in ("FR", "DE") for t in ("solar", "wind_onshore")),
+            "quality.json",
+            "modulation.json",
+            "findings.json",
+            "perimeter.json",
+            "meta.json",
+        ]
+    )
+    days = json.loads((site / "daily-DE-solar.json").read_text())
+    assert days["day"] == ["2024-06-01", "2024-06-02"]
+    assert days["negative_price_hours"] == [2, 0]
+    french, *_ = json.loads((site / "modulation.json").read_text())
+    assert french["reference"] == "RTE"
+    assert french["periods"] == [
+        {
+            "period": "2024",
+            "low_gwh": 1.0,
+            "high_gwh": 3.0,
+            "estimate_gwh": 2.0,
+            "reference_gwh": 2.5,
+        }
+    ]
+    assert len(json.loads((site / "findings.json").read_text())) == 2
+    assert json.loads((site / "meta.json").read_text())["runs"]["audit-perimeter"] == "p1"
