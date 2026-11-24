@@ -26,7 +26,7 @@ its date and reason in the plan's Deviations section.
 |---|---|---|
 | 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 |
 | 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 |
-| 3. Content of the series | Next | Next |
+| 3. Content of the series | Level against Eurostat: inconclusive | Level against Eurostat: SMARD excludes self-consumption |
 | 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) |
 
 The Netherlands and Denmark follow, then Belgium, Spain, Portugal, Italy, Austria and Poland, each
@@ -79,7 +79,8 @@ each year to within 10 %, except German solar since 2023. Published output over 
 German solar feed-in fell from 1.01 to 1.07 times its potential in 2019-2022 to 0.79 in 2025.
 Over the same years, French solar production, which includes self-consumption, stayed between 0.91
 and 1.04, and German wind, which has none, between 0.97 and 1.04. A growing share of self-consumed
-solar output is the first candidate; axis 3 tests it.
+solar output is the first candidate: axis 3 confirms that the SMARD feed-in leaves it out, and
+Fraunhofer ISE puts it at 6 % of German solar output in 2019 and 22 % in 2025.
 
 ### Anomalies in the published series
 
@@ -110,6 +111,22 @@ The solar feed-in that SMARD publishes for Germany matches the sum of its four c
 within 10 MWh a day on every day of 2025 but two periods, both found by the detector: August, when
 the national total is below the sum (DE-2), and 3 to 10 December, when TransnetBW is published as
 zero while the national total keeps its output, up to 15.5 GWh a day (DE-1).
+
+### Self-consumption in the published solar series
+
+Each published series is set against Eurostat gross production, which counts self-consumed
+output, solar against wind: a series that leaves out a self-consumed share s of solar output falls
+short of Eurostat by log(1 − s) more than its wind does. With the error of this gap measured on the
+series whose content is known, a share is detected from 9.1 %.
+
+| Series | Self-consumed share of solar output, 2019 to 2024 | Content from the level |
+|---|---|---|
+| SMARD feed-in, Germany | 6.0 % to 19.7 % | Excluded, decided on 2022-2024 |
+| Energy-Charts total power, Germany | 6.0 % to 19.7 % | Included, decided on 2022-2024 |
+| éCO2mix, mainland France | 1.0 % to 7.1 % | Inconclusive: below the threshold every year |
+
+RTE counts self-consumption in its production figures; the French share is too small for yearly
+statistics to confirm it. Details in [docs/perimeter-2019-2024.md](docs/perimeter-2019-2024.md).
 
 ### Output modulated during negative prices in mainland France
 
@@ -162,6 +179,9 @@ when home batteries and self-consumption take the midday output. Details in
 - **Anomaly detectors.** Completeness, timestamp shifts, negative, frozen and above-capacity
   values, outliers of the residual, level breaks (PELT), totals against the sum of their parts and
   against a second source.
+- **Content of the series.** Yearly published output against Eurostat gross production, solar
+  against wind, with a detection threshold from the error measured on the series whose content is
+  known.
 - **Modulation.** Signed sums over the negative-price hours; 90 % intervals from a stationary
   bootstrap of days that refits the calibration and draws the capacity and the DC/AC ratio; a
   minimal detectable effect; a placebo on low positive prices and an injection-recovery test.
@@ -187,6 +207,8 @@ uv run eu-solar-wind-audit estimate-modulation DE wind_onshore data/processed/mo
 # Anomalies, with the frozen thresholds of config/anomaly-thresholds.
 uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
+# Self-consumption in the published solar series, against Eurostat and references/sdes.
+uv run eu-solar-wind-audit audit-perimeter data/processed/perimeter
 # The figures of this page.
 uv run eu-solar-wind-audit draw-figures docs/figures
 ```
@@ -210,12 +232,13 @@ The results on this page use:
 ```text
 France: RTE, éCO2mix data via ODRÉ, Licence Ouverte 2.0, retrieved on 22 and 23 November 2026.
 France, negative-price modulation: source RTE, analysesetdonnees.rte-france.com, last updated 20 November 2026.
-Service des données et études statistiques (SDES), quarterly solar and wind capacity tables.
+Service des données et études statistiques (SDES), quarterly solar and wind capacity tables; L'autoconsommation d'électricité en France, 2 October 2026.
 Germany: Bundesnetzagentur | SMARD.de, CC BY 4.0.
 Germany, unit register: Bundesnetzagentur, Marktstammdatenregister, dl-de/by-2-0 (www.govdata.de/dl-de/by-2-0), export of 2026-10-01; data changed.
 Germany, administrative boundaries: © BKG (2026) dl-de/by-2-0 (Daten verändert).
 Germany, market-based curtailment: Hirth, L. (2026), Do wind and solar curtail at negative electricity prices?, arXiv 2609.10053v2.
 Energy-Charts.info, Fraunhofer ISE, CC BY 4.0.
+Source: Eurostat, nrg_bal_peh (doi.org/10.2908/NRG_BAL_PEH), accessed on 24 November 2026. Data modified by this project; Eurostat is not responsible for the modified data.
 Contains modified Copernicus Climate Change Service information 2026. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.
 ERA5 accessed through Icechunk ERA5 (Earthmover), https://registry.opendata.aws/earthmover-era5, CC BY 4.0, and ARCO-ERA5 (Google Research).
 Turbine power curves: NREL turbine-models, Copyright (c) 2020 Alliance for Sustainable Energy, LLC, BSD 3-Clause.
