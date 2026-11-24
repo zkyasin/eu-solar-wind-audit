@@ -201,3 +201,123 @@ def test_the_command_writes_the_contrasts_and_the_controls(
     estimates = overall.set_index("series")["estimate"]
     assert estimates["energy_charts_total"] == pytest.approx(estimates["smard"])
     assert len(summary["contrasts"]) == 6
+
+
+# Modelled output from 6 to 16 UTC as a share of the peak of the day, and the peak of each class.
+DAYLIGHT = (0.1, 0.3, 0.5, 0.7, 0.85, 0.9, 0.85, 0.7, 0.5, 0.3, 0.1)
+PEAK_MWH = {"clear": 1500.0, "mixed": 900.0, "overcast": 400.0}
+
+
+def load_predictions(
+    self_consumed: float, overcast_level_mwh: float = 0.0, seed: int = 0
+) -> tuple[pd.Series, pd.DataFrame]:
+    """Three weeks of June 2024 from Monday 3, clear, mixed and overcast in turn, at 2 UTC, without
+    modelled output, and from 6 to 16 UTC. The load is a usual profile that peaks at midday like
+    the modelled output, plus a random level of the day and `overcast_level_mwh` on overcast days,
+    less the share `self_consumed` of the raw model, with a noise of 5 MWh: the load and
+    evaluation.Predictions."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for day, sky in enumerate(["clear", "mixed", "overcast"] * 7, start=3):
+        level = rng.normal(0, 1000) + (overcast_level_mwh if sky == "overcast" else 0.0)
+        for hour, share in [(2, 0.0), *zip(range(6, 17), DAYLIGHT, strict=True)]:
+            raw = PEAK_MWH[sky] * share
+            usual = 40e3 + 3e3 * share
+            rows.append(
+                {
+                    "time": pd.Timestamp(f"2024-06-{day:02d} {hour}:00", tz="UTC"),
+                    "load_mwh": usual + level - self_consumed * raw + rng.normal(0, 5),
+                    "raw_mwh": raw,
+                    "sky_class": sky,
+                }
+            )
+    table = pd.DataFrame(rows).set_index("time")
+    time = pd.DatetimeIndex(table.index).as_unit("ns")
+    frame = table.set_axis(time).assign(
+        held_out_year=time.year.astype("int64"),
+        # A published output that the dip does not read.
+        published_mwh=table["raw_mwh"].to_numpy(),
+        capacity_mw=CAPACITY_MW,
+        eligible=True,
+        season=time.month.map(SEASON_OF_MONTH),
+    )
+    return frame["load_mwh"], frame.drop(columns="load_mwh")
+
+
+def test_a_load_that_includes_self_consumption_shows_no_dip() -> None:
+    load, frame = load_predictions(self_consumed=0.0)
+
+    found = signature.dip(signature.consumption_table(load, frame, "DE"))
+
+    # Without the cell effect, the usual midday peak would read as a rise with the output.
+    assert found.low < 0 < found.high
+
+
+def test_a_load_net_of_self_consumption_falls_by_the_self_consumed_share() -> None:
+    load, frame = load_predictions(self_consumed=0.2)
+
+    found = signature.dip(signature.consumption_table(load, frame, "DE"))
+
+    assert found.estimate == pytest.approx(-0.2, abs=0.01)
+    assert found.high < 0
+    assert (found.hours, found.days) == (231, 21)
+
+
+def test_the_level_of_the_day_does_not_enter_the_dip() -> None:
+    # Overcast days have less modelled output and, here, a higher load at every hour.
+    load, frame = load_predictions(self_consumed=0.0, overcast_level_mwh=2000.0)
+
+    found = signature.dip(signature.consumption_table(load, frame, "DE"))
+
+    assert found.estimate == pytest.approx(0.0, abs=0.01)
+
+
+def test_the_hours_of_a_dip_have_modelled_output_and_a_load() -> None:
+    load, frame = load_predictions(self_consumed=0.0)
+    missing = frame.index[1]
+    load.loc[missing] = np.nan
+
+    table = signature.consumption_table(load, frame, "DE")
+
+    # 21 days of 11 hours with modelled output, less the hour without a load.
+    assert len(table) == 230
+    assert missing not in table.index
+    assert table.columns.tolist() == ["cell", "season", "day", "load_mwh", "raw_mwh"]
+
+
+def test_dips_cover_all_hours_and_each_season() -> None:
+    load, frame = load_predictions(self_consumed=0.2)
+
+    rows = signature.dips(signature.consumption_table(load, frame, "DE"))
+
+    assert rows["season"].tolist() == ["all", "JJA"]
+    assert rows["sign"].tolist() == ["negative", "negative"]
+
+
+def consumption_control_rows(eco2mix: str, smard: str) -> pd.DataFrame:
+    """The sign of each load on all its hours, and a seasonal row that never counts."""
+    return pd.DataFrame(
+        {
+            "series": ["eco2mix_consumption", "smard_consumption", "eco2mix_consumption"],
+            "season": ["all", "all", "JJA"],
+            "sign": [eco2mix, smard, "negative"],
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    ("eco2mix", "smard", "expected"),
+    [
+        ("none", "negative", (True, True, True)),
+        ("positive", "negative", (True, True, True)),
+        ("negative", "negative", (False, True, False)),
+        ("none", "none", (True, False, False)),
+        ("none", "positive", (True, False, False)),
+    ],
+)
+def test_the_consumption_evidence_is_used_only_when_both_controls_pass(
+    eco2mix: str, smard: str, expected: tuple[bool, bool, bool]
+) -> None:
+    found = signature.consumption_controls(consumption_control_rows(eco2mix, smard))
+
+    assert (found["negative_control"], found["positive_control"], found["used"]) == expected

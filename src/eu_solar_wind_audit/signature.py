@@ -1,9 +1,11 @@
-"""Feed-in signature of axis 3 (evaluation plan, axis 3, evidence 4, and Deviations).
+"""Signatures of self-consumption in published series (evaluation plan, axis 3, evidences 4 and 5,
+and Deviations).
 
-A producer that consumes part of its solar output on site feeds in what its consumption leaves
-over. At the same hour and date its consumption barely depends on the sky, so it feeds in a larger
-share of its output on a clear day than on an overcast one: a series of feed-in only rises more
-than the solar potential from overcast to clear days, a series of the whole output does not.
+Feed-in signature. A producer that consumes part of its solar output on site feeds in what its
+consumption leaves over. At the same hour and date its consumption barely depends on the sky, so it
+feeds in a larger share of its output on a clear day than on an overcast one: a series of feed-in
+only rises more than the solar potential from overcast to clear days, a series of the whole output
+does not.
 
 The contrast of a series is the clear minus overcast difference of log(published / potential)
 within cells of the same local hour, month, year and day type. The potential is the physics model
@@ -14,9 +16,19 @@ minus overcast coefficient of a fit of the log ratio on the indicators of both c
 effect per cell (linearmodels PanelOLS, the within estimator), with standard errors clustered by
 day and scaled by n / (n - d - k), d cell effects and k = 2 indicators for n hours.
 
-A series shows the signature when the 90 % interval of its contrast lies above zero. The evidence
-is used only when the negative control, éCO2mix, does not show it and the positive control, the
-SMARD feed-in, does, on all their eligible hours.
+Consumption signature. A load series that leaves out self-consumption is the consumption less the
+solar output consumed on site, so it falls at the hours of high solar output, more on a sunny day
+than on an overcast one. The dip of a series is the coefficient of the raw model in its hourly load,
+both in MWh, with one effect per local day, which takes the level of the day, and one per cell,
+which takes the usual profile of the day (PanelOLS with both effects). The hours are those of the
+calibration with positive modelled output and a published load, whatever their price: the load is
+not modulated. The standard errors are clustered by day and count both effects. Lighting and
+heating also fall on sunny days, and cooling rises: the negative control checks what they leave.
+
+A series shows a signature when the 90 % interval of its statistic lies above zero for the
+contrast, below zero for the dip. The evidence is used only when the negative control, éCO2mix,
+does not show it and the positive control, SMARD, does, on all their hours: the solar series for
+the feed-in signature, the load for the consumption signature.
 """
 
 from collections.abc import Callable
@@ -37,6 +49,9 @@ NEGATIVE_CONTROL = "eco2mix"
 POSITIVE_CONTROL = "smard"
 # Sensitivity without the hours below this modelled capacity factor, most of them at dawn and dusk.
 MIN_CAPACITY_FACTOR = 0.05
+# Controls of the consumption signature, named as in the producer statements (references).
+CONSUMPTION_NEGATIVE_CONTROL = "eco2mix_consumption"
+CONSUMPTION_POSITIVE_CONTROL = "smard_consumption"
 
 
 @dataclass(frozen=True)
@@ -105,6 +120,46 @@ def controls(rows: pd.DataFrame) -> dict[str, bool]:
     whether both hold, the condition for using the evidence."""
     overall = rows[(rows["season"] == "all") & (rows["min_capacity_factor"] == 0)]
     return _controls(overall, NEGATIVE_CONTROL, POSITIVE_CONTROL, "positive")
+
+
+def consumption_table(load: pd.Series, predictions: pd.DataFrame, country: str) -> pd.DataFrame:
+    """The hours of a dip: one row per hour of `predictions`, an evaluation.Predictions frame of
+    `country`, with positive output in the raw model and a load in `load` (MWh on the same hours,
+    NaN when missing). Columns: the cell, the season of the local month, the local day, the load
+    and the raw model."""
+    hours = _predicted_hours(load, predictions)
+    frame = _calendar(hours, country).assign(
+        load_mwh=load.to_numpy(), raw_mwh=predictions["raw_mwh"].to_numpy()
+    )
+    return frame[frame["load_mwh"].notna() & (frame["raw_mwh"] > 0)]
+
+
+def dip(table: pd.DataFrame) -> Estimate:
+    """Dip of the load at the hours of `table`, a `consumption_table`, in MWh per MWh of the raw
+    model: negative when the load falls as the modelled output rises."""
+    panel = table.set_index(["cell", "day"])
+    fit = PanelOLS(
+        panel["load_mwh"], panel[["raw_mwh"]], entity_effects=True, time_effects=True
+    ).fit(cov_type="clustered", cluster_time=True, low_memory=True)
+    return _estimate(fit, np.array([1.0]), table)
+
+
+def dips(table: pd.DataFrame) -> pd.DataFrame:
+    """The dip at the hours of `table`, a `consumption_table`, over all of them and in each
+    season: one row each, with its sign."""
+    return _with_signs(_by_season(table, dip))
+
+
+def consumption_controls(rows: pd.DataFrame) -> dict[str, bool]:
+    """From the `dips` of each series in `rows`, with a `series` column: whether the negative
+    control does not show the signature and the positive control does, on all their hours, and
+    whether both hold, the condition for using the evidence."""
+    return _controls(
+        rows[rows["season"] == "all"],
+        CONSUMPTION_NEGATIVE_CONTROL,
+        CONSUMPTION_POSITIVE_CONTROL,
+        "negative",
+    )
 
 
 def _predicted_hours(series: pd.Series, predictions: pd.DataFrame) -> pd.DatetimeIndex:
