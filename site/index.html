@@ -33,6 +33,7 @@
       </a>
       <nav aria-label="Chapters">
         <ul>
+          <li><a href="#model">Model</a></li>
         </ul>
       </nav>
       <a class="repo-link" href="https://github.com/zkyasin/eu-solar-wind-audit">
@@ -73,6 +74,45 @@
       </figure>
     </section>
 
+    <section class="chapter" id="model" aria-labelledby="model-title">
+      <div class="chapter-head">
+        <p class="chapter-number">01 <span>Modelled output</span></p>
+        <h2 id="model-title">A reference that never sees what it checks</h2>
+        <p class="intro">ERA5 hourly weather on its 0.25° grid drives pvlib on the solar capacity of each French département and German Kreis, and turbine power curves at hub height for onshore wind. The capacity comes from the SDES and the Marktstammdatenregister.</p>
+        <p class="intro">A few parameters are calibrated on hours priced 5 €/MWh or more, leaving each year out in turn, then frozen. The potential of a year is therefore fitted on the other years, and never on the hours it is used to judge.</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/evaluation-plan.md">Evaluation plan, written before the first result</a>
+      </div>
+      <div class="chapter-body">
+        <div class="controls" id="model-controls">
+          <fieldset class="choice">
+            <legend>Country</legend>
+            <div class="options" data-name="country"></div>
+          </fieldset>
+          <fieldset class="choice">
+            <legend>Technology</legend>
+            <div class="options" data-name="technology"></div>
+          </fieldset>
+          <fieldset class="choice">
+            <legend>Year</legend>
+            <div class="options" data-name="year"></div>
+          </fieldset>
+        </div>
+        <dl class="readout" id="model-readout"></dl>
+        <figure class="chart">
+          <ul class="legend">
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><line class="published" x1="0" y1="6" x2="24" y2="6"/></svg>Published</li>
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><line class="model" x1="0" y1="6" x2="24" y2="6"/></svg>Modelled potential</li>
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><rect class="held" x="0" y="0" width="24" height="12"/></svg>Held back at negative prices</li>
+          </ul>
+          <div class="plot" id="model-plot"></div>
+          <figcaption id="model-caption">Daily output, GWh. Below, the hours with a negative day-ahead price on each day.</figcaption>
+        </figure>
+
+        <h3>Each step of the model earns its place</h3>
+        <p class="note">Hourly error over 2023–2025, years left out of each fit, at hours priced 5 €/MWh or more. RMSE in capacity factor: lower is better.</p>
+        <div class="ladder" id="model-ladder"></div>
+      </div>
+    </section>
 
 
 

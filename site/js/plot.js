@@ -178,3 +178,16 @@ export function token(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+/** Radio buttons drawn as a segmented control, in the `.options` element named `name`. */
+export function options(name, choices, chosen, onChange) {
+  const group = document.querySelector(`.options[data-name="${name}"]`);
+  group.replaceChildren(
+    ...Object.entries(choices).map(([value, label]) =>
+      html("label", {}, [
+        html("input", { type: "radio", name, value, checked: value === chosen }),
+        html("span", {}, [label]),
+      ]),
+    ),
+  );
+  group.addEventListener("change", (event) => onChange(event.target.value));
+}
