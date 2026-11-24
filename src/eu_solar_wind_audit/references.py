@@ -33,6 +33,13 @@ SDES_TECHNOLOGIES = (
     "Thermique en cogénération",
 )
 TOLERANCE_TWH = 1e-9
+DOCUMENTATION_FILE = "statements.csv"
+DOCUMENTATION_COLUMNS = ["series", "dimension", "content", "document", "section", "quote"]
+# What a series can contain on each dimension of the matrix of axis 3 (evaluation plan).
+CONTENTS = {
+    "self_consumption": ("included", "excluded"),
+    "distribution": ("covered", "not_covered"),
+}
 
 
 def load_rte_modulation(directory: Path) -> pd.DataFrame:
@@ -138,6 +145,30 @@ def load_sdes_self_consumption(directory: Path) -> "pd.Series[float]":
         index=pd.Index(table["year"].astype(int), name="year"),
         name="gwh",
     )
+
+
+def load_documentation(directory: Path) -> pd.DataFrame:
+    """What the producers of the published series state about their content: one row per series
+    and dimension of CONTENTS, with the document of the manifest, the section and the exact quote
+    that the statement rests on."""
+    path = directory / DOCUMENTATION_FILE
+    statements = pd.read_csv(path, dtype="str", keep_default_na=False)
+    found = list(statements.columns)
+    if found != DOCUMENTATION_COLUMNS:
+        raise ValueError(f"{path.name}: expected columns {DOCUMENTATION_COLUMNS}, found {found}")
+    allowed = {(dimension, content) for dimension, values in CONTENTS.items() for content in values}
+    unexpected = set(zip(statements["dimension"], statements["content"], strict=True)) - allowed
+    if unexpected:
+        raise ValueError(f"{path.name}: unexpected dimension and content {sorted(unexpected)}")
+    repeated = statements[statements.duplicated(["series", "dimension"])]
+    if not repeated.empty:
+        first = repeated.iloc[0]
+        raise ValueError(f"{path.name}: two statements on {first['series']} {first['dimension']}")
+    manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+    unknown = set(statements["document"]) - set(manifest["documents"])
+    if unknown:
+        raise ValueError(f"{path.name}: documents missing from the manifest {sorted(unknown)}")
+    return statements
 
 
 def verify_manifest(directory: Path) -> None:

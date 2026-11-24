@@ -1,0 +1,54 @@
+{
+ "use": "Comparison reference only; calibration code must not read these files.",
+ "files": {
+  "statements.csv": {
+   "sha256": "1d353b44a064b7ef35a2f1589f090c9e646bdd082ec4d7c82787bdb9a75efed1",
+   "size_bytes": 2616,
+   "description": "What the producers of each published series state about its content: one row per series and dimension, with the document, its section and the exact quote, in its original language. Dimension self_consumption: included or excluded; distribution: covered or not_covered. Each quote was found in the text of the document listed below."
+  }
+ },
+ "documents": {
+  "rte_bilan_electrique_2025": {
+   "producer": "RTE",
+   "title": "Bilan électrique 2025, rapport complet",
+   "url": "https://assets.rte-france.com/analyse-et-donnees/2026-03/BE2025%20-%20Rapport%20Complet.pdf",
+   "retrieved_at": "2026-11-21",
+   "sha256": "dcd91c93275cebd23543a87c044b598ace2c4243a714d69de002c20bf15e4f74",
+   "size_bytes": 11618824
+  },
+  "rte_eco2mix_specification": {
+   "producer": "RTE",
+   "title": "Spécification des fichiers de données en puissance pour éCO2mix",
+   "url": "https://assets.rte-france.com/preprod/public/2025-06/Eco2mix%20-%20Sp%C3%A9cifications%20des%20fichiers%20en%20puissance.pdf",
+   "created": "2025-06-20",
+   "retrieved_at": "2026-11-24",
+   "sha256": "6cb676d55af6a7373339c6bc0d8b7cd9eca3891bf788143d8165e27e51a91ca1",
+   "size_bytes": 304826
+  },
+  "smard_handbook_2026_11": {
+   "producer": "Bundesnetzagentur",
+   "title": "SMARD.de Benutzerhandbuch, November 2026",
+   "url": "https://www.smard.de/resource/blob/222172/74900f67be28231c3e04eb42eff02907/20261112-handbuch-november26-data.pdf",
+   "retrieved_at": "2026-11-24",
+   "sha256": "2d6008a9662819514a41a95aa0bc86a3fbae97af24cf56070438065059668a1b",
+   "size_bytes": 1298544
+  },
+  "ise_stromerzeugung_2025": {
+   "producer": "Fraunhofer ISE",
+   "title": "Stromerzeugung in Deutschland im Jahr 2025",
+   "url": "https://www.energy-charts.info/downloads/Stromerzeugung_2025.pdf",
+   "created": "2026-08-28",
+   "retrieved_at": "2026-11-24",
+   "sha256": "6a3009f968e5486ecb2eec77e3e96d5f4df694028e4b14574cce443057cb99c2",
+   "size_bytes": 23100744
+  },
+  "energy_charts_openapi": {
+   "producer": "Fraunhofer ISE",
+   "title": "Energy-Charts API 2.0, OpenAPI description",
+   "url": "https://api.energy-charts.info/openapi.json",
+   "retrieved_at": "2026-11-24",
+   "sha256": "523d3ec0fd82a7f148a94c02ffc08e8251c231d74e74b6019978af1e64b610d4",
+   "size_bytes": 83840
+  }
+ }
+}
