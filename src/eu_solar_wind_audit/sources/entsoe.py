@@ -1,6 +1,7 @@
 """Client for the RESTful API of the ENTSO-E Transparency Platform: actual generation per
-production type (16.1.B&C), actual total load (6.1.A) and the day-ahead forecast of wind and solar
-generation (14.1.D) of a bidding zone.
+production type (16.1.B&C), actual total load (6.1.A), the day-ahead forecast of wind and solar
+generation (14.1.D), and the installed capacity per production type (14.1.A) and per production
+unit of 100 MW or more (14.1.B) of a bidding zone.
 
 The API needs a personal security token, read from the environment variable ENTSOE_API_TOKEN. It
 is sent in the SECURITY_TOKEN header, as the API's Postman collection allows, so that it never
@@ -22,7 +23,8 @@ from typing import Literal
 import httpx
 import numpy as np
 import pandas as pd
-from pandera.typing import DataFrame
+import pandera.pandas as pa
+from pandera.typing import DataFrame, Series
 
 from eu_solar_wind_audit import grid
 
@@ -61,6 +63,9 @@ PRODUCTION_TYPES: dict[Technology, str] = {
     "wind_onshore": "B19",
     "wind_offshore": "B18",
 }
+TECHNOLOGIES: dict[str, Technology] = {code: name for name, code in PRODUCTION_TYPES.items()}
+# Capacity documents give one value per year, which starts at midnight in market time.
+MARKET_TIMEZONE = "Europe/Brussels"
 RESOLUTIONS = {
     "PT15M": pd.Timedelta(minutes=15),
     "PT30M": pd.Timedelta(minutes=30),
@@ -75,6 +80,21 @@ LOAD_DOMAIN = "outBiddingZone_Domain.mRID"
 
 class EntsoeError(Exception):
     """The platform refused a query; the message is the reason it gave."""
+
+
+class UnitCapacity(pa.DataFrameModel):
+    """A solar or wind production unit of 100 MW or more of a bidding zone in one year: its EIC
+    code, name and technology, the upper voltage of its connection in kV, null when the platform
+    gives none, and its installed capacity in MW."""
+
+    unit: Series[str] = pa.Field(unique=True)
+    name: Series[str]
+    technology: Series[str] = pa.Field(isin=list(PRODUCTION_TYPES))
+    voltage_kv: Series[float] = pa.Field(gt=0, nullable=True)
+    capacity_mw: Series[float] = pa.Field(ge=0)
+
+    class Config:
+        strict = True
 
 
 def make_client() -> httpx.Client:
@@ -135,6 +155,84 @@ def fetch_hourly_forecast(
         "in_Domain": AREAS[area],
     }
     return _hourly(query, GENERATION_DOMAIN, start, end, client, cache_dir)
+
+
+def fetch_capacity(
+    area: Area,
+    year: int,
+    *,
+    client: httpx.Client | None = None,
+    cache_dir: Path = CACHE_DIR,
+) -> "pd.Series[float]":
+    """Installed capacity in MW of each technology in `area` for `year`, indexed by technology;
+    a technology without a value is left out."""
+    query = {"documentType": "A68", "processType": "A33", "in_Domain": AREAS[area]}
+    return _year(query, year, lambda content: parse_capacity(content, year), client, cache_dir)
+
+
+def fetch_unit_capacity(
+    area: Area,
+    year: int,
+    *,
+    client: httpx.Client | None = None,
+    cache_dir: Path = CACHE_DIR,
+) -> DataFrame[UnitCapacity]:
+    """Solar and wind production units of 100 MW or more in `area` for `year`."""
+    query = {"documentType": "A71", "processType": "A33", "in_Domain": AREAS[area]}
+    return _year(query, year, lambda content: parse_unit_capacity(content, year), client, cache_dir)
+
+
+def parse_capacity(content: bytes, year: int) -> "pd.Series[float]":
+    """Capacity in MW of each technology for `year` in a document of installed capacity per
+    production type."""
+    root, namespace = _root(content)
+    capacity: dict[str, float] = {}
+    if not _no_data(root, namespace):
+        for series in root.findall("m:TimeSeries", namespace):
+            technology = _technology(series, namespace)
+            value = _capacity_of_year(series, year, namespace)
+            if technology is None or value is None:
+                continue
+            if technology in capacity:
+                raise EntsoeError(f"two capacities of {technology} for {year}")
+            capacity[technology] = value
+    return pd.Series(capacity, dtype=float, name="capacity_mw").rename_axis("technology")
+
+
+def parse_unit_capacity(content: bytes, year: int) -> DataFrame[UnitCapacity]:
+    """`UnitCapacity` of the solar and wind units listed for `year` in a document of installed
+    capacity per production unit."""
+    root, namespace = _root(content)
+    rows = []
+    if not _no_data(root, namespace):
+        for series in root.findall("m:TimeSeries", namespace):
+            technology = _technology(series, namespace)
+            value = _capacity_of_year(series, year, namespace)
+            if technology is None or value is None:
+                continue
+            voltage = series.find(
+                "m:MktPSRType/m:voltage_PowerSystemResources.highVoltageLimit", namespace
+            )
+            if voltage is not None and voltage.get("unit") != "KVT":
+                raise EntsoeError(f"unexpected voltage unit {voltage.get('unit')}")
+            rows.append(
+                {
+                    "unit": _text(series, "m:registeredResource.mRID", namespace),
+                    "name": _text(series, "m:registeredResource.name", namespace),
+                    "technology": technology,
+                    "voltage_kv": float(voltage.text or "nan") if voltage is not None else np.nan,
+                    "capacity_mw": value,
+                }
+            )
+    dtypes = {
+        "unit": "str",
+        "name": "str",
+        "technology": "str",
+        "voltage_kv": "float",
+        "capacity_mw": "float",
+    }
+    frame = pd.DataFrame(rows, columns=list(dtypes)).astype(dtypes)
+    return UnitCapacity.validate(frame.sort_values("unit").reset_index(drop=True))
 
 
 def parse_energy(content: bytes, domain: str) -> pd.Series:
@@ -208,6 +306,23 @@ def _answer(
     )
 
 
+def _year[Parsed](
+    query: dict[str, str],
+    year: int,
+    parse: Callable[[bytes], Parsed],
+    client: httpx.Client | None,
+    cache_dir: Path,
+) -> Parsed:
+    """`parse` of the answer to `query` over the market-time year `year`."""
+    if client is None:
+        with make_client() as own_client:
+            return _year(query, year, parse, own_client, cache_dir)
+    start = pd.Timestamp(year, 1, 1, tz=MARKET_TIMEZONE).tz_convert("UTC")
+    end = pd.Timestamp(year + 1, 1, 1, tz=MARKET_TIMEZONE).tz_convert("UTC")
+    settled = end + SETTLED_AFTER <= pd.Timestamp.now(tz="UTC")
+    return _cached(client, _period(query, start, end), parse, settled, cache_dir)
+
+
 def _cached[Parsed](
     client: httpx.Client,
     params: dict[str, str],
@@ -274,6 +389,24 @@ def _period_energy(period: ET.Element, curve: str, namespace: dict[str, str]) ->
     quarters = pd.date_range(start, end, freq=QUARTER, inclusive="left", unit="ns")
     energy = np.repeat(power.to_numpy(), step // QUARTER) * (QUARTER / grid.HOUR)
     return pd.Series(energy, index=quarters)
+
+
+def _technology(series: ET.Element, namespace: dict[str, str]) -> Technology | None:
+    """Technology of the production type of a time series, None for other types."""
+    return TECHNOLOGIES.get(series.findtext("m:MktPSRType/m:psrType", "", namespace))
+
+
+def _capacity_of_year(series: ET.Element, year: int, namespace: dict[str, str]) -> float | None:
+    """Capacity in MW of the period of a time series that starts with `year` in market time,
+    None when it has none."""
+    unit = _text(series, "m:quantity_Measure_Unit.name", namespace)
+    if unit != "MAW":
+        raise EntsoeError(f"unexpected unit {unit}")
+    start = pd.Timestamp(year, 1, 1, tz=MARKET_TIMEZONE)
+    for period in series.findall("m:Period", namespace):
+        if pd.Timestamp(_text(period, "m:timeInterval/m:start", namespace)) == start:
+            return float(_text(period, "m:Point/m:quantity", namespace))
+    return None
 
 
 def _root(content: bytes) -> tuple[ET.Element, dict[str, str]]:

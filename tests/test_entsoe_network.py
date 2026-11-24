@@ -39,3 +39,14 @@ def test_austria_has_no_offshore_wind(tmp_path: Path) -> None:
     hourly = entsoe.fetch_hourly_generation("AT", "wind_offshore", *DAY, cache_dir=tmp_path)
 
     assert not hourly["complete"].any()
+
+
+def test_the_dutch_capacity_of_2025_and_its_wind_farms_of_100_mw_or_more(tmp_path: Path) -> None:
+    capacity = entsoe.fetch_capacity("NL", 2025, cache_dir=tmp_path)
+    units = entsoe.fetch_unit_capacity("NL", 2025, cache_dir=tmp_path)
+
+    wind = units[units["technology"].isin(["wind_onshore", "wind_offshore"])]
+    assert set(capacity.index) == set(entsoe.PRODUCTION_TYPES)
+    assert (wind["capacity_mw"] >= 100).all()
+    assert (wind["voltage_kv"] >= 66).all()
+    assert wind["capacity_mw"].sum() < capacity[["wind_onshore", "wind_offshore"]].sum()
