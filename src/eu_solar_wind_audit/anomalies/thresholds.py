@@ -1,9 +1,9 @@
-"""Thresholds of the statistical anomaly detectors of mainland France, fixed on 2019-2022
-(evaluation plan, axis 2, and Deviations) and kept in THRESHOLDS_DIR/<country>.json with the
-reference model they rest on.
+"""Thresholds of the statistical anomaly detectors of a country, mainland France or Germany,
+fixed on 2019-2022 (evaluation plan, axis 2, and Deviations) and kept in
+THRESHOLDS_DIR/<country>.json with the reference model they rest on.
 
 `fix` reads the detection inputs of FIX_YEARS, without margins, and gives:
-- the centroid bias of the model: the median residual of the valid days of national solar;
+- the centroid bias of the model: the median residual of the valid days of NATIONAL_SOLAR;
 - the solar series eligible for shift claims: those with at most BUDGET claim in every year;
 - the residual threshold of each technology, among RESIDUAL_THRESHOLDS, and the level-break
   penalties of solar, wind and joint searches, among breaks.PENALTIES: for each, the smallest value
@@ -21,6 +21,7 @@ REFERENCE_KEYS; the git description is recorded only.
 import dataclasses
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -31,7 +32,7 @@ from eu_solar_wind_audit import physics
 from eu_solar_wind_audit.anomalies import breaks, residuals, timestamp
 from eu_solar_wind_audit.anomalies.inputs import DetectionInputs, SeriesInputs
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import era5, natural_earth
+from eu_solar_wind_audit.sources import bkg, era5, mastr, natural_earth
 
 THRESHOLDS_DIR = Path("config/anomaly-thresholds")
 FIX_YEARS = range(2019, 2023)
@@ -41,8 +42,15 @@ FIX_END = pd.Timestamp(FIX_YEARS[-1] + 1, 1, 1, tz="UTC")
 # Deviations).
 RESIDUAL_THRESHOLDS = (6.0, 8.0, 10.0, 12.0, 15.0, 20.0)
 BUDGET = 1
-NATIONAL_SOLAR = "odre.FR.solar"
-REFERENCE_KEYS = ("parameters_sha256", "sdes_media", "era5_store", "regions")
+NATIONAL_SOLAR = {"FR": "odre.FR.solar", "DE": "smard.DE.solar"}
+# The technology of the statistical detectors of each modelled series: French wind holds offshore
+# output from 2022, which its offshore mask leaves out; German onshore wind is published apart.
+DETECTOR_TECHNOLOGIES: dict[str, breaks.Technology] = {
+    "solar": "solar",
+    "wind": "wind",
+    "wind_onshore": "wind",
+}
+REFERENCE_KEYS = ("parameters_sha256", "sdes_media", "mastr_export", "era5_store", "regions")
 
 
 @dataclass(frozen=True)
@@ -63,18 +71,28 @@ class Thresholds:
 
 def reference_model(parameters: Country, git_describe: str | None) -> dict[str, Any]:
     """The reference model of thresholds fixed with the country `parameters`: the SHA-256 of the
-    parameters, the SDES media of the capacity, the ERA5 stores and the regions, and the git
-    description of the code."""
+    parameters, the source of the capacity (the SDES media for France, the MaStR export for
+    Germany), the ERA5 stores and the areas, and the git description of the code."""
     settings = json.dumps(dataclasses.asdict(parameters), sort_keys=True, default=str)
+    era5_store = {
+        "final": f"s3://{era5.ICECHUNK_BUCKET}/{era5.ICECHUNK_PREFIX}, group {era5.ICECHUNK_GROUP}",
+        "recent": era5.ARCO_URL,
+    }
+    if parameters.country == "FR":
+        sources: dict[str, Any] = {
+            "sdes_media": dict(physics.SDES_MEDIA),
+            "era5_store": era5_store,
+            "regions": f"Natural Earth admin-1 {natural_earth.VERSION}",
+        }
+    else:
+        sources = {
+            "mastr_export": mastr.EXPORT_URL,
+            "era5_store": era5_store,
+            "regions": f"BKG VG5000 districts, state of {bkg.EDITION}",
+        }
     return {
         "parameters_sha256": hashlib.sha256(settings.encode()).hexdigest(),
-        "sdes_media": dict(physics.SDES_MEDIA),
-        "era5_store": {
-            "final": f"s3://{era5.ICECHUNK_BUCKET}/{era5.ICECHUNK_PREFIX}, "
-            f"group {era5.ICECHUNK_GROUP}",
-            "recent": era5.ARCO_URL,
-        },
-        "regions": f"Natural Earth admin-1 {natural_earth.VERSION}",
+        **sources,
         "git_describe": git_describe,
     }
 
@@ -89,8 +107,9 @@ def check_reference(thresholds: Thresholds, reference: dict[str, Any]) -> None:
 
 
 def fix(found: DetectionInputs, reference: dict[str, Any]) -> Thresholds:
-    """Thresholds from `found`, the detection inputs of mainland France over FIX_YEARS, which rest
-    on `reference`.
+    """Thresholds from `found`, the detection inputs of a country over FIX_YEARS, which rest on
+    `reference`. The series with a model are those of the statistical detectors, each with the
+    technology of DETECTOR_TECHNOLOGIES.
 
     Raises ValueError unless every hour of `found` lies in FIX_YEARS.
     """
@@ -99,12 +118,14 @@ def fix(found: DetectionInputs, reference: dict[str, Any]) -> Thresholds:
     classes = found.price_classes
     by_technology = {
         technology: {
-            series: item for series, item in found.series.items() if item.technology == technology
+            series: item
+            for series, item in found.series.items()
+            if item.modelled is not None and DETECTOR_TECHNOLOGIES[item.technology] == technology
         }
         for technology in breaks.TECHNOLOGIES
     }
 
-    national = found.series[NATIONAL_SOLAR]
+    national = found.series[NATIONAL_SOLAR[found.country]]
     unbiased = timestamp.daily_centroids(
         _published(national), _modelled(national), classes, bias_minutes=0.0
     )
@@ -171,7 +192,7 @@ def fix(found: DetectionInputs, reference: dict[str, Any]) -> Thresholds:
         "joint": {
             series.removesuffix(".solar"): {
                 "solar": ratios[series],
-                "wind": ratios[series.removesuffix(".solar") + ".wind"],
+                "wind": ratios[wind_series(series, by_technology["wind"])],
             }
             for series in by_technology["solar"]
         },
@@ -219,6 +240,14 @@ def fix(found: DetectionInputs, reference: dict[str, Any]) -> Thresholds:
         profiles={series: searched.profile for series, searched in ratios.items()},
         false_alarms=pd.DataFrame(rows),
     )
+
+
+def wind_series(solar_series: str, wind: Iterable[str]) -> str:
+    """The wind series among `wind` of the area of `solar_series`: its wind series, such as
+    odre.FR.wind, or its onshore wind series where the publisher gives no other, such as
+    smard.DE.wind_onshore."""
+    area = solar_series.removesuffix(".solar")
+    return f"{area}.wind" if f"{area}.wind" in wind else f"{area}.wind_onshore"
 
 
 def per_year(found: pd.DataFrame) -> "pd.Series[int]":

@@ -9,6 +9,7 @@ from eu_solar_wind_audit import cli, physics
 from eu_solar_wind_audit.anomalies import breaks, inputs, thresholds
 from eu_solar_wind_audit.anomalies.inputs import DetectionInputs, Published, SeriesInputs
 from eu_solar_wind_audit.config import CONFIG_DIR, load_country
+from eu_solar_wind_audit.sources import mastr
 
 PROVENANCE = "RTE, éCO2mix, ODRÉ dataset eco2mix-national-cons-def"
 
@@ -138,6 +139,36 @@ def test_inputs_without_margin_cover_the_years_of_the_thresholds() -> None:
     assert pd.Timedelta(0) < inputs.MARGIN
     assert pd.Timestamp("2019-01-01", tz="UTC") == thresholds.FIX_START
     assert pd.Timestamp("2023-01-01", tz="UTC") == thresholds.FIX_END
+
+
+def test_german_thresholds_rest_on_the_modelled_smard_series() -> None:
+    french = detection_inputs("2019-01-01", "2020-01-01")
+    series = {
+        "smard.DE.solar": rename(french.series["odre.FR.solar"], "smard.DE.solar"),
+        "smard.DE.wind_onshore": dataclasses.replace(
+            rename(french.series["odre.FR.wind"], "smard.DE.wind_onshore"),
+            technology="wind_onshore",
+        ),
+        # Without a model, a series gets no statistical detector.
+        "energy_charts.DE.public_power.solar": dataclasses.replace(
+            french.series["odre.FR.solar"], modelled=None
+        ),
+    }
+    reference = thresholds.reference_model(load_country(CONFIG_DIR / "de.toml"), "v0-test")
+
+    fixed = thresholds.fix(dataclasses.replace(french, country="DE", series=series), reference)
+
+    assert fixed.country == "DE"
+    assert fixed.shift_series == ("smard.DE.solar",)
+    assert set(fixed.profiles) == {"smard.DE.solar", "smard.DE.wind_onshore"}
+    assert set(fixed.residual_thresholds) == {"solar", "wind"}
+    assert reference["mastr_export"] == mastr.EXPORT_URL
+    assert "sdes_media" not in reference
+
+
+def rename(item: SeriesInputs, series: str) -> SeriesInputs:
+    (part,) = item.published
+    return dataclasses.replace(item, published=(dataclasses.replace(part, series=series),))
 
 
 def test_the_command_fixes_the_thresholds_of_2019_2022_without_margins(

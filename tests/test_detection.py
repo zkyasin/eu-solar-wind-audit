@@ -327,6 +327,83 @@ def germany() -> DetectionInputs:
     return DetectionInputs("DE", START, END, HOURS, (), series, reference_classes())
 
 
+def german_models() -> DetectionInputs:
+    """Germany and its four control areas with a model for each solar and onshore wind series,
+    published at the levels of LEVELS with their noise, Germany the sum of its areas and
+    Energy-Charts public power at 0.97 times SMARD; with a joint drop of TenneT solar and onshore
+    wind from 2019-02-01, and a peak of Amprion solar at 2019-02-15 12:00."""
+    rng = np.random.default_rng(2021)
+    factors = capacity_factors(rng)
+    series: dict[str, SeriesInputs] = {}
+
+    def add(name: str, technology: str, energy: pd.Series, model: np.ndarray | None) -> None:
+        frame = pd.DataFrame({"energy_mwh": energy, "complete": True})
+        capacity = CAPACITY_MW["solar" if technology == "solar" else "wind"]
+        series[name] = SeriesInputs(
+            technology=technology,
+            published=(Published(name, PROVENANCE, False, frame),),
+            modelled=None if model is None else modelled(model, capacity),
+            capacity_mw=None,
+            offshore=pd.Series(False, index=HOURS) if technology == "wind_onshore" else None,
+        )
+
+    areas = [area for area in inputs.SMARD_AREAS if area != "DE"]
+    for technology, key in (("solar", "solar"), ("wind_onshore", "wind")):
+        model = factors[key] * CAPACITY_MW[key]
+        total = pd.Series(0.0, index=HOURS)
+        for area in areas:
+            noise = rng.normal(0.0, NOISE[key], len(HOURS))
+            output = pd.Series(LEVELS[key] * model * (1 + noise), HOURS)
+            if area == "TenneT":
+                output.loc[utc("2019-02-01") :] *= 0.7
+            if area == "Amprion" and technology == "solar":
+                output[at("2019-02-15 12:00")] *= 3
+            add(f"smard.{area}.{technology}", technology, output, model)
+            total += output
+        add(f"smard.DE.{technology}", technology, total, len(areas) * model)
+        add(f"energy_charts.DE.public_power.{technology}", technology, 0.97 * total, None)
+        add(f"energy_charts.DE.total_power.{technology}", technology, total, None)
+    offshore = pd.Series(800.0 * factors["wind"], index=HOURS)
+    for region in smard.OFFSHORE_REGIONS:
+        scale = len(smard.OFFSHORE_REGIONS) - 1 if region == "DE" else 1
+        add(f"smard.{region}.wind_offshore", "wind_offshore", scale * offshore, None)
+    total_offshore = (len(smard.OFFSHORE_REGIONS) - 1) * offshore
+    add("energy_charts.DE.public_power.wind_offshore", "wind_offshore", 0.97 * total_offshore, None)
+    add("energy_charts.DE.total_power.wind_offshore", "wind_offshore", total_offshore, None)
+    return DetectionInputs("DE", START, END, HOURS, (), series, reference_classes())
+
+
+def german_thresholds() -> thresholds.Thresholds:
+    profiles = {
+        f"smard.{area}.{technology}": breaks.SeasonalProfile(
+            (float(np.log(LEVELS[key])), 0.0, 0.0, 0.0, 0.0), 0.01
+        )
+        for area in inputs.SMARD_AREAS
+        for technology, key in (("solar", "solar"), ("wind_onshore", "wind"))
+    }
+    return dataclasses.replace(
+        french_thresholds(),
+        country="DE",
+        reference_model=thresholds.reference_model(load_country(CONFIG_DIR / "de.toml"), None),
+        shift_series=tuple(f"smard.{area}.solar" for area in inputs.SMARD_AREAS),
+        profiles=profiles,
+    )
+
+
+@pytest.mark.parametrize(
+    ("series", "kind", "start"),
+    [
+        ("smard.TenneT.solar", "level_break", "2019-02-01 00:00"),
+        ("smard.TenneT.wind_onshore", "level_break", "2019-02-01 00:00"),
+        ("smard.Amprion.solar", "residual_outlier", "2019-02-15 12:00"),
+    ],
+)
+def test_german_areas_get_the_statistical_detectors(series: str, kind: str, start: str) -> None:
+    found = detection.detect(german_models(), german_thresholds(), START, END).findings
+
+    assert (kind, utc(start)) in kinds_of(found, series)
+
+
 def test_germany_gets_the_rules_and_the_cross_source_checks() -> None:
     found = detection.detect(germany(), None, START, END).findings
 
