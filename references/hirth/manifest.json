@@ -1,0 +1,22 @@
+{
+ "producer": "Lion Hirth, Hertie School and Neon Neue Energieökonomik, Berlin",
+ "use": "Comparison reference only; calibration code must not read these files.",
+ "files": {
+  "market_curtailment_germany.csv": {
+   "sha256": "0854a8dddcede016831e4d01a7142ba5c1636f53c02ce0eedc24ade118bf28b6",
+   "size_bytes": 142,
+   "description": "Yearly market-based curtailment of wind and solar in Germany, in TWh, transcribed from the paper: the values its text and its Figure 12 label. Wind is onshore and offshore together.",
+   "source": {
+    "title": "Do wind and solar curtail at negative electricity prices? Incentives and evidence across two decades of German renewable support schemes",
+    "arxiv": "2609.10053v2",
+    "url": "https://arxiv.org/pdf/2609.10053",
+    "version": "10 November 2026",
+    "retrieved_at": "2026-11-24",
+    "pdf_sha256": "9bfd90e7ad8c87399912c35abe4484f6b1069262753cfaaa157329cf863ad036",
+    "pdf_size_bytes": 1073997
+   },
+   "method": "Market-based curtailment is the generation potential minus actual generation minus grid-related curtailment, summed over the hours with a negative day-ahead price (section 5.1). The potential is fitted on hours with a day-ahead price of 5 EUR/MWh or more and an imbalance price of -50 EUR/MWh or more, from ERA5 100 m wind at twelve onshore and five offshore grid points and surface irradiance. Germany had 573 negative-price hours in 2025 (Table 4).",
+   "licence": "Figures quoted from a public preprint, with its reference; the derived series are available from the author on request only."
+  }
+ }
+}

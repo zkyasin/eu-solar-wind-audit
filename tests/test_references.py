@@ -5,9 +5,15 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from eu_solar_wind_audit.references import RTE_FILES, load_rte_modulation, verify_manifest
+from eu_solar_wind_audit.references import (
+    RTE_FILES,
+    load_hirth_curtailment,
+    load_rte_modulation,
+    verify_manifest,
+)
 
 RTE = Path(__file__).parents[1] / "references" / "rte"
+HIRTH = Path(__file__).parents[1] / "references" / "hirth"
 SOLAR = "RTE_PAD_solaire_modulation.csv"
 WIND = "RTE_PAD_eolien_modulation.csv"
 # Working-day row of April 2025 in the solar file; the value appears nowhere else.
@@ -134,3 +140,18 @@ def test_a_changed_file_fails_the_manifest(rte_copy: Path) -> None:
 
     with pytest.raises(ValueError, match=f"{SOLAR}: expected 16337 bytes"):
         verify_manifest(rte_copy)
+
+
+def test_hirth_files_match_their_manifest() -> None:
+    verify_manifest(HIRTH)
+
+
+def test_hirth_volumes_are_those_of_the_paper_in_gwh() -> None:
+    found = load_hirth_curtailment(HIRTH).set_index(["technology", "year"])["gwh"]
+
+    assert found.to_dict() == {
+        ("wind", 2023): 1800.0,
+        ("wind", 2024): 1600.0,
+        ("wind", 2025): 2100.0,
+        ("solar", 2025): 600.0,
+    }

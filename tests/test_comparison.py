@@ -172,3 +172,17 @@ def test_a_year_without_an_estimate_is_inconclusive() -> None:
 
     assert judged.verdict == "inconclusive"
     assert judged.years["inconclusive"].tolist() == [False, True]
+
+
+def test_annual_ratios_set_each_year_of_the_reference_beside_the_estimate() -> None:
+    estimates = pd.DataFrame(
+        {"estimate_gwh": [900.0, 2000.0, 50.0], "low_gwh": [800.0, 1800.0, 40.0]},
+        index=pd.Index(["2024", "2025", "2025-06"], name="period"),
+    )
+    reference = pd.Series([1600.0, 2100.0], index=[2024, 2025])
+
+    found = comparison.annual_ratios(estimates, reference)
+
+    assert found.index.tolist() == ["2024", "2025"]
+    assert found["low_gwh"].tolist() == [800.0, 1800.0]
+    assert found["ratio"].tolist() == pytest.approx([900 / 1600, 2000 / 2100])
