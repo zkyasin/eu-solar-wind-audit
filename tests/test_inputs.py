@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import httpx
@@ -7,7 +8,7 @@ import pytest
 from eu_solar_wind_audit import eligibility, grid, physics
 from eu_solar_wind_audit.anomalies import inputs
 from eu_solar_wind_audit.config import CONFIG_DIR, load_country
-from eu_solar_wind_audit.sources import energy_charts, odre, sdes, smard
+from eu_solar_wind_audit.sources import energinet, energy_charts, odre, sdes, smard
 
 # The SDES wind dashboard of 2026-11-22 cut to Bretagne, Normandie, Corsica and the overseas
 # departments (tests/test_sdes.py).
@@ -284,3 +285,126 @@ def test_germany_inputs_give_smard_series_their_model_and_energy_charts_series(
         "energy_charts.public_power",
         "energy_charts.total_power",
     ]
+
+
+def danish_settlement(path: Path, first: pd.Timestamp, last: pd.Timestamp) -> Path:
+    """Settlement data of the local Danish year 2025 cached as energinet keeps settled years: 250
+    MWh in every column at every hour of [first, last) in DK1, and none in DK2."""
+    path.mkdir()
+    records = [
+        {"HourUTC": hour.strftime("%Y-%m-%dT%H:%M:%S"), "PriceArea": "DK1"}
+        | dict.fromkeys(energinet.ENERGY_COLUMNS, 250.0)
+        for hour in hours_of(first, last)
+    ]
+    (path / f"{energinet.SETTLEMENT}_2025.json").write_text(json.dumps({"records": records}))
+    return path
+
+
+def danish_capacity(*_: object, **__: object) -> pd.DataFrame:
+    """Capacity of Randers (DK1) and Copenhagen (DK2): 40 MW of solar and 30 MW of onshore wind
+    each, from May to August 2025."""
+    return energinet.parse_capacity(
+        {
+            "records": [
+                {
+                    "Month": f"2025-{month:02d}-01T00:00:00",
+                    "MunicipalityNo": number,
+                    "SolarPowerCapacity": 40.0,
+                    "OnshoreWindCapacity": 30.0,
+                    "OffshoreWindCapacity": 0.0,
+                }
+                for month in (5, 6, 7, 8)
+                for number in ("730", "101")
+            ]
+        }
+    )
+
+
+def modelled_area(
+    technology: str, first: pd.Timestamp, last: pd.Timestamp, *_: object
+) -> pd.DataFrame:
+    frame = pd.DataFrame(
+        {
+            "energy_mwh": 1.0,
+            "complete": True,
+            "capacity_mw": 10.0,
+            "capacity_provisional": False,
+            "era5_source": "ERA5",
+        },
+        index=hours_of(first, last),
+    )
+    return physics.Modelled.validate(frame)
+
+
+@pytest.mark.parametrize("margin", [inputs.MARGIN, pd.Timedelta(0)], ids=["margin", "none"])
+def test_denmark_inputs_give_each_series_of_the_area_its_model_and_capacity(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, margin: pd.Timedelta
+) -> None:
+    start, end = utc("2025-06-10 00:00"), utc("2025-06-11 00:00")
+    first, last = start - margin, end + margin
+    monkeypatch.setattr(physics, "model_denmark", modelled_area)
+    monkeypatch.setattr(energinet, "fetch_capacity", danish_capacity)
+    monkeypatch.setattr(eligibility, "price_classes", reference_classes)
+
+    found = inputs.denmark_inputs(
+        httpx.Client(),
+        start,
+        end,
+        load_country(CONFIG_DIR / "dk1.toml"),
+        energinet_cache_dir=danish_settlement(tmp_path / "energinet", first, last),
+        margin=margin,
+    )
+
+    assert found.country == "DK1"
+    assert found.hours.equals(hours_of(first, last))
+    assert set(found.series) == {
+        "energinet.DK1.solar",
+        "energinet.DK1.wind_onshore",
+        "energinet.DK1.wind_offshore",
+    }
+    for technology, mwh in (("solar", 1000.0), ("wind_onshore", 500.0), ("wind_offshore", 500.0)):
+        item = found.series[f"energinet.DK1.{technology}"]
+        (part,) = item.published
+        assert not part.provisional
+        assert part.provenance == "Energinet, Energi Data Service, ProductionConsumptionSettlement"
+        assert (part.hourly["energy_mwh"] == mwh).all(), technology
+        offshore = technology == "wind_offshore"
+        assert (item.modelled is None) == offshore
+        assert (item.capacity_mw is None) == offshore
+    # Randers alone is in DK1.
+    capacity = found.series["energinet.DK1.solar"].capacity_mw
+    assert capacity is not None
+    assert (capacity == 40.0).all()
+    onshore = found.series["energinet.DK1.wind_onshore"].offshore
+    assert onshore is not None
+    assert not onshore.any()
+    assert found.series["energinet.DK1.solar"].offshore is None
+    (rows,) = found.rows
+    assert rows.dataset == "energinet.ProductionConsumptionSettlement"
+    assert not rows.provisional
+    assert set(rows.values) == set(found.series)
+
+
+def test_danish_hours_still_corrected_are_provisional(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    start, end = utc("2025-06-10 00:00"), utc("2025-06-11 00:00")
+    monkeypatch.setattr(physics, "model_denmark", modelled_area)
+    monkeypatch.setattr(energinet, "fetch_capacity", danish_capacity)
+    monkeypatch.setattr(eligibility, "price_classes", reference_classes)
+    # As if June 2025 were within the period of corrections.
+    monkeypatch.setattr(energinet, "SETTLED_AFTER", pd.Timedelta(days=3650))
+
+    found = inputs.denmark_inputs(
+        httpx.Client(),
+        start,
+        end,
+        load_country(CONFIG_DIR / "dk1.toml"),
+        energinet_cache_dir=danish_settlement(tmp_path / "energinet", start, end),
+        margin=pd.Timedelta(0),
+    )
+
+    (part,) = found.series["energinet.DK1.solar"].published
+    assert part.provisional
+    (rows,) = found.rows
+    assert rows.provisional

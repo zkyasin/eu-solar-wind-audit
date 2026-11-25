@@ -19,6 +19,7 @@ these hours for each French area.
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import httpx
 import numpy as np
@@ -28,7 +29,7 @@ from pandera.typing import DataFrame
 from eu_solar_wind_audit import eligibility, grid, physics
 from eu_solar_wind_audit.anomalies import completeness
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import energy_charts, odre, sdes, smard
+from eu_solar_wind_audit.sources import energinet, energy_charts, odre, sdes, smard
 
 # The windowed statistics of a day reach 30 days away from it: the scale of its residual score
 # takes the residuals of the 31 days centred on it, each at the level of the 31 days centred on
@@ -46,6 +47,15 @@ SPLIT: tuple[odre.RegionalSeries, ...] = ("wind_onshore", "wind_offshore")
 SMARD_AREAS: tuple[smard.Region, ...] = ("DE", "50Hertz", "Amprion", "TenneT", "TransnetBW")
 # The German series that a model covers.
 GERMAN_MODELS: tuple[physics.Technology, ...] = ("solar", "wind_onshore")
+
+# The series of a Danish price area by technology, and the quantity of the settlement data that
+# gives each: solar adds the self-consumed output to the size classes, as in the calibration.
+DANISH_SERIES: dict[str, energinet.Quantity] = {
+    "solar": "solar_total",
+    "wind_onshore": "wind_onshore",
+    "wind_offshore": "wind_offshore",
+}
+DANISH_PROVENANCE = f"Energinet, Energi Data Service, {energinet.SETTLEMENT}"
 
 # Saint-Nazaire, the first French offshore farm (odre.FIRST_OFFSHORE_POWER), is in Pays de la Loire.
 FIRST_FARM_REGION = "52"
@@ -326,6 +336,104 @@ def germany_inputs(
     )
     return DetectionInputs(
         "DE", start, end, hours, tuple(rows), series, classes.drop(columns="mean_price")
+    )
+
+
+def denmark_inputs(
+    client: httpx.Client,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    *,
+    energinet_cache_dir: Path = energinet.CACHE_DIR,
+    smard_cache_dir: Path = smard.CACHE_DIR,
+    era5_cache_dir: Path = physics.ERA5_CACHE_DIR,
+    margin: pd.Timedelta = MARGIN,
+) -> DetectionInputs:
+    """Inputs of a detection run over the hours [start, end) of the Danish price area of
+    `parameters`, both hour starts in UTC: its solar, with the self-consumed output, and its
+    onshore and offshore wind from the settlement data of Energinet,
+    `energinet.<area>.<technology>`, with the price classes of the area.
+
+    Solar and onshore wind are compared with the model of the area, physics.model_denmark, and with
+    its capacity on Energi Data Service; offshore wind with neither, since part of the offshore
+    capacity lies in no municipality. Hours younger than energinet.SETTLED_AFTER are still
+    corrected: they make the provisional part of each series and the provisional rows.
+    """
+    zone = cast(energinet.PriceArea, parameters.country)
+    grid.check_period(start, end)
+    hours = pd.date_range(
+        start - margin, end + margin, freq="h", inclusive="left", unit="ns", name="time"
+    )
+    first, last = hours[0], hours[-1] + grid.HOUR
+    corrected = (pd.Timestamp.now(tz="UTC") - energinet.SETTLED_AFTER).floor("h")
+    corrected_from = min(max(corrected, first), last)
+    capacity = energinet.fetch_capacity(client=client, cache_dir=energinet_cache_dir)
+    modelled: dict[str, DataFrame[physics.Modelled]] = {
+        technology: physics.model_denmark(technology, first, last, parameters, era5_cache_dir)
+        for technology in GERMAN_MODELS
+    }
+
+    values: dict[str, pd.Series] = {}
+    series: dict[str, SeriesInputs] = {}
+    for technology, quantity in DANISH_SERIES.items():
+        series_id = f"energinet.{zone}.{technology}"
+        values[series_id] = energinet.fetch_settlement_values(
+            zone, quantity, first, last, client=client, cache_dir=energinet_cache_dir
+        )
+        hourly = _on_hours(
+            grid.hourly_from_period_start_energy(
+                completeness.on_grid(values[series_id], grid.HOUR), "1h"
+            ),
+            first,
+            last,
+        )
+        parts = (
+            (False, hourly[hourly.index < corrected_from]),
+            (True, hourly[hourly.index >= corrected_from]),
+        )
+        series[series_id] = SeriesInputs(
+            technology=technology,
+            published=tuple(
+                Published(series_id, DANISH_PROVENANCE, provisional, part)
+                for provisional, part in parts
+                if not part.empty
+            ),
+            modelled=modelled.get(technology),
+            capacity_mw=None
+            if technology == "wind_offshore"
+            else energinet.hourly_capacity(
+                capacity, zone, "solar" if technology == "solar" else "wind_onshore", first, last
+            ),
+            offshore=pd.Series(False, index=hours) if technology == "wind_onshore" else None,
+        )
+
+    rows = [
+        Rows(
+            dataset=f"energinet.{energinet.SETTLEMENT}",
+            provenance=DANISH_PROVENANCE,
+            provisional=provisional,
+            step=grid.HOUR,
+            label="start",
+            local_days=None,
+            start=row_start,
+            end=row_end,
+            values={
+                name: raw[(raw.index >= row_start) & (raw.index < row_end)]
+                for name, raw in values.items()
+            },
+        )
+        for provisional, row_start, row_end in (
+            (False, first, corrected_from),
+            (True, corrected_from, last),
+        )
+        if row_start < row_end
+    ]
+    classes = eligibility.price_classes(
+        first, last, zone=zone, client=client, cache_dir=smard_cache_dir
+    )
+    return DetectionInputs(
+        zone, start, end, hours, tuple(rows), series, classes.drop(columns="mean_price")
     )
 
 
