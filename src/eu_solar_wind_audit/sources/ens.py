@@ -40,6 +40,8 @@ CURRENT_SHA256 = "167e8bf514f13cfd7d69846bcda97d64824e8213304c5c9d92b26ce8c772fb
 HISTORIC_URL = "https://ens.dk/media/8746/download"
 HISTORIC_SHA256 = "e08632169f78cbfe6cbe6eb9c8c15cc21ac4c1bab9c7478115a3c8afe9fe92b4"
 RAW_DIR = Path("data/raw/ens")
+# The current file gives the register at this month end.
+LAST_MONTH_END = pd.Timestamp("2026-10-31")
 
 # Rows 0 and 1 group the columns; row 2 names them.
 HEADER_ROW = 2
