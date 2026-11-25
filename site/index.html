@@ -1,126 +1,290 @@
 <!doctype html>
-<html lang="en">
+<html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>EU Solar and Wind Audit</title>
-  <meta name="description" content="Solar and wind output modelled from weather and installed capacity, set against the series published in France, Germany and Denmark, 2019 to 2025: model quality, anomalies, content of the series, output held back at negative prices.">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>EU Solar and Wind Audit · séries solaires et éoliennes publiées, contrôlées par un modèle météo</title>
+  <meta name="description" content="Une référence horaire, construite à partir de la météo, pour la production solaire et éolienne en France et en Allemagne de 2019 à 2025, qui sert à contrôler les séries publiées : qualité du modèle, anomalies, périmètre des séries et production non injectée aux prix négatifs.">
+  <meta name="theme-color" content="#0a1220">
+  <script>
+    // Applied before the first paint so a reader who chose daylight never sees the night.
+    try {
+      if (localStorage.getItem("theme") === "light") {
+        document.documentElement.dataset.theme = "light";
+        document.querySelector('meta[name="theme-color"]').content = "#f6f7f9";
+      }
+    } catch {}
+  </script>
+  <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/geist.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="style.css">
-  <script type="module" src="app.js"></script>
+  <script type="module" src="js/main.js"></script>
 </head>
 <body>
-  <header class="page-header">
-    <div class="wrap">
-      <h1>EU Solar and Wind Audit</h1>
-      <p class="lede">An hourly model of the output that each solar and wind fleet could produce, from ERA5 weather and installed capacity, set against the series that grid operators publish. Mainland France, Germany and the two Danish price areas, 2019 to 2025.</p>
-      <p class="meta" id="meta">Loading data…</p>
+  <!-- Shared by the charts and the legend keys; its colours come from the stylesheet. -->
+  <svg width="0" height="0" aria-hidden="true" style="position: absolute">
+    <defs>
+      <pattern id="hatch" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="4" height="4"/>
+        <line x1="0" y1="0" x2="0" y2="4"/>
+      </pattern>
+    </defs>
+  </svg>
+
+  <header class="masthead" id="masthead">
+    <div class="masthead-inner">
+      <a class="brand" href="#top">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <path class="model" d="M3 19C6 4 18 4 21 19"/>
+          <path class="published" d="M3 19c1.5-6 3.5-8.5 6-8.5h6c2.5 0 4.5 2.5 6 8.5"/>
+        </svg>
+        <span>EU Solar and Wind Audit</span>
+      </a>
+      <nav aria-label="Chapitres">
+        <ul>
+          <li><a href="#model">Modèle</a></li>
+          <li><a href="#anomalies">Anomalies</a></li>
+          <li><a href="#content">Périmètre</a></li>
+          <li><a href="#modulation">Prix négatifs</a></li>
+          <li><a href="#method">Méthode</a></li>
+        </ul>
+      </nav>
+      <div class="masthead-tools">
+        <a class="repo-link" href="https://github.com/zkyasin/eu-solar-wind-audit">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+          <span>Code et méthode</span>
+        </a>
+        <button type="button" class="theme-toggle" id="theme-toggle" aria-label="Passer au thème clair">
+          <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6 6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></svg>
+          <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/></svg>
+        </button>
+      </div>
     </div>
   </header>
 
-  <main class="wrap">
-    <section aria-labelledby="results-title">
-      <h2 id="results-title">Results</h2>
-      <div class="tiles" id="results"></div>
-    </section>
-
-    <section aria-labelledby="explorer-title">
-      <h2 id="explorer-title">Published output against the model</h2>
-      <p>Daily published output and the potential of the model, in GWh. The model of each year is fitted on the other years and on hours priced 5 €/MWh or more, so it never sees the values it is compared with.</p>
-      <form class="filters" id="filters">
-        <fieldset>
-          <legend>Country</legend>
-          <div class="segmented" data-name="country"></div>
-        </fieldset>
-        <fieldset>
-          <legend>Technology</legend>
-          <div class="segmented" data-name="technology"></div>
-        </fieldset>
-        <fieldset>
-          <legend>Period</legend>
-          <div class="segmented" data-name="period"></div>
-        </fieldset>
-      </form>
-      <div class="tiles" id="totals"></div>
-      <p class="note" id="series-note" hidden></p>
-      <figure class="chart">
-        <div class="legend" aria-hidden="true">
-          <span class="key key-published">Published</span>
-          <span class="key key-model">Model</span>
-        </div>
-        <div id="daily-chart"></div>
-        <figcaption>Daily output, GWh. Days with a missing published hour are left blank.</figcaption>
-      </figure>
-      <figure class="chart">
-        <div id="price-chart"></div>
-        <figcaption>Hours with a negative day-ahead price, per day.</figcaption>
-      </figure>
-      <details class="table-view" id="daily-table">
-        <summary>Daily values</summary>
-        <div class="table-scroll"></div>
-      </details>
-
-      <h3>Model quality</h3>
-      <p>Hourly error over the held-out years, at hours priced 5 €/MWh or more. Each model adds one step to the one above it.</p>
-      <div class="table-scroll"><table id="quality"></table></div>
-    </section>
-
-    <section aria-labelledby="anomalies-title">
-      <h2 id="anomalies-title">Anomalies in the published series</h2>
-      <p>Thresholds were fixed on 2019-2022 before any later year was examined. The detectors look for gaps, values above capacity or below zero, frozen values, shifted timestamps, clock-change errors, breaks in level, outliers against the model, and series that disagree with their parts or with another source.</p>
-      <div class="table-scroll"><table id="finding-counts"></table></div>
-      <form class="filters" id="finding-filters">
-        <label>Country
-          <select name="country"></select>
-        </label>
-        <label>Kind
-          <select name="kind"></select>
-        </label>
-      </form>
-      <div class="table-scroll tall"><table id="findings"></table></div>
-    </section>
-
-    <section aria-labelledby="content-title">
-      <h2 id="content-title">What the published series contain</h2>
-      <p id="content-intro"></p>
-      <div class="table-scroll"><table id="matrix"></table></div>
-      <p class="note">The Dutch series misses a third of Eurostat's wind output and almost all its solar output, so its level points to the distribution grids being left out. No statement of TenneT, its producer, is archived to confirm it, and the evaluation plan publishes no other country until this validation case passes.</p>
-    </section>
-
-    <section aria-labelledby="modulation-title">
-      <h2 id="modulation-title">Output held back at negative prices</h2>
-      <p>The potential minus the published output at hours with a negative day-ahead price, with a 90 % bootstrap interval. France is set against the volumes RTE publishes. Germany is set against Hirth (2026), whose wind includes offshore farms. Denmark has no published reference: its years are shown only above the minimal detectable effect.</p>
-      <div class="legend" aria-hidden="true">
-        <span class="key key-model">Estimate, 90 % interval</span>
-        <span class="key key-published">Published reference</span>
+  <main id="top">
+    <section class="hero" aria-labelledby="headline">
+      <div>
+        <p class="kicker">Solaire et éolien terrestre · France et Allemagne · 2019–2025</p>
+        <h1 id="headline">
+          <span class="headline-figure"><span class="figure" id="hero-figure">1,58</span><span class="unit">TWh</span></span>
+          <span class="headline-period">de production solaire non injectée en France continentale en 2025, à prix négatifs</span>
+        </h1>
+        <p class="lead">Une série publiée ne montre pas ce qu’un parc n’a pas injecté. Cette étude reconstitue, heure par heure, la production que chaque parc solaire et éolien français et allemand aurait pu fournir d’après la météo ERA5 et sa capacité installée, puis s’en sert comme référence indépendante pour contrôler les données publiées par les GRT.</p>
+        <dl class="facts">
+          <div>
+            <dt>Chiffre publié par RTE pour 2025</dt>
+            <dd><span id="hero-reference">1,46&#8239;TWh</span><small id="hero-reference-note"></small></dd>
+          </div>
+          <div>
+            <dt>Corrélation de la référence</dt>
+            <dd><span id="hero-correlation">0,98 à 0,99</span><small id="hero-correlation-note"></small></dd>
+          </div>
+        </dl>
       </div>
-      <div class="multiples" id="modulation"></div>
-      <details class="table-view" id="modulation-table">
-        <summary>Yearly values</summary>
-        <div class="table-scroll"></div>
-      </details>
+      <figure class="ridges">
+        <div class="plot" id="ridges-plot"></div>
+        <figcaption>
+          <ul class="legend">
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><line class="published" x1="0" y1="6" x2="24" y2="6"/></svg>Production solaire publiée en France continentale, moyenne sur 7 jours, 2025 en bleu</li>
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><rect class="held" x="0" y="0" width="24" height="12"/></svg>Non injectée aux prix négatifs</li>
+          </ul>
+        </figcaption>
+      </figure>
+    </section>
+
+    <section class="chapter" id="model" aria-labelledby="model-title">
+      <div class="chapter-head">
+        <p class="chapter-number">01 <span>Production modélisée</span></p>
+        <h2 id="model-title">Une référence qui ne voit jamais ce qu’elle contrôle</h2>
+        <p class="intro">La météo horaire ERA5, sur sa grille de 0,25°, alimente pvlib sur la capacité solaire de chaque département français et de chaque Kreis allemand, et des courbes de puissance d’éoliennes à hauteur de moyeu pour l’éolien terrestre. Les capacités viennent du SDES et du Marktstammdatenregister.</p>
+        <p class="intro">Quelques paramètres sont calés sur les heures à 5&#8239;€/MWh ou plus, en excluant tour à tour chaque année, puis figés. Le potentiel d’une année est donc calé sur les autres années, jamais sur les heures qu’il sert à juger.</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/evaluation-plan.md">Plan d’évaluation, rédigé avant le premier résultat</a>
+      </div>
+      <div class="chapter-body">
+        <div class="controls" id="model-controls">
+          <fieldset class="choice">
+            <legend>Pays</legend>
+            <div class="options" data-name="country"></div>
+          </fieldset>
+          <fieldset class="choice">
+            <legend>Filière</legend>
+            <div class="options" data-name="technology"></div>
+          </fieldset>
+          <fieldset class="choice">
+            <legend>Année</legend>
+            <div class="options" data-name="year"></div>
+          </fieldset>
+        </div>
+        <dl class="readout" id="model-readout"></dl>
+        <figure class="chart">
+          <ul class="legend">
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><line class="published" x1="0" y1="6" x2="24" y2="6"/></svg>Publiée</li>
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><line class="model" x1="0" y1="6" x2="24" y2="6"/></svg>Potentiel modélisé</li>
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><rect class="held" x="0" y="0" width="24" height="12"/></svg>Non injectée aux prix négatifs</li>
+          </ul>
+          <div class="plot" id="model-plot"></div>
+          <figcaption id="model-caption">Production journalière, en GWh. En dessous, le nombre d’heures à prix day-ahead négatif chaque jour.</figcaption>
+        </figure>
+
+        <h3>Chaque étape du modèle justifie sa place</h3>
+        <p class="note">Erreur horaire sur 2023–2025, années exclues de chaque calage, aux heures à 5&#8239;€/MWh ou plus. RMSE en facteur de charge : plus elle est basse, meilleur est le modèle.</p>
+        <div class="ladder" id="model-ladder"></div>
+      </div>
+    </section>
+
+    <section class="chapter" id="anomalies" aria-labelledby="anomalies-title">
+      <div class="chapter-head">
+        <p class="chapter-number">02 <span>Anomalies</span></p>
+        <h2 id="anomalies-title">Où les séries publiées se trompent</h2>
+        <p class="intro">Chaque série horaire d’éCO2mix (France et ses 12 régions) et de SMARD (Allemagne et ses quatre zones de réglage, avec Energy-Charts comme seconde source) passe par des détecteurs à règles, puis par des détecteurs statistiques sur son résidu par rapport au modèle.</p>
+        <p class="intro">Les seuils ont été fixés sur 2019–2022, avant toute lecture des années suivantes. Un constat n’est pas un défaut : chacun est soit vérifié sur les fichiers bruts et rédigé en ticket, soit écarté avec sa raison.</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/anomalies-2019-2025.md">Tous les constats et les tickets</a>
+      </div>
+      <div class="chapter-body">
+        <dl class="readout" id="anomaly-readout"></dl>
+        <figure class="chart">
+          <ul class="legend" id="anomaly-legend"></ul>
+          <div class="plot" id="anomaly-plot"></div>
+          <figcaption>Chaque trait est un constat, de sa première à sa dernière heure. Dans chaque groupe, le solaire en haut et l’éolien en bas.</figcaption>
+        </figure>
+
+        <h3>Quatre tickets, vérifiés sur les fichiers bruts</h3>
+        <div class="tickets">
+          <article class="ticket">
+            <p class="ticket-id">FR-1 <span>éCO2mix, les 26 séries solaires et éoliennes</span></p>
+            <p class="ticket-figure">1 demi-heure vide</p>
+            <p>La ligne qui clôt le 31 décembre 2025 n’a aucune valeur de solaire, d’éolien ni de consommation, au niveau national comme dans chacune des 12 régions. Toutes les années précédentes se terminent complètes.</p>
+          </article>
+          <article class="ticket">
+            <p class="ticket-id">FR-4 <span>Éolien, Nouvelle-Aquitaine, janvier 2023</span></p>
+            <p class="ticket-figure">231&#8239;GWh <small>pour environ 414 attendus</small></p>
+            <p>Une chute le 2 janvier et son retour le 31, alors que les régions voisines ne bougent pas. Le total national, somme des régions, porte le déficit.</p>
+          </article>
+          <article class="ticket">
+            <p class="ticket-id">DE-1 <span>Solaire, TransnetBW, décembre 2025</span></p>
+            <p class="ticket-figure">207 heures à zéro</p>
+            <p>Publiée à 0,0 alors que le total allemand conserve la production de la zone : jusqu’à 15,5&#8239;GWh par jour au-dessus de la somme des quatre zones de réglage.</p>
+          </article>
+          <article class="ticket">
+            <p class="ticket-id">DE-4 <span>Solaire, TransnetBW, 12 avril 2019</span></p>
+            <p class="ticket-figure">environ 3&#8239;GWh manquants</p>
+            <p>Zéro de 16&#8239;h à 20&#8239;h dans la zone et dans le total national, qui reste égal à la somme de ses parties. Seul le modèle révèle le trou.</p>
+          </article>
+        </div>
+        <p class="note">Les conventions horaires sont contrôlées aussi : éCO2mix publie les mêmes lignes pour chaque jour local, comme le prévoit sa documentation, ce qui répète l’heure qui suit chaque passage à l’heure d’été et omet celle qui précède chaque passage à l’heure d’hiver. Les chiffres journaliers de cette page reposent sur des jours locaux, de 23 ou 25 heures aux changements d’heure.</p>
+      </div>
+    </section>
+
+    <section class="chapter" id="content" aria-labelledby="content-title">
+      <div class="chapter-head">
+        <p class="chapter-number">03 <span>Périmètre des séries</span></p>
+        <h2 id="content-title">Ce que compte chaque série publiée</h2>
+        <p class="intro">Deux séries d’un même parc peuvent différer de la production autoconsommée sur place, ou des installations raccordées aux réseaux de distribution. Avant toute comparaison entre pays, chaque série est placée dans une matrice à partir de deux indices qui doivent concorder : son niveau annuel rapporté à la production brute d’Eurostat, et ce que déclare son producteur.</p>
+        <p class="intro">L’Allemagne et le Danemark servent de cas de validation : chacun publie une série d’injection et un total, et les deux paires se placent là où leurs producteurs l’indiquent.</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/perimeter-2019-2024.md">La matrice et ses contrôles</a>
+      </div>
+      <div class="chapter-body">
+        <figure class="chart">
+          <ul class="legend" id="content-legend"></ul>
+          <div class="plot" id="content-plot"></div>
+          <figcaption id="content-caption">Production solaire publiée rapportée à la production solaire brute d’Eurostat, chaque année.</figcaption>
+        </figure>
+        <div class="table-scroll">
+          <table id="matrix">
+            <thead>
+              <tr>
+                <th scope="col">Série</th>
+                <th scope="col">Autoconsommation</th>
+                <th scope="col">Réseaux de distribution</th>
+                <th scope="col">Accord avec le producteur</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="note" id="matrix-note"></p>
+      </div>
+    </section>
+
+    <section class="chapter" id="modulation" aria-labelledby="modulation-title">
+      <div class="chapter-head">
+        <p class="chapter-number">04 <span>Écrêtement et modulation</span></p>
+        <h2 id="modulation-title">Production non injectée aux prix négatifs</h2>
+        <p class="intro">Sur les heures où le prix day-ahead est négatif, le potentiel moins la production publiée. Les intervalles à 90&#8239;% viennent d’un bootstrap par jours qui refait le calage et retire au sort la capacité et le ratio DC/AC.</p>
+        <p class="intro">La France est comparée aux volumes mensuels publiés par RTE, dont la méthode n’est pas publique : la concordance reproduit ses chiffres sans prouver ni l’un ni l’autre. L’Allemagne est comparée à l’écrêtement par le marché estimé par Hirth (2026).</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/modulation-france.md">Verdict et limites pour la France</a>
+      </div>
+      <div class="chapter-body">
+        <div class="controls">
+          <fieldset class="choice">
+            <legend>Pays</legend>
+            <div class="options" data-name="modulation-country"></div>
+          </fieldset>
+        </div>
+        <dl class="readout" id="modulation-readout"></dl>
+        <figure class="chart">
+          <ul class="legend">
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><rect class="held" x="6" y="0" width="12" height="12"/></svg>Estimation et son intervalle à 90&#8239;%</li>
+            <li><svg class="key" viewBox="0 0 24 12" aria-hidden="true"><line class="published" x1="4" y1="6" x2="20" y2="6"/></svg><span id="modulation-reference-key">Volume publié par RTE</span></li>
+          </ul>
+          <div class="multiples" id="modulation-plots"></div>
+          <figcaption id="modulation-caption">Production non injectée chaque année, en GWh.</figcaption>
+        </figure>
+        <div class="verdict" id="modulation-verdict"></div>
+      </div>
+    </section>
+
+    <section class="chapter" id="method" aria-labelledby="method-title">
+      <div class="chapter-head">
+        <p class="chapter-number">05 <span>Méthode</span></p>
+        <h2 id="method-title">Conçue pour être relancée, et pour accueillir le pays suivant</h2>
+        <p class="intro">Une commande par étape, chacune enregistrant la version du code et de ses entrées à côté de ses tables. Un pays est un fichier de configuration : le Danemark et les Pays-Bas alimentent déjà la matrice du chapitre 03, et la Belgique, l’Espagne, le Portugal, l’Italie, l’Autriche et la Pologne suivront, chacun publié avec le niveau de preuve que permet le plan.</p>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit#reproduce">Reproduire chaque chiffre</a>
+      </div>
+      <div class="chapter-body">
+        <ol class="pipeline">
+          <li><span>Entrées</span>Météo ERA5, capacités SDES et MaStR, éCO2mix, SMARD, Energy-Charts, Energinet, ENTSO-E, Eurostat, prix day-ahead</li>
+          <li><span>Modèle physique</span>pvlib par département ou Kreis, courbes de puissance par période de mise en service</li>
+          <li><span>Calage</span>Perte de Huber, une année exclue, calages figés sous un tag</li>
+          <li><span>Contrôles</span>Détecteurs d’anomalies, matrice de périmètre, modulation avec bootstrap</li>
+          <li><span>Publication</span>Tables, figures et données de cette page</li>
+        </ol>
+        <ul class="guarantees">
+          <li><strong>Les règles avant les résultats.</strong> Le plan d’évaluation a été tagué avant le premier résultat ; chaque modification ultérieure est consignée avec sa date et sa raison.</li>
+          <li><strong>Aucune fuite.</strong> Les calages et les seuils d’anomalie sont figés sous des tags, et un test vérifie que le calage ne lit jamais la série à laquelle il est comparé.</li>
+          <li><strong>Réfutable.</strong> Un placebo sur les heures à 5 à 15&#8239;€/MWh, un test d’injection-récupération et un effet minimal détectable accompagnent les estimations de modulation.</li>
+          <li><strong>Recalculé en R.</strong> Les sommes de modulation et les deux régressions de signature sont réestimées avec fixest : écarts relatifs d’environ 1e-15 et 3e-11, pour 1e-6 et 1e-3 tolérés.</li>
+          <li><strong>Vérifié à chaque modification.</strong> Ruff, mypy en mode strict et la suite de tests tournent en CI sur chaque pull request, et une tâche quotidienne archive l’export temps réel d’éCO2mix avant que RTE ne le remplace.</li>
+        </ul>
+      </div>
     </section>
   </main>
 
-  <footer class="page-footer">
-    <div class="wrap">
-      <p>Method: the <a href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/evaluation-plan.md">evaluation plan</a>, written before the first result (tag <code>eval-plan-v1</code>), with every later change and its reason. Results in detail: <a href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/anomalies-2019-2025.md">anomalies</a>, <a href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/perimeter-2019-2024.md">content of the series</a>, <a href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/modulation-france.md">modulation in France</a>, <a href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/modulation-germany.md">in Germany</a> and <a href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/modulation-denmark.md">in Denmark</a>. Code under the MIT licence on <a href="https://github.com/zkyasin/eu-solar-wind-audit">GitHub</a>.</p>
-      <h2>Sources and licences</h2>
-      <ul class="sources">
-        <li>France: RTE, éCO2mix data via ODRÉ, Licence Ouverte 2.0.</li>
-        <li>France, negative-price modulation: source RTE, analysesetdonnees.rte-france.com.</li>
-        <li>Service des données et études statistiques (SDES), quarterly solar and wind capacity tables; L'autoconsommation d'électricité en France.</li>
-        <li>France, national register of production installations: RTE, Enedis, EDF SEI and local distribution operators, via ODRÉ, Licence Ouverte 2.0.</li>
-        <li>Germany: Bundesnetzagentur | SMARD.de, CC BY 4.0.</li>
-        <li>Germany, unit register: Bundesnetzagentur, Marktstammdatenregister, dl-de/by-2-0; data changed.</li>
-        <li>Germany, market-based curtailment: Hirth, L. (2026), Do wind and solar curtail at negative electricity prices?, arXiv 2609.10053v2.</li>
-        <li>Energy-Charts.info, Fraunhofer ISE, CC BY 4.0.</li>
-        <li>Source: Energinet (www.energidataservice.dk). CC BY 4.0.</li>
-        <li>Denmark, wind turbine register: Danish Energy Agency (Energistyrelsen), Stamdataregister for vindkraftanlæg.</li>
-        <li>Danish municipalities: © EuroGeographics for the administrative boundaries (GISCO, LAU 2024).</li>
-        <li>Source of publication: ENTSO-E Transparency Platform (transparency.entsoe.eu). Values shown are derived from the published data.</li>
-        <li>Source: Eurostat, nrg_bal_peh. Data modified by this project; Eurostat is not responsible for the modified data.</li>
-        <li>Contains modified Copernicus Climate Change Service information 2026. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.</li>
-      </ul>
+  <footer class="colophon">
+    <div class="colophon-inner">
+      <div>
+        <h2>À propos de cette page</h2>
+        <p id="meta">Données exportées depuis les résultats 2019–2025.</p>
+        <p>Code sous licence MIT sur <a href="https://github.com/zkyasin/eu-solar-wind-audit">GitHub</a>. Chaque source de données conserve sa propre licence, détaillée dans <a href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/data-licences.md">docs/data-licences.md</a>.</p>
+      </div>
+      <div>
+        <h2>Sources</h2>
+        <ul class="sources">
+          <li>France : RTE, données éCO2mix via ODRÉ, Licence Ouverte 2.0.</li>
+          <li>France, modulation aux prix négatifs : source RTE, analysesetdonnees.rte-france.com.</li>
+          <li>Service des données et études statistiques (SDES), tableaux trimestriels des capacités solaires et éoliennes ; L’autoconsommation d’électricité en France.</li>
+          <li>France, registre national des installations de production : RTE, Enedis, EDF SEI et entreprises locales de distribution, via ODRÉ, Licence Ouverte 2.0.</li>
+          <li>Allemagne : Bundesnetzagentur | SMARD.de, CC BY 4.0.</li>
+          <li>Allemagne, registre des installations : Bundesnetzagentur, Marktstammdatenregister, dl-de/by-2-0 ; données modifiées.</li>
+          <li>Allemagne, écrêtement par le marché : Hirth, L. (2026), <span lang="en">Do wind and solar curtail at negative electricity prices?</span>, arXiv 2609.10053v2.</li>
+          <li>Energy-Charts.info, Fraunhofer ISE, CC BY 4.0.</li>
+          <li>Source : Energinet (www.energidataservice.dk). CC BY 4.0.</li>
+          <li>Source de publication : ENTSO-E Transparency Platform (transparency.entsoe.eu). Les valeurs présentées sont dérivées des données publiées.</li>
+          <li>Source : Eurostat, nrg_bal_peh. Données modifiées par ce projet ; Eurostat n’est pas responsable des données modifiées.</li>
+          <li lang="en">Contains modified Copernicus Climate Change Service information 2026. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.</li>
+        </ul>
+      </div>
     </div>
   </footer>
 </body>
