@@ -1,7 +1,7 @@
 import * as Plot from "https://cdn.jsdelivr.net/npm/@observablehq/plot@0.6.17/+esm";
 
 const REPOSITORY = "https://github.com/zkyasin/eu-solar-wind-audit";
-const COUNTRIES = { FR: "France", DE: "Germany" };
+const COUNTRIES = { FR: "France", DE: "Germany", DK1: "Denmark DK1", DK2: "Denmark DK2" };
 const TECHNOLOGIES = { solar: "Solar", wind_onshore: "Onshore wind" };
 const PERIODS = { 2019: "2019", 2020: "2020", 2021: "2021", 2022: "2022", 2023: "2023", 2024: "2024", 2025: "2025", all: "All" };
 const MODELS = {
@@ -64,12 +64,23 @@ const REGIONS = {
   84: "Auvergne-Rhône-Alpes",
   93: "Provence-Alpes-Côte d'Azur",
 };
-const SOURCES = { odre: "éCO2mix", smard: "SMARD", energy_charts: "Energy-Charts" };
+const SOURCES = { odre: "éCO2mix", smard: "SMARD", energy_charts: "Energy-Charts", energinet: "Energinet" };
 const SERIES_TECHNOLOGIES = {
   solar: "solar",
   wind: "wind",
   wind_onshore: "onshore wind",
   wind_offshore: "offshore wind",
+};
+
+const DANISH_SOLAR =
+  "Danish solar adds the self-consumed output that Energinet estimates to the metered output of " +
+  "the three size classes; before 2020 the whole output is booked as self-consumed.";
+const SERIES_NOTES = {
+  "FR wind_onshore":
+    "French onshore wind has no values from June 2022 to the end of 2023: the national wind " +
+    "series of éCO2mix includes offshore farms from June 2022, and its onshore series starts in 2024.",
+  "DK1 solar": DANISH_SOLAR,
+  "DK2 solar": DANISH_SOLAR,
 };
 
 const state = { country: "FR", technology: "solar", period: "2025" };
@@ -205,10 +216,9 @@ async function renderExplorer() {
   renderDailyTable(rows);
   await renderQuality();
   const note = document.getElementById("series-note");
-  note.hidden = !(state.country === "FR" && state.technology === "wind_onshore");
-  note.textContent =
-    "French onshore wind has no values from June 2022 to the end of 2023: the national wind " +
-    "series of éCO2mix includes offshore farms from June 2022, and its onshore series starts in 2024.";
+  const text = SERIES_NOTES[`${state.country} ${state.technology}`];
+  note.hidden = !text;
+  note.textContent = text ?? "";
 }
 
 function renderTotals(rows) {
@@ -222,7 +232,10 @@ function renderTotals(rows) {
     {
       label: "Negative-price hours",
       value: integer.format(sum(rows, "hours")),
-      detail: `Output held back at them: ${energy(sum(rows, "heldBack"))}`,
+      // Without a published reference, years below the minimal detectable effect have no estimate.
+      detail: rows.some((row) => row.hours > 0 && row.heldBack === null)
+        ? "Output held back at them: not estimated below the minimal detectable effect"
+        : `Output held back at them: ${energy(sum(rows, "heldBack"))}`,
     },
   ]);
 }
@@ -341,7 +354,7 @@ function seriesLabel(series) {
   if (parts.length === 2) return `${source}, dataset ${parts[1]}`;
   const area = parts[1];
   const region = area.startsWith("FR-") ? REGIONS[area.slice(3)] : null;
-  const place = region ?? (area === "FR" ? "France" : area === "DE" ? "Germany" : area);
+  const place = region ?? COUNTRIES[area] ?? area;
   const technology = SERIES_TECHNOLOGIES[parts.at(-1)] ?? parts.at(-1);
   return `${source}, ${place}, ${technology}`;
 }
@@ -455,10 +468,15 @@ async function renderModulation() {
       const panel = element("figure", undefined, "chart");
       panel.append(element("h3", `${COUNTRIES[run.country]}, ${TECHNOLOGIES[run.technology].toLowerCase()}`));
       const years = yearly.filter((row) => row.country === run.country && row.technology === run.technology);
+      if (years.length === 0) {
+        panel.append(element("figcaption", "No published reference, and no year above the minimal detectable effect."));
+        return panel;
+      }
       const plot = element("div");
       panel.append(plot);
       if (run.verdict) panel.append(element("figcaption", `Verdict of the evaluation plan: ${run.verdict}.`));
-      else panel.append(element("figcaption", `Reference: ${run.reference}.`));
+      else if (run.reference) panel.append(element("figcaption", `Reference: ${run.reference}.`));
+      else panel.append(element("figcaption", "No published reference. Years below the minimal detectable effect are left out."));
       requestAnimationFrame(() =>
         plot.replaceChildren(
           Plot.plot({
@@ -542,7 +560,7 @@ async function renderResults() {
     {
       label: "Hourly error of the model, 2023-2025",
       value: `${value(Math.min(...errors), 3)} to ${value(Math.max(...errors), 3)}`,
-      detail: "RMSE in capacity factor, held-out years, France and Germany",
+      detail: `RMSE in capacity factor, held-out years: ${Object.values(COUNTRIES).join(", ")}`,
     },
     {
       label: "Findings in the published series, 2019-2025",

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>EU Solar and Wind Audit</title>
-  <meta name="description" content="Solar and wind output modelled from weather and installed capacity, set against the series published in France and Germany, 2019 to 2025: model quality, anomalies, content of the series, output held back at negative prices.">
+  <meta name="description" content="Solar and wind output modelled from weather and installed capacity, set against the series published in France, Germany and Denmark, 2019 to 2025: model quality, anomalies, content of the series, output held back at negative prices.">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
 </head>
@@ -12,7 +12,7 @@
   <header class="page-header">
     <div class="wrap">
       <h1>EU Solar and Wind Audit</h1>
-      <p class="lede">An hourly model of the output that each solar and wind fleet could produce, from ERA5 weather and installed capacity, set against the series that grid operators publish. Mainland France and Germany, 2019 to 2025.</p>
+      <p class="lede">An hourly model of the output that each solar and wind fleet could produce, from ERA5 weather and installed capacity, set against the series that grid operators publish. Mainland France, Germany and the two Danish price areas, 2019 to 2025.</p>
       <p class="meta" id="meta">Loading data…</p>
     </div>
   </header>
@@ -88,7 +88,7 @@
 
     <section aria-labelledby="modulation-title">
       <h2 id="modulation-title">Output held back at negative prices</h2>
-      <p>The potential minus the published output at hours with a negative day-ahead price, with a 90 % bootstrap interval. France is set against the volumes RTE publishes. Germany is set against Hirth (2026), whose wind includes offshore farms.</p>
+      <p>The potential minus the published output at hours with a negative day-ahead price, with a 90 % bootstrap interval. France is set against the volumes RTE publishes. Germany is set against Hirth (2026), whose wind includes offshore farms. Denmark has no published reference: its years are shown only above the minimal detectable effect.</p>
       <div class="legend" aria-hidden="true">
         <span class="key key-model">Estimate, 90 % interval</span>
         <span class="key key-published">Published reference</span>
@@ -115,6 +115,8 @@
         <li>Germany, market-based curtailment: Hirth, L. (2026), Do wind and solar curtail at negative electricity prices?, arXiv 2609.10053v2.</li>
         <li>Energy-Charts.info, Fraunhofer ISE, CC BY 4.0.</li>
         <li>Source: Energinet (www.energidataservice.dk). CC BY 4.0.</li>
+        <li>Denmark, wind turbine register: Danish Energy Agency (Energistyrelsen), Stamdataregister for vindkraftanlæg.</li>
+        <li>Danish municipalities: © EuroGeographics for the administrative boundaries (GISCO, LAU 2024).</li>
         <li>Source of publication: ENTSO-E Transparency Platform (transparency.entsoe.eu). Values shown are derived from the published data.</li>
         <li>Source: Eurostat, nrg_bal_peh. Data modified by this project; Eurostat is not responsible for the modified data.</li>
         <li>Contains modified Copernicus Climate Change Service information 2026. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.</li>
