@@ -6,6 +6,7 @@ import hashlib
 import json
 import math
 import subprocess
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -129,7 +130,7 @@ def main(argv: list[str] | None = None) -> None:
         help="fix the thresholds of the statistical anomaly detectors of a country on 2019-2022 "
         "and write them with the reference model they rest on",
     )
-    fix.add_argument("country", choices=["FR", "DE"])
+    fix.add_argument("country", choices=list(detection.TIME_ZONES))
     fix.add_argument("--config", type=Path, help="config/countries/<country>.toml by default")
     fix.add_argument(
         "--output", type=Path, help="config/anomaly-thresholds/<COUNTRY>.json by default"
@@ -139,7 +140,7 @@ def main(argv: list[str] | None = None) -> None:
         help="run the anomaly detectors on the published series of a country over a period, and "
         "write the findings with a JSON file describing the run",
     )
-    anomalies.add_argument("country", choices=["FR", "DE"])
+    anomalies.add_argument("country", choices=list(detection.TIME_ZONES))
     anomalies.add_argument("start", type=date.fromisoformat, help="first day, UTC")
     anomalies.add_argument("end", type=date.fromisoformat, help="day after the last one, UTC")
     anomalies.add_argument(
@@ -250,9 +251,8 @@ def main(argv: list[str] | None = None) -> None:
             print(path)
     elif args.command == "fix-anomaly-thresholds":
         parameters = load_country(args.config or CONFIG_DIR / f"{args.country.lower()}.toml")
-        country_inputs = inputs.france_inputs if args.country == "FR" else inputs.germany_inputs
         with odre.make_client() as client:
-            found = country_inputs(
+            found = detection_inputs(args.country)(
                 client,
                 thresholds.FIX_START,
                 thresholds.FIX_END,
@@ -278,10 +278,9 @@ def main(argv: list[str] | None = None) -> None:
             "sha256": hashlib.sha256(thresholds_path.read_bytes()).hexdigest(),
             "git_describe": fixed.reference_model["git_describe"],
         }
-        country_inputs = inputs.france_inputs if args.country == "FR" else inputs.germany_inputs
         with odre.make_client() as client:
             # The level breaks read the daily ratios from their first day on.
-            found = country_inputs(client, breaks.FIRST_DAY, end, parameters)
+            found = detection_inputs(args.country)(client, breaks.FIRST_DAY, end, parameters)
         detected = detection.detect(found, fixed, start, end)
         for path in detection.write(args.output, found, detected, start, end, run):
             print(path)
@@ -305,6 +304,16 @@ def main(argv: list[str] | None = None) -> None:
             *draw_sum_of_parts(args.output, args.anomalies, drawn),
         ]:
             print(path)
+
+
+def detection_inputs(country: str) -> Callable[..., inputs.DetectionInputs]:
+    """The function that gives the inputs of the anomaly detectors of `country`: France, Germany
+    or a Danish price area."""
+    if country == "FR":
+        return inputs.france_inputs
+    if country == "DE":
+        return inputs.germany_inputs
+    return inputs.denmark_inputs
 
 
 def run_metadata(
