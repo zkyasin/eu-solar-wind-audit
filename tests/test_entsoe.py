@@ -123,6 +123,25 @@ def test_the_hours_between_two_periods_are_a_gap(tmp_path: Path) -> None:
     assert np.isnan(hourly["energy_mwh"].iloc[1])
 
 
+def test_quarter_hours_are_given_as_published(tmp_path: Path) -> None:
+    # Two periods both cover 00:30 to 00:45; the first leaves 00:15 without a point.
+    first = period([40.0, 80.0], "2024-06-01T00:00Z", "2024-06-01T00:45Z", positions=[1, 3])
+    second = period([20.0, 20.0], "2024-06-01T00:30Z", "2024-06-01T01:00Z")
+    client = serving(
+        lambda request: httpx.Response(200, content=document(time_series(first, second)))
+    )
+
+    energy = entsoe.fetch_generation_energy(
+        "NL", "solar", START, START + HOUR, client=client, cache_dir=tmp_path
+    )
+
+    quarters = [START + step * pd.Timedelta(minutes=15) for step in (0, 1, 2, 2, 3)]
+    assert energy.index.tolist() == quarters
+    assert energy.tolist()[0] == 10.0
+    assert np.isnan(energy.iloc[1])
+    assert sorted(energy.iloc[2:4]) == [5.0, 20.0]
+
+
 def test_a_query_without_data_gives_incomplete_hours(tmp_path: Path) -> None:
     no_data = acknowledgement("999", "No matching data found for Data item [16.1.B&amp;C]")
     client = serving(lambda request: httpx.Response(200, content=no_data))

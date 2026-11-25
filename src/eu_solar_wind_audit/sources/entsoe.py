@@ -115,13 +115,33 @@ def fetch_hourly_generation(
     cache_dir: Path = CACHE_DIR,
 ) -> DataFrame[grid.Hourly]:
     """Actual generation of `technology` in `area` on the UTC hours of [start, end)."""
-    query = {
+    return _hourly(_generation(area, technology), GENERATION_DOMAIN, start, end, client, cache_dir)
+
+
+def fetch_generation_energy(
+    area: Area,
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    client: httpx.Client | None = None,
+    cache_dir: Path = CACHE_DIR,
+) -> pd.Series:
+    """Energy in MWh of each quarter-hour of [start, end), UTC, of the actual generation of
+    `technology` in `area`, as the periods of the platform give it: a quarter-hour that two
+    periods cover appears twice, and one that a period leaves without a point is NaN."""
+    return _quarter_energy(
+        _generation(area, technology), GENERATION_DOMAIN, start, end, client, cache_dir
+    )
+
+
+def _generation(area: Area, technology: Technology) -> dict[str, str]:
+    return {
         "documentType": "A75",
         "processType": "A16",
         "psrType": PRODUCTION_TYPES[technology],
         "in_Domain": AREAS[area],
     }
-    return _hourly(query, GENERATION_DOMAIN, start, end, client, cache_dir)
 
 
 def fetch_hourly_load(
@@ -269,17 +289,29 @@ def _hourly(
     client: httpx.Client | None,
     cache_dir: Path,
 ) -> DataFrame[grid.Hourly]:
+    energy = _quarter_energy(query, domain, start, end, client, cache_dir)
+    hourly = grid.hourly_from_period_start_energy(energy, "15min")
+    return grid.Hourly.validate(grid.on_hours(hourly, start, end))
+
+
+def _quarter_energy(
+    query: dict[str, str],
+    domain: str,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    client: httpx.Client | None,
+    cache_dir: Path,
+) -> pd.Series:
     grid.check_period(start, end)
     if client is None:
         with make_client() as own_client:
-            return _hourly(query, domain, start, end, own_client, cache_dir)
+            return _quarter_energy(query, domain, start, end, own_client, cache_dir)
     parts = []
     for part_start, part_end in _years(start, end):
         energy = _answer(client, query, domain, part_start, part_end, cache_dir)
         # A period can extend beyond the query; neighbouring requests would then overlap.
         parts.append(energy[(energy.index >= part_start) & (energy.index < part_end)])
-    hourly = grid.hourly_from_period_start_energy(_energy(parts), "15min")
-    return grid.Hourly.validate(grid.on_hours(hourly, start, end))
+    return _energy(parts)
 
 
 def _years(start: pd.Timestamp, end: pd.Timestamp) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
