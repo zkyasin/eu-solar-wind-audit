@@ -25,6 +25,7 @@ MDE_YEARS: dict[str, dict[physics.Technology, tuple[int, ...]]] = {
     "DE": {"solar": (2023, 2024, 2025), "wind_onshore": (2023, 2024, 2025)},
     "DK1": {"solar": (2023, 2024, 2025), "wind_onshore": (2023, 2024, 2025)},
     "DK2": {"solar": (2023, 2024, 2025), "wind_onshore": (2023, 2024, 2025)},
+    "NL": {"wind_onshore": (2023, 2024, 2025)},
 }
 MIN_ELEVATION_DEG = 30.0
 Z_SUM = float(norm.ppf(0.95) + norm.ppf(0.80))

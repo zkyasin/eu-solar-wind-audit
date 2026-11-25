@@ -326,11 +326,14 @@ def hourly_load(
 ) -> pd.DataFrame:
     """Hourly consumption that the placebo matches on, over the UTC hours [start, end): the
     éCO2mix consumption of France, the SMARD load of Germany, the gross consumption of a Danish
-    price area on Energi Data Service."""
+    price area on Energi Data Service, the actual total load of the NL zone on the Transparency
+    Platform, read with its own client."""
     if country == "FR":
         return odre.national_hourly(client, "load", start, end)
     if country == "DE":
         return smard.fetch_hourly_load("DE", start, end, client=client)
+    if country == "NL":
+        return entsoe.fetch_hourly_load("NL", start, end)
     return energinet.fetch_hourly_settlement(
         cast(energinet.Area, country), "gross_consumption", start, end, client=client
     )

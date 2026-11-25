@@ -5,10 +5,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from synthetic import PV, solar_year
+from synthetic import PV, solar_year, wind_year
 
 from eu_solar_wind_audit import calibration, cli, eligibility, fits, folds, modulation, strata
-from eu_solar_wind_audit.sources import energinet, odre, smard
+from eu_solar_wind_audit.sources import energinet, entsoe, odre, smard
 
 YEARS = (2019, 2020, 2021)
 
@@ -273,3 +273,51 @@ def test_the_command_estimates_a_danish_price_area_without_reference(
     assert summary["country"] == "DK1"
     assert summary["verdict"] is None
     assert "hirth_ratios" not in summary
+
+
+def test_the_command_estimates_dutch_onshore_wind_without_reference(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    years = [wind_year(year, country="NL") for year in YEARS]
+    report = folds.wind_onshore(years)
+    fitted = fits.Fit(
+        technology="wind_onshore",
+        final=report.final,
+        fold_calibrations={year: fold.calibration for year, fold in report.folds.items()},
+        git_describe=None,
+    )
+
+    def year_inputs(
+        client: object, technology: str, year: int, parameters: object
+    ) -> eligibility.YearInputs:
+        return wind_year(year, country="NL")
+
+    areas: list[str] = []
+
+    def load(area: str, start: pd.Timestamp, end: pd.Timestamp, **_: object) -> pd.DataFrame:
+        areas.append(area)
+        hours = pd.date_range(start, end, freq="h", inclusive="left", name="time")
+        return pd.DataFrame({"energy_mwh": 12e3, "complete": True}, index=hours)
+
+    monkeypatch.setattr(eligibility, "year_inputs", year_inputs)
+    monkeypatch.setattr(entsoe, "fetch_hourly_load", load)
+    fits.write(tmp_path / "fits" / "wind_onshore.json", fitted)
+
+    cli.main(
+        [
+            "estimate-modulation",
+            "NL",
+            "wind_onshore",
+            str(tmp_path / "out"),
+            "--fits-dir",
+            str(tmp_path / "fits"),
+            "--replicates",
+            "3",
+        ]
+    )
+
+    # The placebo matches on the total load of the NL zone; the Netherlands have no solar model.
+    assert areas == ["NL"]
+    summary = json.loads((tmp_path / "out" / "wind_onshore-modulation.json").read_text())
+    assert summary["country"] == "NL"
+    assert summary["verdict"] is None
