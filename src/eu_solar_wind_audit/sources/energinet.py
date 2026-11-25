@@ -163,19 +163,26 @@ def parse_capacity(payload: dict[str, Any]) -> DataFrame[MunicipalityCapacity]:
     """`MunicipalityCapacity` of a CapacityPerMunicipality response."""
     records = pd.DataFrame(payload["records"])
     municipality = records["MunicipalityNo"].astype("int64")
-    price_area = pd.Series(None, index=records.index, dtype="str")
-    price_area[municipality.between(101, 400)] = "DK2"
-    price_area[municipality >= 410] = "DK1"
     frame = pd.DataFrame(
         {
             "month_start": pd.to_datetime(records["Month"]).dt.as_unit("ns"),
             "municipality": municipality,
-            "price_area": price_area,
+            "price_area": price_area(municipality),
         }
         | {name: records[column].astype(float) for column, name in CAPACITY_COLUMNS.items()}
     )
     ordered = frame.sort_values(["month_start", "municipality"]).reset_index(drop=True)
     return MunicipalityCapacity.validate(ordered)
+
+
+def price_area(municipality: pd.Series) -> "pd.Series[str]":
+    """Price area of each municipality number: DK2 from 101 to 400 and DK1 from 410 (metadata of
+    CapacityPerMunicipality), null for other or unknown numbers."""
+    number = pd.to_numeric(municipality).astype(float)
+    areas = pd.Series(None, index=municipality.index, dtype="str")
+    areas[number.between(101, 400)] = "DK2"
+    areas[number >= 410] = "DK1"
+    return areas
 
 
 def _year(client: httpx.Client, year: int, cache_dir: Path) -> pd.DataFrame:

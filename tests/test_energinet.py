@@ -192,3 +192,12 @@ def test_capacity_per_municipality_and_its_price_area() -> None:
     assert capacity["price_area"].isna().iloc[0]
     assert (capacity["month_start"] == pd.Timestamp("2025-12-01")).all()
     assert capacity["wind_offshore_mw"].isna().all()
+
+
+def test_price_area_of_municipality_numbers() -> None:
+    numbers = pd.Series([101, 400, 410, 860, 1, None], dtype="Int64")
+
+    areas = energinet.price_area(numbers)
+
+    assert areas.tolist()[:4] == ["DK2", "DK2", "DK1", "DK1"]
+    assert areas.iloc[4:].isna().all()
