@@ -60,6 +60,9 @@ DANISH_PROVISIONAL_MONTHS = 3
 # CBS gives capacity at year ends; the Dutch panel starts at the end of this year, so that the
 # margins of runs on 2019 have capacity.
 DUTCH_FIRST_YEAR_END = 2017
+# Share of the onshore output of CBS that the series of the NL zone on the Transparency Platform
+# holds over 2019-2022, 20.0 of 41.2 TWh: the capacity behind it (evaluation plan, Deviations).
+DUTCH_SERIES_SHARE = 0.486
 
 
 class Modelled(grid.Hourly):
@@ -586,17 +589,18 @@ def model_denmark(
 
 def load_netherlands_capacity(cbs_dir: Path = cbs.RAW_DIR) -> pd.DataFrame:
     """`netherlands_capacity` of the CBS tables and of the RIVM map placed in the LAU polygons of
-    GISCO."""
+    GISCO, behind the published series: DUTCH_SERIES_SHARE of the fleet."""
     turbines = rivm.onshore(rivm.read_turbines())
     return netherlands_capacity(
         cbs.province_capacity(cbs.download(cbs.PROVINCES, raw_dir=cbs_dir)),
         cbs.hub_height_capacity(cbs.download(cbs.HUB_HEIGHTS, raw_dir=cbs_dir)),
         rivm.municipality_capacity(turbines, gisco.load_municipalities("NL")),
+        share=DUTCH_SERIES_SHARE,
     )
 
 
 def netherlands_capacity(
-    provinces: pd.DataFrame, classes: pd.DataFrame, placed: pd.DataFrame
+    provinces: pd.DataFrame, classes: pd.DataFrame, placed: pd.DataFrame, *, share: float = 1.0
 ) -> pd.DataFrame:
     """Month-end capacity of the Dutch onshore fleet by municipality and hub height class, in the
     columns of load_denmark_capacity, the index of the class in cbs.HUB_HEIGHT_CLASSES standing for
@@ -606,8 +610,9 @@ def netherlands_capacity(
     is linear in time between year ends from the end of DUTCH_FIRST_YEAR_END. It is spread over the
     municipalities of the province in proportion to their capacity in `placed`, as
     rivm.municipality_capacity gives it, and split by the national shares of the hub height
-    classes of `classes`, as cbs.hub_height_capacity gives them. Month ends in the year after the
-    last year of CBS keep its capacity and are provisional.
+    classes of `classes`, as cbs.hub_height_capacity gives them, and multiplied by `share`, the
+    share of the fleet behind a series. Month ends in the year after the last year of CBS keep its
+    capacity and are provisional.
     """
     by_year = provinces.pivot(index="year", columns="group", values="capacity_mw")
     class_names = list(dict.fromkeys(cbs.HUB_HEIGHT_CLASSES.values()))
@@ -635,7 +640,7 @@ def netherlands_capacity(
         var_name="generation", value_name="share", ignore_index=False
     )
     rows = rows.merge(class_rows.reset_index(), on="month_end")
-    rows["capacity_mw"] = rows["province_mw"] * rows["weight"] * rows["share"]
+    rows["capacity_mw"] = rows["province_mw"] * rows["weight"] * rows["share"] * share
     # The map can give the turbines of one municipality to two provinces near their border.
     capacity = (
         rows.groupby(["month_end", "region", "generation"])["capacity_mw"].sum().reset_index()

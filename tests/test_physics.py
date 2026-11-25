@@ -1053,7 +1053,7 @@ def test_model_denmark_reads_the_capacity_and_the_municipalities(
 
 
 def dutch_capacity(
-    placed: list[tuple[str, str, float]] | None = None,
+    placed: list[tuple[str, str, float]] | None = None, share: float = 1.0
 ) -> pd.DataFrame:
     """netherlands_capacity of two provinces at the ends of 2017 and 2018: A grows from 100 to
     200 MW, B stays at 50 MW, and hubs of 71 to 95 m first appear in 2018."""
@@ -1073,7 +1073,10 @@ def dutch_capacity(
     )
     rows = placed or [("A", "m1", 30.0), ("A", "m2", 10.0), ("B", "m3", 5.0)]
     return physics.netherlands_capacity(
-        provinces, classes, pd.DataFrame(rows, columns=["province", "region", "capacity_mw"])
+        provinces,
+        classes,
+        pd.DataFrame(rows, columns=["province", "region", "capacity_mw"]),
+        share=share,
     )
 
 
@@ -1099,6 +1102,13 @@ def test_dutch_capacity_is_linear_between_year_ends_then_held_and_provisional() 
     assert totals["2019-12-31"] == pytest.approx(250.0)
     assert not final[:"2018-12-31"].any()
     assert final["2019-01-31":].all()
+
+
+def test_the_dutch_capacity_behind_a_series_is_a_share_of_the_fleet() -> None:
+    whole = dutch_capacity()
+    half = dutch_capacity(share=0.5)
+
+    assert half["capacity_mw"].to_numpy() == pytest.approx(0.5 * whole["capacity_mw"].to_numpy())
 
 
 def test_a_dutch_province_without_turbines_on_the_map_is_refused() -> None:
