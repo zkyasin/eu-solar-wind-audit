@@ -16,6 +16,34 @@ function watchScroll() {
   window.addEventListener("scroll", update, { passive: true });
 }
 
+const THEMES = {
+  dark: { paper: "#0a1220", label: "Passer au thème clair" },
+  light: { paper: "#f6f7f9", label: "Passer au thème sombre" },
+};
+
+/** The button in the masthead swaps night and daylight and remembers the choice. */
+function themeToggle() {
+  const root = document.documentElement;
+  const button = document.getElementById("theme-toggle");
+  const apply = (theme) => {
+    if (theme === "light") root.dataset.theme = "light";
+    else delete root.dataset.theme;
+    button.setAttribute("aria-label", THEMES[theme].label);
+    button.title = THEMES[theme].label;
+    document.querySelector('meta[name="theme-color"]').content = THEMES[theme].paper;
+  };
+  apply(root.dataset.theme === "light" ? "light" : "dark");
+  button.addEventListener("click", () => {
+    const theme = root.dataset.theme === "light" ? "dark" : "light";
+    apply(theme);
+    try {
+      localStorage.setItem("theme", theme);
+    } catch {
+      // Private browsing may refuse storage: the switch still holds for this visit.
+    }
+  });
+}
+
 /** The link of the chapter in view is marked in the masthead. */
 function watchChapters() {
   const links = new Map(
@@ -50,6 +78,7 @@ async function renderMeta() {
     );
 }
 
+themeToggle();
 watchScroll();
 watchChapters();
 const chapters = [
