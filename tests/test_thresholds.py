@@ -190,6 +190,31 @@ def test_danish_thresholds_rest_on_the_settlement_series_of_the_price_area() -> 
         thresholds.check_reference(fixed, changed)
 
 
+def test_a_country_without_a_solar_model_rests_on_its_wind_alone(tmp_path: Path) -> None:
+    french = detection_inputs("2019-01-01", "2020-01-01")
+    series = {
+        "entsoe.NL.wind_onshore": dataclasses.replace(
+            rename(french.series["odre.FR.wind"], "entsoe.NL.wind_onshore"),
+            technology="wind_onshore",
+        ),
+        "entsoe.NL.solar": dataclasses.replace(
+            rename(french.series["odre.FR.solar"], "entsoe.NL.solar"), modelled=None
+        ),
+    }
+
+    fixed = thresholds.fix(dataclasses.replace(french, country="NL", series=series), REFERENCE)
+
+    assert fixed.centroid_bias_minutes is None
+    assert fixed.shift_series == ()
+    assert set(fixed.residual_thresholds) == {"wind"}
+    assert fixed.penalties.solar is None
+    assert fixed.penalties.joint is None
+    assert set(fixed.profiles) == {"entsoe.NL.wind_onshore"}
+    assert set(fixed.false_alarms["series"]) == {"entsoe.NL.wind_onshore"}
+    thresholds.write(tmp_path / "NL.json", fixed)
+    assert thresholds.read(tmp_path / "NL.json").penalties == fixed.penalties
+
+
 def rename(item: SeriesInputs, series: str) -> SeriesInputs:
     (part,) = item.published
     return dataclasses.replace(item, published=(dataclasses.replace(part, series=series),))

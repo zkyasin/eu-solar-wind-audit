@@ -224,6 +224,52 @@ def test_a_series_without_a_profile_is_refused() -> None:
         detection.detect(france(), without, START, END)
 
 
+def test_an_area_without_a_solar_model_gets_the_detectors_of_its_wind_alone() -> None:
+    french = france()
+
+    def dutch(source: str, name: str, technology: str, *, model: bool) -> SeriesInputs:
+        item = french.series[source]
+        hourly = item.published[0].hourly[["energy_mwh", "complete"]]
+        return dataclasses.replace(
+            item,
+            technology=technology,
+            published=(Published(name, PROVENANCE, False, hourly),),
+            modelled=item.modelled if model else None,
+            capacity_mw=item.capacity_mw if model else None,
+            offshore=item.offshore if model else None,
+        )
+
+    # FR-27 wind drops by 30 % on 1 February 2019; FR-11 solar is negative on 10 January.
+    series = {
+        "entsoe.NL.wind_onshore": dutch(
+            "odre.FR-27.wind", "entsoe.NL.wind_onshore", "wind_onshore", model=True
+        ),
+        "entsoe.NL.solar": dutch("odre.FR-11.solar", "entsoe.NL.solar", "solar", model=False),
+    }
+    wind_level = breaks.SeasonalProfile((float(np.log(LEVELS["wind"])), 0.0, 0.0, 0.0, 0.0), 0.01)
+    fixed = thresholds.Thresholds(
+        country="NL",
+        reference_model={},
+        centroid_bias_minutes=None,
+        shift_series=(),
+        residual_thresholds={"wind": 10.0},
+        penalties=breaks.Penalties(None, 150.0, None),
+        profiles={"entsoe.NL.wind_onshore": wind_level},
+        false_alarms=pd.DataFrame(),
+    )
+
+    run = detection.detect(
+        dataclasses.replace(french, country="NL", rows=(), series=series), fixed, START, END
+    )
+
+    solar = run.findings[run.findings["series"] == "entsoe.NL.solar"]
+    assert solar["kind"].tolist() == ["negative"]
+    assert "level_break" not in set(run.findings["kind"])
+    assert set(zip(run.unattributed["series"], run.unattributed["reason"], strict=True)) == {
+        ("entsoe.NL.wind_onshore", "no_solar_model")
+    }
+
+
 def test_the_wind_of_an_area_is_onshore_wind_from_2024() -> None:
     hours = pd.date_range("2023-12-20", "2024-01-10", freq="h", inclusive="left", tz="UTC")
     hours = hours.as_unit("ns").rename("time")

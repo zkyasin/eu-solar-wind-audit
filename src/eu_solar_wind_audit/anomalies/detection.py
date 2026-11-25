@@ -12,9 +12,10 @@ checked where the capacity is positive: the SDES capacity of a region grows from
 quarter of its first farm.
 
 Statistical detectors run on the series with a model, the solar and onshore wind of the areas of
-France and Germany and of the Danish price areas: timestamp shifts and clock-change jumps of the
-solar series that the thresholds make eligible, residual outliers, and the level breaks of the solar
-and the wind series of each area. They read the wind of an area as `onshore_wind` gives it, with
+France and Germany and of the Danish price areas, and the onshore wind of the Netherlands: timestamp
+shifts and clock-change jumps of the solar series that the thresholds make eligible, residual
+outliers, and the level breaks of the solar and the wind series of each area, or of its wind series
+alone where it has no solar model. They read the wind of an area as `onshore_wind` gives it, with
 the thresholds and the profile of its wind series (detector design), so that no hour is judged
 twice.
 """
@@ -100,18 +101,19 @@ def detect(
         raise ValueError(f"the inputs judge {found.start} to {found.end}, not {start} to {end}")
     frames = [*_completeness(found, start, end), *_rule_based(found), *_cross_source(found)]
     unattributed: list[pd.DataFrame] = []
-    modelled_solar = [
-        series
-        for series, item in found.series.items()
-        if item.technology == "solar" and item.modelled is not None
-    ]
-    if modelled_solar:
+    # Series ids are <source>.<area>.<quantity>.
+    modelled_areas = sorted(
+        {
+            series.rsplit(".", 1)[0]
+            for series, item in found.series.items()
+            if item.modelled is not None
+        }
+    )
+    if modelled_areas:
         if fixed is None:
             raise ValueError("the statistical detectors need the thresholds of the country")
-        for series in modelled_solar:
-            area_findings, area_unattributed = _statistical(
-                found, fixed, series.removesuffix(".solar"), start, end
-            )
+        for area in modelled_areas:
+            area_findings, area_unattributed = _statistical(found, fixed, area, start, end)
             frames += area_findings
             unattributed += area_unattributed
     return Detection(_reaching(frames, start, end), _unattributed(unattributed))
@@ -296,39 +298,53 @@ def _statistical(
     start: pd.Timestamp,
     end: pd.Timestamp,
 ) -> tuple[list[pd.DataFrame], list[pd.DataFrame]]:
-    """Findings of the statistical detectors on the solar and the wind of `area`, and its level
-    breaks of [start, end) left unattributed."""
-    solar_id = f"{area}.solar"
-    solar = found.series[solar_id]
-    solar_hours, solar_model = _hours(solar), _modelled(solar, solar_id)
-    solar_provenance = solar.published[0].provenance
+    """Findings of the statistical detectors on the solar and the wind of `area`, or on its wind
+    alone where its solar series has no model, and its level breaks of [start, end) left
+    unattributed."""
     wind = onshore_wind(found, area)
     classes = found.price_classes
     frames: list[pd.DataFrame] = []
+    ratios: dict[breaks.Technology, breaks.Ratios] = {}
+    junction_frames = [breaks.junctions(wind.published, wind.modelled)]
+    series_ids: dict[breaks.Technology, str] = {}
+    provenances: dict[breaks.Technology, str] = {}
 
-    if solar_id in fixed.shift_series:
-        centroids = timestamp.daily_centroids(
-            solar_hours, solar_model, classes, bias_minutes=fixed.centroid_bias_minutes
+    solar_id = f"{area}.solar"
+    solar = found.series.get(solar_id)
+    if solar is not None and solar.modelled is not None:
+        solar_hours, solar_model = _hours(solar), _modelled(solar, solar_id)
+        solar_provenance = solar.published[0].provenance
+        if solar_id in fixed.shift_series and fixed.centroid_bias_minutes is not None:
+            centroids = timestamp.daily_centroids(
+                solar_hours, solar_model, classes, bias_minutes=fixed.centroid_bias_minutes
+            )
+            frames.append(timestamp.shifts(centroids, series=solar_id, provenance=solar_provenance))
+            frames.append(
+                timestamp.clock_change_jumps(
+                    centroids,
+                    time_zone=TIME_ZONES[found.country],
+                    series=solar_id,
+                    provenance=solar_provenance,
+                )
+            )
+        solar_scores = residuals.residual_scores(
+            solar_hours, solar_model, classes, technology="solar"
         )
-        frames.append(timestamp.shifts(centroids, series=solar_id, provenance=solar_provenance))
         frames.append(
-            timestamp.clock_change_jumps(
-                centroids,
-                time_zone=TIME_ZONES[found.country],
+            residuals.residual_outliers(
+                solar_scores,
                 series=solar_id,
                 provenance=solar_provenance,
+                threshold=fixed.residual_thresholds["solar"],
             )
         )
-
-    solar_scores = residuals.residual_scores(solar_hours, solar_model, classes, technology="solar")
-    frames.append(
-        residuals.residual_outliers(
-            solar_scores,
-            series=solar_id,
-            provenance=solar_provenance,
-            threshold=fixed.residual_thresholds["solar"],
+        ratios["solar"] = breaks.Ratios(
+            breaks.daily_log_ratios(solar_hours, solar_model, classes, technology="solar"),
+            _profile(fixed, solar_id),
         )
-    )
+        junction_frames.append(breaks.junctions(solar_hours, solar_model))
+        series_ids["solar"], provenances["solar"] = solar_id, solar_provenance
+
     wind_scores = residuals.residual_scores(
         wind.published, wind.modelled, classes, technology="wind", offshore=wind.offshore
     )
@@ -343,25 +359,13 @@ def _statistical(
             )
         )
 
-    ratios: dict[breaks.Technology, breaks.Ratios] = {
-        "solar": breaks.Ratios(
-            breaks.daily_log_ratios(solar_hours, solar_model, classes, technology="solar"),
-            _profile(fixed, solar_id),
+    ratios["wind"] = breaks.Ratios(
+        breaks.daily_log_ratios(
+            wind.published, wind.modelled, classes, technology="wind", offshore=wind.offshore
         ),
-        "wind": breaks.Ratios(
-            breaks.daily_log_ratios(
-                wind.published, wind.modelled, classes, technology="wind", offshore=wind.offshore
-            ),
-            _profile(fixed, wind.periods[0].series),
-        ),
-    }
-    junctions = pd.concat(
-        [
-            breaks.junctions(solar_hours, solar_model),
-            breaks.junctions(wind.published, wind.modelled),
-        ],
-        ignore_index=True,
+        _profile(fixed, wind.periods[0].series),
     )
+    junctions = pd.concat(junction_frames, ignore_index=True)
     unattributed: list[pd.DataFrame] = []
     for period in wind.periods:
         first, last = max(start, period.start), min(end, period.end)
@@ -370,8 +374,8 @@ def _statistical(
         level = breaks.level_breaks(
             ratios,
             junctions,
-            series={"solar": solar_id, "wind": period.series},
-            provenance={"solar": solar_provenance, "wind": period.provenance},
+            series={**series_ids, "wind": period.series},
+            provenance={**provenances, "wind": period.provenance},
             penalties=fixed.penalties,
             start=first,
             end=last,

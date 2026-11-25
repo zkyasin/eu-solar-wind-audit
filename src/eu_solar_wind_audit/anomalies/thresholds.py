@@ -74,7 +74,7 @@ class Thresholds:
 
     country: str
     reference_model: dict[str, Any]
-    centroid_bias_minutes: float
+    centroid_bias_minutes: float | None
     shift_series: tuple[str, ...]
     residual_thresholds: dict[str, float]
     penalties: breaks.Penalties
@@ -132,7 +132,8 @@ def check_reference(thresholds: Thresholds, reference: dict[str, Any]) -> None:
 def fix(found: DetectionInputs, reference: dict[str, Any]) -> Thresholds:
     """Thresholds from `found`, the detection inputs of a country over FIX_YEARS, which rest on
     `reference`. The series with a model are those of the statistical detectors, each with the
-    technology of DETECTOR_TECHNOLOGIES.
+    technology of DETECTOR_TECHNOLOGIES. A country without a solar model, as the Netherlands, has
+    no centroid bias, shift claims, solar threshold or solar and joint penalties.
 
     Raises ValueError unless every hour of `found` lies in FIX_YEARS.
     """
@@ -148,23 +149,26 @@ def fix(found: DetectionInputs, reference: dict[str, Any]) -> Thresholds:
         for technology in breaks.TECHNOLOGIES
     }
 
-    national = found.series[NATIONAL_SOLAR[found.country]]
-    unbiased = timestamp.daily_centroids(
-        _published(national), _modelled(national), classes, bias_minutes=0.0
-    )
-    bias = float(unbiased.loc[unbiased["valid"], "residual_minutes"].median())
-    claims = {
-        series: per_year(
-            timestamp.shifts(
-                timestamp.daily_centroids(
-                    _published(item), _modelled(item), classes, bias_minutes=bias
-                ),
-                series=series,
-                provenance=item.published[0].provenance,
-            )
+    bias: float | None = None
+    claims: dict[str, pd.Series] = {}
+    if by_technology["solar"]:
+        national = found.series[NATIONAL_SOLAR[found.country]]
+        unbiased = timestamp.daily_centroids(
+            _published(national), _modelled(national), classes, bias_minutes=0.0
         )
-        for series, item in by_technology["solar"].items()
-    }
+        bias = float(unbiased.loc[unbiased["valid"], "residual_minutes"].median())
+        claims = {
+            series: per_year(
+                timestamp.shifts(
+                    timestamp.daily_centroids(
+                        _published(item), _modelled(item), classes, bias_minutes=bias
+                    ),
+                    series=series,
+                    provenance=item.published[0].provenance,
+                )
+            )
+            for series, item in by_technology["solar"].items()
+        }
     shift_series = tuple(series for series, counts in claims.items() if counts.max() <= BUDGET)
 
     residual_counts = []
@@ -195,6 +199,7 @@ def fix(found: DetectionInputs, reference: dict[str, Any]) -> Thresholds:
     residual_thresholds: dict[str, float] = {
         technology: _largest_fold_choice(residual_table[residual_table["technology"] == technology])
         for technology in breaks.TECHNOLOGIES
+        if by_technology[technology]
     }
 
     ratios = {}
@@ -220,15 +225,17 @@ def fix(found: DetectionInputs, reference: dict[str, Any]) -> Thresholds:
             for series in by_technology["solar"]
         },
     }
-    counts_of = {name: breaks.break_counts(found) for name, found in searches.items()}
+    counts_of = {name: breaks.break_counts(found) for name, found in searches.items() if found}
     chosen = {
         name: float(breaks.penalty_folds(counts)["penalty"].max())
         for name, counts in counts_of.items()
     }
-    penalties = breaks.Penalties(chosen["solar"], chosen["wind"], chosen["joint"])
+    penalties = breaks.Penalties(chosen.get("solar"), chosen["wind"], chosen.get("joint"))
 
     rows = []
     for technology, items in by_technology.items():
+        if not items:
+            continue
         break_table = counts_of[technology]
         level_breaks_of = break_table[break_table["penalty"] == chosen[technology]].set_index(
             ["search", "year"]
