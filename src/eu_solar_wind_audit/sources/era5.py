@@ -16,6 +16,15 @@ ARCO_URL = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3
 # Final ERA5 from the time-series group of the Earthmover store.
 ICECHUNK_BUCKET = "earthmover-icechunk-era5"
 ICECHUNK_PREFIX = "icechunkV2"
+# Connections to the bucket sometimes take longer than the 3 s that icechunk waits by default, and
+# three runs of 2026-11-25 stopped on them: wait up to 30 s, and retry with a backoff of up to a
+# minute.
+STORAGE_SETTINGS = icechunk.StorageSettings(
+    timeouts=icechunk.StorageTimeoutSettings(connect_timeout_ms=30_000, read_timeout_ms=120_000),
+    retries=icechunk.StorageRetriesSettings(
+        max_tries=12, initial_backoff_ms=1_000, max_backoff_ms=60_000
+    ),
+)
 ICECHUNK_GROUP = "single/temporal"
 ARCO_NAMES = {
     "surface_solar_radiation_downwards": "ssrd",
@@ -63,7 +72,8 @@ def open_icechunk() -> xr.Dataset:
     storage = icechunk.s3_storage(
         bucket=ICECHUNK_BUCKET, prefix=ICECHUNK_PREFIX, region="us-east-1", anonymous=True
     )
-    session = icechunk.Repository.open(storage).readonly_session(branch="main")
+    config = icechunk.RepositoryConfig(storage=STORAGE_SETTINGS)
+    session = icechunk.Repository.open(storage, config=config).readonly_session(branch="main")
     store = xr.open_zarr(session.store, group=ICECHUNK_GROUP, consolidated=False, chunks=None)
     return from_icechunk(store)
 

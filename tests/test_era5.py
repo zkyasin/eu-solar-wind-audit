@@ -1,3 +1,4 @@
+import icechunk
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
@@ -248,3 +249,22 @@ def test_arco_is_not_opened_when_final_era5_covers_the_period(
 
     assert out.sizes["time"] == 5
     assert set(out["source"].values) == {"ERA5"}
+
+
+def test_the_final_store_waits_and_retries_longer_than_the_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configs: list[icechunk.RepositoryConfig | None] = []
+
+    def refuse(storage: icechunk.Storage, config: icechunk.RepositoryConfig | None = None) -> None:
+        configs.append(config)
+        raise RuntimeError("opened")
+
+    monkeypatch.setattr(icechunk.Repository, "open", refuse)
+
+    with pytest.raises(RuntimeError, match="opened"):
+        era5.open_icechunk()
+
+    (config,) = configs
+    assert config is not None
+    assert config.storage == era5.STORAGE_SETTINGS
