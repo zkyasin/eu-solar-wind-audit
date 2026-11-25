@@ -45,6 +45,7 @@ What the project may publish:
 | EMODnet Human Activities | CETMAR for EMODnet | Wind farms, polygon layer (`EMODnet_HA_Energy_WindFarms_20260710`) | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `This data was downloaded from the EMODnet Portal (https://emodnet.ec.europa.eu/en/). The data originator is CETMAR.` | Raw values | Verified 2026-11-22, [metadata record](https://ows.emodnet-humanactivities.eu/geonetwork/srv/api/records/8201070b-4b0b-4d54-8910-abcea5dce57f) and [terms of use](https://emodnet.ec.europa.eu/en/terms-use-emodnet-online-services-data-and-data-products) |
 | GISCO local administrative units | Eurostat (GISCO), boundaries © EuroGeographics | LAU 2024, 1:1,000,000, EPSG:4326, release of 2026-02-18: Danish and Dutch municipalities | GISCO download rules: non-commercial use, source acknowledged | `© EuroGeographics for the administrative boundaries` | Raw values, non-commercial | Verified 2026-11-25, [statistical units page](https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units) |
 | Danish wind turbine register | Danish Energy Agency (Energistyrelsen) | Stamdataregister for vindkraftanlæg: the register at the end of October 2026 and the historic file of the turbines decommissioned up to the end of 2022 | No licence named; disclaimer only | `Source: Danish Energy Agency (Energistyrelsen), Stamdataregister for vindkraftanlæg` | Nothing: model input only | Read 2026-11-25, [data page](https://ens.dk/analyser-og-statistik/data-oversigt-over-energisektoren) |
+| CBS wind on land | Statistics Netherlands (CBS) | Tables 70960ned (capacity by province) and 71227ned (capacity by hub height), wind on land including inland waters, revised 2026-11-13 | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `Bron: CBS` | Raw values, attributed | Verified 2026-11-25, [copyright page](https://www.cbs.nl/nl-nl/over-ons/website/copyright) |
 
 ## Notes
 
@@ -152,6 +153,9 @@ What the project may publish:
     its quality, and disclaims responsibility for any use of the data, but names no licence. Until
     the agency confirms terms (energidata@ens.dk), the register only gives the capacity, hub height
     and rotor of the onshore turbines behind the Danish model, and none of its rows is published.
+26. **CBS wind on land.** The copyright page of CBS puts the content of its website under CC BY 4.0
+    unless stated otherwise, and the open data portal states nothing else for these tables. CBS
+    revises them once a year; the model records the date of the revision it read.
 
 ## Attribution
 
@@ -182,6 +186,7 @@ Germany, administrative boundaries: © BKG (<year>) dl-de/by-2-0 (Daten verände
 Offshore wind farms: this data was downloaded from the EMODnet Portal (https://emodnet.ec.europa.eu/en/). The data originator is CETMAR. <dataset identifier>, CC BY 4.0.
 Danish and Dutch municipalities: © EuroGeographics for the administrative boundaries (GISCO, LAU 2024).
 Denmark, wind turbine register: Danish Energy Agency (Energistyrelsen), Stamdataregister for vindkraftanlæg.
+Netherlands, onshore wind capacity: Bron: CBS, tables 70960ned and 71227ned, CC BY 4.0.
 Baselines: Renewables.ninja (Pfenninger and Staffell 2016; Staffell and Pfenninger 2016), CC BY-NC 4.0.
 Copernicus Climate Change Service (2024): Climate and energy related variables from the Pan-European Climate Database derived from reanalysis and climate projections. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.f323c5ec (Accessed on <date>). PECD v4.2, modified.
 Copyright © <year> ECMWF/C3S/ENTSO-E. ECMWF & C3S & ENTSO-E does not accept any liability whatsoever for any error or omission in the data, their availability, or for any loss or damage arising from their use.
