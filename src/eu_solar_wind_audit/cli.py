@@ -50,6 +50,8 @@ WEEK_START = pd.Timestamp("2025-06-02", tz="Europe/Paris")
 # The year of findings DE-1 and DE-2 of docs/anomalies-2019-2025.md.
 SUM_OF_PARTS_YEAR = 2025
 TECHNOLOGIES: tuple[physics.Technology, ...] = ("solar", "wind_onshore")
+# The countries that the web page shows.
+SITE_COUNTRIES = ("FR", "DE")
 # The published modulation volumes each country is compared with, and the technology of Hirth
 # (2026) that holds onshore wind: his wind is onshore and offshore together.
 REFERENCES = {"FR": Path("references/rte"), "DE": Path("references/hirth")}
@@ -801,7 +803,8 @@ def export_site_data(output: Path, processed: Path) -> list[Path]:
     modulations = []
     found = []
     runs = {}
-    for country, time_zone in detection.TIME_ZONES.items():
+    for country in SITE_COUNTRIES:
+        time_zone = detection.TIME_ZONES[country]
         calibration_dir = processed / f"calibration-{country.lower()}"
         modulation_dir = processed / f"modulation-{country.lower()}"
         anomalies_dir = processed / f"anomalies-{country.lower()}"
