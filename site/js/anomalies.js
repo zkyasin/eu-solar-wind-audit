@@ -5,24 +5,24 @@ import { day, number } from "./format.js";
 import { html, linear, paint, responsive, svg, tip, tipLine } from "./plot.js";
 
 const FAMILIES = {
-  time: { label: "Missing or shifted hours", color: "--published" },
-  values: { label: "Impossible values", color: "--flag" },
-  model: { label: "Against the model", color: "--model" },
-  consistency: { label: "Against other series", color: "--third" },
+  time: { label: "Heures manquantes ou décalées", color: "--published" },
+  values: { label: "Valeurs impossibles", color: "--flag" },
+  model: { label: "Écart au modèle", color: "--model" },
+  consistency: { label: "Écart à d’autres séries", color: "--third" },
 };
 
 const KINDS = {
-  gap: ["time", "Missing hours"],
-  timestamp_shift: ["time", "Shifted timestamps"],
-  clock_change_jump: ["time", "Jump at a clock change"],
-  clock_change_convention: ["time", "Clock-change convention"],
-  negative: ["values", "Below zero"],
-  above_capacity: ["values", "Above installed capacity"],
-  frozen: ["values", "Frozen value"],
-  residual_outlier: ["model", "Outlier against the model"],
-  level_break: ["model", "Break in level"],
-  parts_gap: ["consistency", "Total against the sum of its parts"],
-  cross_source_gap: ["consistency", "Against a second source"],
+  gap: ["time", "Heures manquantes"],
+  timestamp_shift: ["time", "Horodatage décalé"],
+  clock_change_jump: ["time", "Saut au changement d’heure"],
+  clock_change_convention: ["time", "Convention de changement d’heure"],
+  negative: ["values", "Valeur négative"],
+  above_capacity: ["values", "Au-dessus de la capacité installée"],
+  frozen: ["values", "Valeur figée"],
+  residual_outlier: ["model", "Valeur aberrante par rapport au modèle"],
+  level_break: ["model", "Rupture de niveau"],
+  parts_gap: ["consistency", "Total différent de la somme de ses parties"],
+  cross_source_gap: ["consistency", "Écart à une seconde source"],
 };
 
 const REGIONS = {
@@ -41,17 +41,17 @@ const REGIONS = {
 };
 
 const TECHNOLOGY = {
-  solar: "solar",
-  wind: "wind",
-  wind_onshore: "onshore wind",
-  wind_offshore: "offshore wind",
+  solar: "Solaire",
+  wind: "Éolien",
+  wind_onshore: "Éolien terrestre",
+  wind_offshore: "Éolien en mer",
 };
 
 const ROWS = [
   ["FR", "national", "France"],
-  ["FR", "regional", "12 regions"],
-  ["DE", "national", "Germany"],
-  ["DE", "regional", "4 control areas"],
+  ["FR", "regional", "12 régions"],
+  ["DE", "national", "Allemagne"],
+  ["DE", "regional", "4 zones de réglage"],
 ];
 
 const START = Date.UTC(2019, 0, 1);
@@ -64,7 +64,7 @@ function describe(series) {
     const tech = series.split(".").at(-1);
     return {
       scope: "national",
-      name: `Germany ${TECHNOLOGY[tech]}, Energy-Charts`,
+      name: `${TECHNOLOGY[tech]}, Allemagne (Energy-Charts)`,
       technology: tech,
     };
   }
@@ -72,11 +72,11 @@ function describe(series) {
   const name =
     source === "odre"
       ? area === "FR"
-        ? `France ${TECHNOLOGY[technology]}`
-        : `${REGIONS[area.slice(3)]} ${TECHNOLOGY[technology]}`
+        ? `${TECHNOLOGY[technology]}, France`
+        : `${TECHNOLOGY[technology]}, ${REGIONS[area.slice(3)]}`
       : area === "DE"
-        ? `Germany ${TECHNOLOGY[technology]}`
-        : `${area} ${TECHNOLOGY[technology]}`;
+        ? `${TECHNOLOGY[technology]}, Allemagne`
+        : `${TECHNOLOGY[technology]}, ${area}`;
   const national = area === "FR" || area === "DE";
   return { scope: national ? "national" : "regional", name, technology };
 }
@@ -111,7 +111,7 @@ export async function renderAnomalies() {
       [
         html("strong", {}, [finding.name]),
         tipLine(paint(FAMILIES[finding.family].color), KINDS[finding.kind][1]),
-        html("span", {}, [first === last ? day(first) : `${day(first)} to ${day(last)}`]),
+        html("span", {}, [first === last ? day(first) : `du ${day(first)} au ${day(last)}`]),
       ],
       event.clientX - box.left,
       event.clientY - box.top,
@@ -124,12 +124,12 @@ function renderReadout(findings) {
   const count = (country) => findings.filter((finding) => finding.country === country).length;
   const cells = [
     [
-      "Findings, 2019–2025",
+      "Constats, 2019–2025",
       number(findings.length),
-      `France ${count("FR")}, Germany ${count("DE")}`,
+      `France ${count("FR")}, Allemagne ${count("DE")}`,
     ],
-    ["Kinds of finding", String(Object.keys(KINDS).length), "from gaps to breaks in level"],
-    ["Checked as tickets", "11", "7 in France, 4 in Germany"],
+    ["Types de constat", String(Object.keys(KINDS).length), "des trous aux ruptures de niveau"],
+    ["Vérifiés en tickets", "11", "7 en France, 4 en Allemagne"],
   ];
   document
     .getElementById("anomaly-readout")
@@ -198,7 +198,7 @@ function drawTimeline(findings, width) {
     if (narrow) return [svg("text", { class: "label", x: 0, y: top(row) - 5 }, [label])];
     return [
       svg("text", { class: "label", x: 0, y: top(row) + band / 2 + 4 }, [label]),
-      ...["solar", "wind"].map((technology, k) =>
+      ...["solaire", "éolien"].map((technology, k) =>
         svg(
           "text",
           {
@@ -249,7 +249,7 @@ function drawTimeline(findings, width) {
       height,
       viewBox: `0 0 ${width} ${height}`,
       role: "img",
-      "aria-label": `${findings.length} findings of the detectors in the solar and wind series of France and Germany, 2019 to 2025, by group of series and kind.`,
+      "aria-label": `${findings.length} constats des détecteurs dans les séries solaires et éoliennes de France et d’Allemagne, de 2019 à 2025, par groupe de séries et par type.`,
     },
     [
       grid,

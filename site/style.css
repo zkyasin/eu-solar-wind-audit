@@ -312,7 +312,7 @@ h1 {
 
 .headline-period {
   display: block;
-  max-width: 21ch;
+  max-width: 24ch;
   margin-top: 1.25rem;
   color: var(--ink);
   font-size: clamp(1.375rem, 1rem + 1vw, 1.875rem);

@@ -28,6 +28,6 @@ export async function daily(country, technology) {
   }));
 }
 
-export const COUNTRIES = { FR: "France", DE: "Germany" };
-export const TECHNOLOGIES = { solar: "Solar", wind_onshore: "Onshore wind" };
+export const COUNTRIES = { FR: "France", DE: "Allemagne" };
+export const TECHNOLOGIES = { solar: "Solaire", wind_onshore: "Éolien terrestre" };
 export const YEARS = [2019, 2020, 2021, 2022, 2023, 2024, 2025];

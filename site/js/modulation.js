@@ -1,10 +1,13 @@
 /** Chapter 04: output held back at negative prices, each year, beside the published references. */
 
 import { COUNTRIES, load, TECHNOLOGIES, YEARS } from "./data.js";
-import { energy, number } from "./format.js";
+import { energy, number, THIN } from "./format.js";
 import { html, linear, options, paint, responsive, svg, ticks } from "./plot.js";
 
 const REFERENCES = { FR: "RTE", DE: "Hirth (2026)" };
+
+/** The verdicts of the evaluation plan, as the data documents name them. */
+const VERDICTS = { "concordant in volume only": "Concordant en volume seulement" };
 
 export async function renderModulation() {
   const runs = await load("modulation.json");
@@ -33,10 +36,10 @@ export async function renderModulation() {
     renderVerdict(runs, country);
     document.getElementById("modulation-caption").textContent =
       country === "FR"
-        ? "Output held back each year, GWh. France had no negative price in 2022, and its 2023 wind series includes offshore farms."
-        : "Output held back each year, GWh. Hirth's wind volumes include offshore farms.";
+        ? "Production non injectée chaque année, en GWh. Aucun prix négatif en France en 2022, et la série éolienne française de 2023 inclut l’éolien en mer."
+        : "Production non injectée chaque année, en GWh. Les volumes éoliens de Hirth incluent l’éolien en mer.";
     document.getElementById("modulation-reference-key").textContent =
-      country === "FR" ? "Volume published by RTE" : "Market-based curtailment, Hirth (2026)";
+      country === "FR" ? "Volume publié par RTE" : "Écrêtement par le marché, Hirth (2026)";
   };
   options("modulation-country", COUNTRIES, country, (value) => {
     country = value;
@@ -119,7 +122,7 @@ function drawYears(run, width) {
       height,
       viewBox: `0 0 ${width} ${height}`,
       role: "img",
-      "aria-label": `${TECHNOLOGIES[run.technology]} output held back at negative prices in ${COUNTRIES[run.country]}, each year from 2019 to 2025, with its 90 % interval and the published reference.`,
+      "aria-label": `${TECHNOLOGIES[run.technology]} : production non injectée aux prix négatifs, ${COUNTRIES[run.country]}, chaque année de 2019 à 2025, avec son intervalle à 90${THIN}% et la référence publiée.`,
     },
     [
       svg(
@@ -162,7 +165,7 @@ function renderReadout(runs, country) {
     const reference = period.reference_gwh;
     const detail =
       reference === null
-        ? "no reference"
+        ? "sans référence"
         : `${REFERENCES[country]} ${energy(reference)}, ratio ${number(period.estimate_gwh / reference, 2)}`;
     return [`${TECHNOLOGIES[technology]}, ${YEARS.at(-1)}`, energy(period.estimate_gwh), detail];
   });
@@ -190,25 +193,29 @@ function renderVerdict(runs, country) {
     });
     const verdict = runs.find((r) => r.country === "FR").verdict;
     node.replaceChildren(
-      html("p", { class: "verdict-title" }, [verdict[0].toUpperCase() + verdict.slice(1)]),
+      html("p", { class: "verdict-title" }, [VERDICTS[verdict] ?? verdict]),
       html("p", {}, [
-        `The yearly ratios to RTE of 2024 and 2025 lie within the 0.8 to 1.25 the plan asks: ` +
-          `${ratios[0].join(" and ")} for solar, ${ratios[1].join(" and ")} for onshore wind. ` +
-          "The monthly tests fail, and the placebo on hours priced 5 to 15 €/MWh, where published " +
-          "solar exceeds the potential by 1.4 to 4.6 % in five years of six, says the solar " +
-          "estimate may be a few percent too low.",
+        "Les ratios annuels à RTE de 2024 et 2025 restent entre 0,8 et 1,25, comme l’exige le " +
+          `plan : ${ratios[0].join(" et ")} pour le solaire, ${ratios[1].join(" et ")} pour ` +
+          "l’éolien terrestre. Les tests mensuels échouent, et le placebo sur les heures à 5 à " +
+          `15${THIN}€/MWh, où le solaire publié dépasse le potentiel de 1,4 à 4,6${THIN}% cinq ` +
+          "années sur six, indique que l’estimation solaire est peut-être sous-évaluée de " +
+          "quelques pour cent.",
       ]),
     );
     return;
   }
   node.replaceChildren(
-    html("p", { class: "verdict-title" }, ["No verdict for Germany, as the plan says"]),
+    html("p", { class: "verdict-title" }, [
+      "Pas de verdict pour l’Allemagne, comme le prévoit le plan",
+    ]),
     html("p", {}, [
-      "The share of the onshore wind potential held back is within 3 points of Hirth's " +
-        "curtailment rate each year from 2022, and the volumes are 79 to 90 % of his, which also " +
-        "hold offshore wind. Solar in 2025 is 2.4 times his 0.6 TWh: the estimate also keeps " +
-        "curtailment for grid congestion, and the published feed-in falls when home batteries and " +
-        "self-consumption take the midday output.",
+      "La part du potentiel éolien terrestre non injectée reste à moins de 3 points du taux " +
+        "d’écrêtement de Hirth chaque année depuis 2022, et les volumes représentent 79 à " +
+        `90${THIN}% des siens, qui incluent aussi l’éolien en mer. Le solaire de 2025 vaut 2,4 ` +
+        `fois ses 0,6${THIN}TWh : l’estimation retient aussi l’écrêtement dû aux congestions du ` +
+        "réseau, et l’injection publiée baisse quand les batteries domestiques et " +
+        "l’autoconsommation absorbent la production de midi.",
     ]),
   );
 }

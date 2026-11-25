@@ -6,29 +6,29 @@ import { html, line, linear, paint, responsive, svg, ticks } from "./plot.js";
 
 /** The series of the chart, as pairs of a feed-in series and a total over the same fleet. */
 const SERIES = {
-  smard: { label: "SMARD", country: "Germany", note: "feed-in", color: "--published" },
+  smard: { label: "SMARD", country: "Allemagne", note: "injection", color: "--published" },
   energy_charts_total: {
     label: "Energy-Charts",
-    country: "Germany",
+    country: "Allemagne",
     note: "total",
     color: "--third",
   },
   energinet: {
     label: "Energinet",
-    country: "Denmark",
-    note: "size classes",
+    country: "Danemark",
+    note: "classes de taille",
     color: "--published",
     dashed: true,
   },
   energinet_total: {
     label: "Energinet",
-    country: "Denmark",
-    note: "with self-consumption",
+    country: "Danemark",
+    note: "avec autoconsommation",
     color: "--third",
     dashed: true,
   },
   eco2mix: { label: "éCO2mix", country: "France", note: "", color: "--ink" },
-  entsoe_nl: { label: "Transparency Platform", country: "Netherlands", note: "", color: "--muted" },
+  entsoe_nl: { label: "Transparency Platform", country: "Pays-Bas", note: "", color: "--muted" },
 };
 
 const CHARTED = ["smard", "energy_charts_total", "energinet", "energinet_total", "eco2mix"];
@@ -42,11 +42,11 @@ const ORDER = [
 ];
 
 const WORDS = {
-  included: "Included",
-  excluded: "Excluded",
-  inconclusive: "Inconclusive",
-  covered: "Covered",
-  not_covered: "Not covered",
+  included: "Incluse",
+  excluded: "Exclue",
+  inconclusive: "Non tranché",
+  covered: "Couverts",
+  not_covered: "Non couverts",
 };
 
 export async function renderContent() {
@@ -125,7 +125,7 @@ function drawRatios(years, width) {
       viewBox: `0 0 ${width} ${height}`,
       role: "img",
       "aria-label":
-        "Published solar output over Eurostat gross production, 2019 to 2024: the German and Danish totals stay near 1, their feed-in series fall below it, and éCO2mix stays near 1.",
+        "Production solaire publiée rapportée à la production brute d’Eurostat, de 2019 à 2024 : les totaux allemand et danois restent proches de 1, leurs séries d’injection passent en dessous, et éCO2mix reste proche de 1.",
     },
     [
       svg(
@@ -168,9 +168,9 @@ function renderMatrix({ cells, years, detection_threshold: threshold }) {
           `${label}${note ? `, ${note}` : ""}`,
           html("small", {}, [country]),
         ]),
-        html("td", { "data-label": "Self-consumption" }, [state(cell.self_consumption)]),
-        html("td", { "data-label": "Distribution grids" }, [state(cell.distribution)]),
-        html("td", { "data-label": "Producer" }, [verdict(cell.validation)]),
+        html("td", { "data-label": "Autoconsommation" }, [state(cell.self_consumption)]),
+        html("td", { "data-label": "Réseaux de distribution" }, [state(cell.distribution)]),
+        html("td", { "data-label": "Producteur" }, [verdict(cell.validation)]),
       ]);
     }),
   );
@@ -178,13 +178,14 @@ function renderMatrix({ cells, years, detection_threshold: threshold }) {
   const shares = french.map((row) => row.self_consumption_share);
   const dutch = years.filter((row) => row.series === "entsoe_nl").map((row) => row.wind_ratio);
   document.getElementById("matrix-note").textContent =
-    `A self-consumed share is detected from ${percent(threshold.self_consumption, 1)} of solar ` +
-    `output, and a share of wind capacity left out from ${percent(threshold.distribution, 1)}. ` +
-    `In France it is ${percent(Math.min(...shares), 1)} to ${percent(Math.max(...shares), 1)} of ` +
-    "solar output: RTE counts it, but the share is too small for yearly statistics to confirm, so " +
-    `éCO2mix stays inconclusive. The Dutch series holds ${percent(Math.min(...dutch))} to ` +
-    `${percent(Math.max(...dutch))} of Eurostat's wind output; no statement of its producer is ` +
-    "archived yet to confirm why.";
+    "Une part autoconsommée est détectée à partir de " +
+    `${percent(threshold.self_consumption, 1)} de la production solaire, et une part de capacité ` +
+    `éolienne omise à partir de ${percent(threshold.distribution, 1)}. En France, l’autoconsommation ` +
+    `représente ${percent(Math.min(...shares), 1)} à ${percent(Math.max(...shares), 1)} de la ` +
+    "production solaire : RTE la compte, mais la part est trop faible pour que des statistiques " +
+    "annuelles le confirment, et éCO2mix reste donc non tranché. La série néerlandaise contient " +
+    `${percent(Math.min(...dutch))} à ${percent(Math.max(...dutch))} de la production éolienne ` +
+    "d’Eurostat ; aucune déclaration de son producteur n’est encore archivée pour l’expliquer.";
 }
 
 function state(value) {
@@ -192,6 +193,6 @@ function state(value) {
 }
 
 function verdict(value) {
-  const words = { pass: "Agrees", fail: "Disagrees", inconclusive: "Not decided" };
+  const words = { pass: "Concorde", fail: "Diverge", inconclusive: "Non tranché" };
   return html("span", { class: `verdict-chip verdict-${value}` }, [words[value]]);
 }

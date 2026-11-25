@@ -1,7 +1,7 @@
 /** Chapter 01: published output against the modelled potential, and the error of each model. */
 
 import { COUNTRIES, daily, load, TECHNOLOGIES, YEARS } from "./data.js";
-import { day, energy, MONTHS, number, percent } from "./format.js";
+import { day, energy, MONTHS, number, percent, THIN } from "./format.js";
 import {
   area,
   drawOnView,
@@ -20,10 +20,10 @@ import {
 const state = { country: "FR", technology: "solar", year: "2025" };
 
 const LADDER = [
-  ["raw", "Physics, nominal parameters"],
-  ["climatology", "Climatology by month and hour"],
-  ["calibrated", "Calibrated"],
-  ["calibrated_level", "With stratum ratios and yearly level"],
+  ["raw", "Physique, paramètres nominaux"],
+  ["climatology", "Climatologie par mois et par heure"],
+  ["calibrated", "Calé"],
+  ["calibrated_level", "Avec ratios par strate et niveau annuel"],
 ];
 
 export async function renderModel() {
@@ -83,12 +83,12 @@ export async function renderModel() {
     focus.querySelector("line").setAttribute("x2", cx);
     const lines = [
       html("strong", {}, [day(row.day)]),
-      tipLine(paint("--published"), `Published ${energy(row.published)}`),
-      tipLine(paint("--model"), `Potential ${energy(row.potential)}`),
+      tipLine(paint("--published"), `Publiée ${energy(row.published)}`),
+      tipLine(paint("--model"), `Potentiel ${energy(row.potential)}`),
     ];
     if (row.negativeHours > 0) {
-      lines.push(html("span", {}, [`${row.negativeHours} h at negative prices`]));
-      lines.push(html("span", {}, [`${energy(row.heldBack)} held back`]));
+      lines.push(html("span", {}, [`${row.negativeHours}${THIN}h à prix négatif`]));
+      lines.push(html("span", {}, [`${energy(row.heldBack)} non injectés`]));
     }
     tipper.show(lines, cx, geometry.y(Math.max(row.published, row.potential)));
   });
@@ -108,10 +108,10 @@ function renderReadout(rows) {
   const held = rows.reduce((sum, row) => sum + (row.heldBack ?? 0), 0);
   const empty = both.length === 0;
   const cells = [
-    ["Published", empty ? "–" : energy(published), `${both.length} days`],
-    ["Over the potential", empty ? "–" : percent(published / potential, 1), "same days"],
-    ["Negative-price hours", number(hours), "day-ahead market"],
-    ["Held back at them", empty ? "–" : energy(held), "estimated"],
+    ["Publiée", empty ? "–" : energy(published), `${both.length} jours`],
+    ["Rapportée au potentiel", empty ? "–" : percent(published / potential, 1), "mêmes jours"],
+    ["Heures à prix négatif", number(hours), "marché day-ahead"],
+    ["Non injectée", empty ? "–" : energy(held), "estimation"],
   ];
   document
     .getElementById("model-readout")
@@ -125,8 +125,8 @@ function renderReadout(rows) {
     );
   const caption = document.getElementById("model-caption");
   caption.textContent = empty
-    ? "In 2023 the published French wind series includes offshore farms, so the year is left out of the onshore model."
-    : "Daily output, GWh. Below, the hours with a negative day-ahead price on each day.";
+    ? "En 2023, la série éolienne française publiée inclut l’éolien en mer : l’année est exclue du modèle terrestre."
+    : "Production journalière, en GWh. En dessous, le nombre d’heures à prix day-ahead négatif chaque jour.";
 }
 
 function drawDaily(rows, width) {
@@ -211,7 +211,7 @@ function drawDaily(rows, width) {
       height,
       viewBox: `0 0 ${width} ${height}`,
       role: "img",
-      "aria-label": `Daily published output and modelled potential, ${COUNTRIES[state.country]}, ${TECHNOLOGIES[state.technology].toLowerCase()}, ${state.year}.`,
+      "aria-label": `Production journalière publiée et potentiel modélisé, ${COUNTRIES[state.country]}, ${TECHNOLOGIES[state.technology].toLowerCase()}, ${state.year}.`,
     },
     [
       grid,
@@ -229,7 +229,7 @@ function drawDaily(rows, width) {
         y1: stripTop + strip,
         y2: stripTop + strip,
       }),
-      svg("text", { class: "label", x: margin.left, y: stripTop - 3 }, ["Negative-price hours"]),
+      svg("text", { class: "label", x: margin.left, y: stripTop - 3 }, ["Heures à prix négatif"]),
       yAxis,
       months,
       marks,
@@ -272,7 +272,7 @@ function renderLadder(quality) {
             ]);
           }),
         ),
-        html("p", {}, [`Hourly correlation ${number(final.correlation, 3)}`]),
+        html("p", {}, [`Corrélation horaire ${number(final.correlation, 3)}`]),
       ]);
     }),
   );

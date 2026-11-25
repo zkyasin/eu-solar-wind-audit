@@ -5,7 +5,7 @@
  */
 
 import { daily, load, YEARS } from "./data.js";
-import { day, energy, MONTHS, number } from "./format.js";
+import { day, energy, MONTHS, number, THIN } from "./format.js";
 import {
   area,
   html,
@@ -43,8 +43,9 @@ function renderFigures(runs, quality) {
   countUp(document.getElementById("hero-figure"), twh);
   document.getElementById("hero-reference").textContent = energy(solar.reference_gwh);
   document.getElementById("hero-reference-note").textContent =
-    `the estimate is ${number(solar.estimate_gwh / solar.reference_gwh, 2)} times it, ` +
-    `90 % interval ${number(solar.low_gwh / 1000, 2)} to ${number(solar.high_gwh / 1000, 2)} TWh`;
+    `l’estimation en vaut ${number(solar.estimate_gwh / solar.reference_gwh, 2)} fois ; ` +
+    `intervalle à 90${THIN}% : ${number(solar.low_gwh / 1000, 2)} à ` +
+    `${number(solar.high_gwh / 1000, 2)}${THIN}TWh`;
 
   const held = quality.filter(
     (row) => row.model === "calibrated_level" && row.period === "2023-2025",
@@ -52,11 +53,11 @@ function renderFigures(runs, quality) {
   const low = Math.min(...held.map((row) => row.correlation));
   const high = Math.max(...held.map((row) => row.correlation));
   document.getElementById("hero-correlation").textContent =
-    `${number(low, 2)} to ${number(high, 2)}`;
+    `${number(low, 2)} à ${number(high, 2)}`;
   const errors = held.map((row) => row.rmse_cf);
   document.getElementById("hero-correlation-note").textContent =
-    `with the published output, hour by hour, on years left out of the fit; error ` +
-    `${number(Math.min(...errors), 3)} to ${number(Math.max(...errors), 3)} of capacity`;
+    "avec la production publiée, heure par heure, sur les années exclues du calage ; erreur " +
+    `de ${number(Math.min(...errors), 3)} à ${number(Math.max(...errors), 3)} de la capacité`;
 }
 
 function countUp(node, value) {
@@ -174,9 +175,9 @@ function renderRidges(days) {
         viewBox: `0 0 ${width} ${height}`,
         role: "img",
         "aria-label":
-          "Daily solar output published for mainland France, one line per year from 2019 to 2025. " +
-          "The output held back at negative prices appears from 2020, grows in 2024 and is largest " +
-          "in spring and summer 2025.",
+          "Production solaire journalière publiée pour la France continentale, une ligne par année " +
+          "de 2019 à 2025. La production non injectée aux prix négatifs apparaît dès 2020, grossit " +
+          "en 2024 et culmine au printemps et à l’été 2025.",
       },
       [svg("g", { class: "marks" }, rows), svg("g", { class: "axis" }, months), crosshair],
     );
@@ -223,13 +224,13 @@ function renderRidges(days) {
     focus.querySelector("circle").setAttribute("cy", y(index, published[position]));
     const lines = [
       html("strong", {}, [day(row.day)]),
-      tipLine(paint("--published"), `Published ${energy(row.published)}`),
-      tipLine(paint("--model"), `Potential ${energy(row.potential)}`),
+      tipLine(paint("--published"), `Publiée ${energy(row.published)}`),
+      tipLine(paint("--model"), `Potentiel ${energy(row.potential)}`),
     ];
     if (row.negativeHours > 0) {
       lines.push(
         html("span", {}, [
-          `${energy(row.heldBack)} held back in ${row.negativeHours} h at negative prices`,
+          `${energy(row.heldBack)} non injectés sur ${row.negativeHours}${THIN}h à prix négatif`,
         ]),
       );
     }

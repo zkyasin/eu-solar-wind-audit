@@ -1,6 +1,7 @@
 import { renderAnomalies } from "./anomalies.js";
 import { renderContent } from "./content.js";
 import { load } from "./data.js";
+import { day } from "./format.js";
 import { renderHero } from "./hero.js";
 import { renderModel } from "./model.js";
 import { renderModulation } from "./modulation.js";
@@ -43,9 +44,9 @@ async function renderMeta() {
   document
     .getElementById("meta")
     .replaceChildren(
-      `Data exported on ${meta.exported} from commit `,
+      `Données exportées le ${day(meta.exported)} depuis le commit `,
       commit,
-      ", results of 2019–2025.",
+      ", résultats 2019–2025.",
     );
 }
 
