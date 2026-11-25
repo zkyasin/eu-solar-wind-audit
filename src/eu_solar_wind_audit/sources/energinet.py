@@ -57,17 +57,27 @@ CAPACITY = "CapacityPerMunicipality"
 Area = Literal["DK1", "DK2", "DK"]
 PRICE_AREAS = ("DK1", "DK2")
 Quantity = Literal[
-    "solar", "solar_self_consumption", "wind_onshore", "wind_offshore", "gross_consumption"
+    "solar",
+    "solar_self_consumption",
+    "solar_total",
+    "wind_onshore",
+    "wind_offshore",
+    "gross_consumption",
 ]
-# Settlement columns whose sum gives each quantity.
+SIZE_CLASSES = ("SolarPowerLt10kW_MWh", "SolarPowerGe10Lt40kW_MWh", "SolarPowerGe40kW_MWh")
+# Settlement columns whose sum gives each quantity. The total adds the self-consumed output to the
+# size classes, which leave it out.
 QUANTITIES: dict[Quantity, tuple[str, ...]] = {
-    "solar": ("SolarPowerLt10kW_MWh", "SolarPowerGe10Lt40kW_MWh", "SolarPowerGe40kW_MWh"),
+    "solar": SIZE_CLASSES,
     "solar_self_consumption": ("SolarPowerSelfConMWh",),
+    "solar_total": (*SIZE_CLASSES, "SolarPowerSelfConMWh"),
     "wind_onshore": ("OnshoreWindLt50kW_MWh", "OnshoreWindGe50kW_MWh"),
     "wind_offshore": ("OffshoreWindLt100MW_MWh", "OffshoreWindGe100MW_MWh"),
     "gross_consumption": ("GrossConsumptionMWh",),
 }
-ENERGY_COLUMNS = tuple(column for columns in QUANTITIES.values() for column in columns)
+ENERGY_COLUMNS = tuple(
+    dict.fromkeys(column for columns in QUANTITIES.values() for column in columns)
+)
 CAPACITY_COLUMNS = {
     "SolarPowerCapacity": "solar_mw",
     "OnshoreWindCapacity": "wind_onshore_mw",

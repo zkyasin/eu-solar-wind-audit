@@ -58,6 +58,19 @@ def test_solar_is_the_sum_of_the_three_plant_sizes(tmp_path: Path) -> None:
     assert hourly["complete"].all()
 
 
+def test_total_solar_adds_the_self_consumed_output(tmp_path: Path) -> None:
+    hourly = settlement(
+        tmp_path,
+        "DK2",
+        "solar_total",
+        record("2024-06-01T10:00:00", "DK2", SolarPowerGe40kW_MWh=500.0, SolarPowerSelfConMWh=80.0),
+        record("2024-06-01T11:00:00", "DK2", SolarPowerSelfConMWh=None),
+    )
+
+    assert hourly["energy_mwh"].iloc[0] == 582.0
+    assert hourly["complete"].tolist() == [True, False]
+
+
 def test_denmark_is_complete_when_both_areas_are(tmp_path: Path) -> None:
     hourly = settlement(
         tmp_path,
