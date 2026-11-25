@@ -79,6 +79,23 @@ def test_a_replicate_without_resampling_gives_the_estimate(technology: physics.T
     assert found.to_numpy() == pytest.approx(estimate.to_numpy(), rel=1e-9)
 
 
+def test_onshore_wind_needs_no_pv_parameters_and_solar_does() -> None:
+    wind = [wind_year(year) for year in (2019, 2020, 2021)]
+    hours = pd.DatetimeIndex(pd.concat([inputs.arrays.covariates for inputs in wind]).index)
+    unchanged = bootstrap.Draw(
+        weights=pd.Series(1, index=hours),
+        dc_ac_ratio=1.0,
+        capacity_factors=pd.Series(1.0, index=hours),
+    )
+
+    with_pv = bootstrap.replicate(wind, "wind_onshore", PV, unchanged)
+    without = bootstrap.replicate(wind, "wind_onshore", None, unchanged)
+
+    pd.testing.assert_series_equal(with_pv, without)
+    with pytest.raises(ValueError, match="PV parameters"):
+        bootstrap.replicate([solar_year(2019)], "solar", None, unchanged)
+
+
 def test_replicates_are_the_same_for_the_same_seed(
     solar_years: list[eligibility.YearInputs],
 ) -> None:

@@ -82,13 +82,14 @@ def draw(
 def replicate(
     years: Sequence[eligibility.YearInputs],
     technology: physics.Technology,
-    pv: PVParameters,
+    pv: PVParameters | None,
     drawn: Draw,
     targets: pd.Series | None = None,
 ) -> pd.Series:
     """M-hat in GWh of each Europe/Paris month, `YYYY-MM`, with estimated hours in `years`, the
     yearly inputs of `technology`, for `drawn`. `pv` are the PV parameters of the solar arrays, at
-    the ratio that `drawn` gives; onshore wind ignores them. `targets`, on the hours of `years`,
+    the ratio that `drawn` gives; onshore wind ignores them, and a country without a solar model
+    has none. `targets`, on the hours of `years`,
     flags the estimated hours, the N hours without it: they leave the fit, the strata and the
     annual levels.
 
@@ -110,6 +111,8 @@ def replicate(
 
     fitted: calibration.SolarCalibration | calibration.WindCalibration
     if technology == "solar":
+        if pv is None:
+            raise ValueError("solar needs the PV parameters of its arrays")
         solar = [part for part in arrays if isinstance(part, precompute.SolarArrays)]
         fitted = calibration.fit_solar(
             solar,
@@ -140,7 +143,7 @@ def replicate(
 def replicates(
     years: Sequence[eligibility.YearInputs],
     technology: physics.Technology,
-    pv: PVParameters,
+    pv: PVParameters | None,
     *,
     count: int = REPLICATES,
     seed: int = SEED,

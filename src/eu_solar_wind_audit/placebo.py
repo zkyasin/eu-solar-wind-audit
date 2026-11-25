@@ -143,7 +143,7 @@ class Report:
 def evaluate(
     years: Sequence[eligibility.YearInputs],
     technology: physics.Technology,
-    pv: PVParameters,
+    pv: PVParameters | None,
     fit: fits.Fit,
     consumption_mwh: pd.Series,
     *,
@@ -151,7 +151,8 @@ def evaluate(
 ) -> Report:
     """The placebo and the injection of the module docstring, with `count` bootstrap replicates
     of the matched hours, for the yearly inputs `years` of `technology`, the PV parameters `pv`
-    of the solar arrays, the frozen `fit` and the national consumption `consumption_mwh`."""
+    of the solar arrays, None without a solar model, the frozen `fit` and the national consumption
+    `consumption_mwh`."""
     matching = match(years, fit, consumption_mwh)
     targets = matching.targets
     if not targets.any():
@@ -160,7 +161,8 @@ def evaluate(
     hours = pd.DatetimeIndex(targets.index)
     unchanged = bootstrap.Draw(
         weights=pd.Series(1, index=hours),
-        dc_ac_ratio=pv.dc_ac_ratio,
+        # Onshore wind ignores the ratio.
+        dc_ac_ratio=pv.dc_ac_ratio if pv is not None else 1.0,
         capacity_factors=pd.Series(1.0, index=hours),
     )
     lowered = inject(years, targets)

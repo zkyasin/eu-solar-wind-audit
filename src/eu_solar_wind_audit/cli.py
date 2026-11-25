@@ -429,7 +429,7 @@ def estimate_modulation(
             ratios["intervals-dc-ac-sensitivity"] = bootstrap.DC_AC_SENSITIVITY
         for name, dc_ac_ratios in ratios.items():
             replicated = bootstrap.replicates(
-                years, technology, parameters.pv(), count=replicates, dc_ac_ratios=dc_ac_ratios
+                years, technology, parameters.solar, count=replicates, dc_ac_ratios=dc_ac_ratios
             )
             interval = bootstrap.intervals(replicated).join(estimates)
             tables[f"modulation-{name}"] = interval
@@ -442,7 +442,7 @@ def estimate_modulation(
         checked = placebo.evaluate(
             years,
             technology,
-            parameters.pv(),
+            parameters.solar,
             fit,
             consumption["energy_mwh"],
             count=replicates,
