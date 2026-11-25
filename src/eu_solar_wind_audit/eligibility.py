@@ -1,6 +1,7 @@
 """Hours on which the calibrated potential of a country is fitted and evaluated (evaluation plan,
 "Scope", "Two model objects", "Axis 1" and Deviations), and the inputs they are chosen from, one
-UTC year at a time: the éCO2mix series of mainland France and the SMARD feed-in of Germany.
+UTC year at a time: the éCO2mix series of mainland France, the SMARD feed-in of Germany and the
+settlement data of the Danish price areas.
 
 Each rule of `Eligibility` has its own column, so that a report can count the hours that each one
 leaves out.
@@ -8,6 +9,7 @@ leaves out.
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import httpx
 import numpy as np
@@ -18,11 +20,12 @@ from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import evaluation, grid, physics, precompute, regimes
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import bkg, natural_earth, odre, smard
+from eu_solar_wind_audit.sources import bkg, energinet, gisco, natural_earth, odre, smard
 
 FINAL_STATUSES = ["definitive", "consolidated"]
 # The day-ahead zone of each country, a key of smard.PRICES.
-PRICE_ZONES = {"FR": "FR", "DE": "DE-LU"}
+# Keyed by the zone each calibration runs on.
+PRICE_ZONES = {"FR": "FR", "DE": "DE-LU", "DK1": "DK1", "DK2": "DK2"}
 
 
 class Eligibility(pa.DataFrameModel):
@@ -69,9 +72,10 @@ def eligible_hours(
 ) -> DataFrame[Eligibility]:
     """Rules of `Eligibility` for each hour of `published`, the series that `technology` is
     calibrated on in `country`, a key of PRICE_ZONES: in France, national solar or the onshore
-    wind of odre.onshore_hourly, an odre.Hourly frame; in Germany, the SMARD feed-in, a grid.Hourly
-    frame. SMARD gives no publication status and publishes onshore wind apart, so every German hour
-    is final and an onshore reference.
+    wind of odre.onshore_hourly, an odre.Hourly frame; in Germany, the SMARD feed-in, and in the
+    Danish price areas, the settlement data of Energinet, grid.Hourly frames. Neither gives a
+    publication status, and both publish onshore wind apart, so each of their hours is final and an
+    onshore reference.
 
     `covariates` are the precompute.Covariates of the technology and `price_classes` the classes of
     regimes.classify_hours, both on the hours of `published`.
@@ -140,8 +144,8 @@ def price_classes(
 class YearInputs:
     """Calibration inputs of one technology in one country, a key of PRICE_ZONES, on the hours of
     one UTC year, all on the same hours: the published series, an odre.Hourly frame for France and
-    a grid.Hourly frame for Germany, its price classes, the precompute arrays with their
-    covariates, and the rules of `Eligibility`."""
+    a grid.Hourly frame elsewhere, its price classes, the precompute arrays with their covariates,
+    and the rules of `Eligibility`."""
 
     country: str
     published: pd.DataFrame
@@ -186,15 +190,17 @@ def year_inputs(
     *,
     odre_cache_dir: Path = odre.CACHE_DIR,
     smard_cache_dir: Path = smard.CACHE_DIR,
+    energinet_cache_dir: Path = energinet.CACHE_DIR,
     era5_cache_dir: Path = physics.ERA5_CACHE_DIR,
 ) -> YearInputs:
     """Calibration inputs of `technology` in the country of `parameters` on the hours of the UTC
     year `year`: the published series, the `price_classes` of its zone, and the arrays of
     precompute.solar or precompute.wind_onshore from the capacity and the areas that
-    physics.model_france or physics.model_germany load.
+    physics.model_france, physics.model_germany or physics.model_denmark load.
 
     The published series is national solar or the onshore wind of odre.onshore_hourly for France,
-    the SMARD feed-in of Germany for Germany.
+    the SMARD feed-in of Germany for Germany, and the settlement data of the price area for
+    Denmark: solar with its self-consumed part, and onshore wind.
     """
     country = parameters.country
     start = pd.Timestamp(year, 1, 1, tz="UTC")
@@ -213,6 +219,18 @@ def year_inputs(
         )
         monthly = physics.load_germany_capacity(technology, parameters)
         regions = bkg.load_districts()
+    elif country in energinet.PRICE_AREAS:
+        quantity: energinet.Quantity = "solar_total" if technology == "solar" else technology
+        published = energinet.fetch_hourly_settlement(
+            cast(energinet.Area, country),
+            quantity,
+            start,
+            end,
+            client=client,
+            cache_dir=energinet_cache_dir,
+        )
+        monthly = physics.load_denmark_capacity(technology, parameters)
+        regions = gisco.load_municipalities("DK")
     else:
         raise ValueError(f"no calibration inputs for {country}")
     classes = price_classes(

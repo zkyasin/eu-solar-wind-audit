@@ -53,6 +53,14 @@ FOLD_YEARS: dict[str, dict[physics.Technology, tuple[int, ...]]] = {
         "solar": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
         "wind_onshore": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
     },
+    "DK1": {
+        "solar": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
+        "wind_onshore": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
+    },
+    "DK2": {
+        "solar": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
+        "wind_onshore": (2019, 2020, 2021, 2022, 2023, 2024, 2025),
+    },
 }
 # Price selection removes most sunny peak hours from the eligible hours of 2024 and 2025
 # (evaluation plan, Deviations), so the sensitivity fit stops before them (calibration critique).

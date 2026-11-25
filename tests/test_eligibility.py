@@ -15,7 +15,7 @@ from shapely.geometry import box
 from eu_solar_wind_audit import days, eligibility, physics, precompute, regimes
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import bkg, era5, natural_earth, odre, smard
+from eu_solar_wind_audit.sources import bkg, energinet, era5, gisco, natural_earth, odre, smard
 
 SHARED_RULES = [
     "consolidated_or_definitive",
@@ -532,4 +532,78 @@ def test_year_inputs_of_germany(
     # German Unity Day, Monday 3 October 2022, is a holiday; Thursday 14 July is not.
     day_type = inputs.arrays.covariates["day_type"]
     assert day_type[pd.Timestamp("2022-10-03 10:00", tz="UTC")] == "sunday_or_holiday"
+    assert day_type[pd.Timestamp("2022-07-14 10:00", tz="UTC")] == "working_day"
+
+
+DENMARK_WEST = Country(
+    country="DK1",
+    time_zone="Europe/Copenhagen",
+    perimeter="price_area",
+    era5_box=BOX,
+    solar=COUNTRY.solar,
+    wind_onshore=COUNTRY.wind_onshore,
+)
+# One municipality, Randers, over the four cells.
+MUNICIPALITIES = gpd.GeoDataFrame(
+    {"region": ["730"]}, geometry=[box(1.875, 44.875, 2.375, 45.375)], crs="EPSG:4326"
+)
+
+
+def danish_panel(technology: str) -> pd.DataFrame:
+    """Month-end capacity of Randers, as physics.load_denmark_capacity gives it: one part per
+    window of DENMARK_WEST for onshore wind."""
+    windows = range(len(DENMARK_WEST.wind_onshore)) if technology == "wind_onshore" else [0]
+    return pd.concat(
+        [capacity_panel(technology).assign(generation=window) for window in windows]
+    ).assign(department_code="730", department="730", region="DK1")
+
+
+def settlement_cache(path: Path) -> Path:
+    """Settlement data of DK1 for the local Danish years 2022 and 2023, cached as
+    energinet.fetch_hourly_settlement keeps settled years: 250 MWh in every column at every hour
+    of 2022 in UTC."""
+    path.mkdir()
+    for year, hours in {
+        2022: utc_hours("2021-12-31 23:00", periods=8760),
+        2023: utc_hours("2022-12-31 23:00", periods=1),
+    }.items():
+        records = [
+            {"HourUTC": hour.strftime("%Y-%m-%dT%H:%M:%S"), "PriceArea": "DK1"}
+            | dict.fromkeys(energinet.ENERGY_COLUMNS, 250.0)
+            for hour in hours
+        ]
+        (path / f"{energinet.SETTLEMENT}_{year}.json").write_text(json.dumps({"records": records}))
+    return path
+
+
+@pytest.mark.parametrize(("technology", "mwh"), [("solar", 1000.0), ("wind_onshore", 500.0)])
+def test_year_inputs_of_a_danish_price_area(
+    technology: physics.Technology, mwh: float, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        physics, "load_denmark_capacity", lambda technology, parameters: danish_panel(technology)
+    )
+    monkeypatch.setattr(gisco, "load_municipalities", lambda country: MUNICIPALITIES)
+    monkeypatch.setattr(era5, "read_era5", weather)
+    prices = pd.Series(50.0, index=quarter_hours("2021-12-31 23:00", "2023-01-01 01:00"))
+
+    with serving(smard_files(prices, "DK1"), []) as client:
+        inputs = eligibility.year_inputs(
+            client,
+            technology,
+            2022,
+            DENMARK_WEST,
+            smard_cache_dir=tmp_path / "smard",
+            energinet_cache_dir=settlement_cache(tmp_path / "energinet"),
+            era5_cache_dir=tmp_path / "era5",
+        )
+
+    assert inputs.country == "DK1"
+    assert inputs.published.index.equals(YEAR_HOURS)
+    # Solar adds its self-consumed column to the three size classes; onshore wind has two classes.
+    assert inputs.published["energy_mwh"].eq(mwh).all()
+    assert inputs.eligibility["consolidated_or_definitive"].all()
+    # Maundy Thursday, 14 April 2022, is a Danish holiday; Thursday 14 July is not.
+    day_type = inputs.arrays.covariates["day_type"]
+    assert day_type[pd.Timestamp("2022-04-14 10:00", tz="UTC")] == "sunday_or_holiday"
     assert day_type[pd.Timestamp("2022-07-14 10:00", tz="UTC")] == "working_day"

@@ -61,8 +61,8 @@ def year_inputs(
 ) -> eligibility.YearInputs:
     """Inputs of `country` on the hours of `arrays`: the published output is `truth_mwh` with a
     noise of 0.01 in capacity factor, and one hour in 50 has a negative price. French output is
-    definitive, except where odre.onshore_hourly has no onshore wind; German output, as SMARD
-    gives it, has no status."""
+    definitive, except where odre.onshore_hourly has no onshore wind; German and Danish output, as
+    SMARD and Energinet give it, has no status."""
     hours = pd.DatetimeIndex(truth_mwh.index)
     published = pd.DataFrame(
         {
@@ -72,7 +72,7 @@ def year_inputs(
         },
         index=hours,
     )
-    if country == "DE":
+    if country != "FR":
         published = grid.Hourly.validate(published.drop(columns="status"))
     else:
         if isinstance(arrays, precompute.WindArrays):
