@@ -124,6 +124,20 @@ def test_the_current_year_is_not_cached(tmp_path: Path) -> None:
     assert not any(tmp_path.iterdir())
 
 
+def test_a_year_still_corrected_is_downloaded_once_per_process(tmp_path: Path) -> None:
+    start = pd.Timestamp.now(tz="UTC").floor("h") - HOUR
+    hour = start.strftime("%Y-%m-%dT%H:%M:%S")
+    client, requests = serving({"records": [record(hour, "DK1"), record(hour, "DK2")]})
+
+    for quantity in ("solar", "wind_onshore"):
+        hourly = energinet.fetch_hourly_settlement(
+            "DK", quantity, start, start + HOUR, client=client, cache_dir=tmp_path
+        )
+        assert hourly["energy_mwh"].tolist() == [len(energinet.QUANTITIES[quantity]) * 2.0]
+
+    assert len(requests) == 1
+
+
 def test_a_rate_limit_waits_the_time_the_api_asks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

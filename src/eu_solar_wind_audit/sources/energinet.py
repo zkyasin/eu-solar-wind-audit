@@ -44,6 +44,9 @@ RETRY_DELAY_SECONDS = 10.0
 RATE_LIMIT_SECONDS = 300.0
 # Settlement data are corrected after delivery, so recent years are downloaded again on each call.
 SETTLED_AFTER = pd.Timedelta(days=90)
+# Years still corrected are kept for the process: the API allows about one request per dataset
+# every five minutes, and a run reads each year for several quantities.
+_unsettled: dict[tuple[Path, int], bytes] = {}
 
 SETTLEMENT = "ProductionConsumptionSettlement"
 # First year whose solar output is split between the size classes and self-consumption: "Before
@@ -170,11 +173,15 @@ def _year(client: httpx.Client, year: int, cache_dir: Path) -> pd.DataFrame:
     path = cache_dir / f"{SETTLEMENT}_{year}.json"
     if path.exists():
         content = path.read_bytes()
+    elif (cache_dir, year) in _unsettled:
+        content = _unsettled[cache_dir, year]
     else:
         params = {"start": f"{year}-01-01", "end": f"{year + 1}-01-01", "limit": "0"}
         content = _get(client, f"{BASE_URL}/{SETTLEMENT}", params)
         if pd.Timestamp(year + 1, 1, 1, tz=TIMEZONE) + SETTLED_AFTER <= pd.Timestamp.now(tz="UTC"):
             _write(path, content)
+        else:
+            _unsettled[cache_dir, year] = content
     records = pd.DataFrame(
         json.loads(content)["records"], columns=["HourUTC", "PriceArea", *ENERGY_COLUMNS]
     )
