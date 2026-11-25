@@ -32,10 +32,11 @@ wind in the Netherlands, 2019-2025:
    France and Germany, of 0.041 to 0.060 and 0.96 to 0.98 in the smaller Danish price areas, and
    of 0.042 and 0.98 for the Dutch onshore wind of the transmission grid (2023-2025, hours priced
    5 €/MWh or more).
-2. **Anomalies.** 194 findings in France, 110 in Germany and 21 in Denmark. Among those checked
-   against the raw files: an empty half-hour in all 26 éCO2mix solar and wind series, a German
-   control area published as zero for more than a week while the national total kept its output,
-   and a Danish estimate of self-consumed solar output two hours early for two months of 2020.
+2. **Anomalies.** 194 findings in France, 110 in Germany, 21 in Denmark and 4 in the
+   Netherlands. Among those checked against the raw files: an empty half-hour in all 26 éCO2mix
+   solar and wind series, a German control area published as zero for more than a week while the
+   national total kept its output, a Danish estimate of self-consumed solar output two hours early
+   for two months of 2020, and Dutch solar published as zero for 68 hours of February 2019.
 3. **Content.** SMARD, feed-in only, and Energy-Charts total power, which adds self-consumption,
    land in the cells their producers state, and so do the two Danish series of Energinet, with
    and without its self-consumption estimate. French self-consumption, 1 to 7 % of solar output,
@@ -51,7 +52,7 @@ wind in the Netherlands, 2019-2025:
 | Axis | Mainland France | Germany | Denmark (DK1, DK2) | Netherlands |
 |---|---|---|---|---|
 | 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 | Calibrated on 2019-2025 per price area | Onshore wind calibrated on 2019-2025 |
-| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | All detectors, 2019-2025 | Next |
+| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | All detectors, 2019-2025 | Rule-based on all series, statistical on onshore wind, 2019-2025 |
 | 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete | Size classes feed-in only; with self-consumption complete | Transmission grid only |
 | 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Estimated, no reference; published above the detectable effect | Onshore wind estimated, no reference; inconclusive every year |
 
@@ -123,12 +124,13 @@ Fraunhofer ISE puts it at 6 % of German solar output in 2019 and 22 % in 2025.
 ### Anomalies in the published series
 
 Every hourly solar and wind series of mainland France (national and 12 regions, éCO2mix),
-Germany (national and four control areas, SMARD, with Energy-Charts as a second source) and the
-Danish price areas (Energinet settlement data) goes through rule-based detectors, and through
-statistical detectors on its residual against the model of its area, with thresholds fixed on
-2019-2022 (tags `anomaly-thresholds-fr-v1`, `anomaly-thresholds-de-v1` and
-`anomaly-thresholds-dk-v1`). The 2019-2025 runs give 194 findings in France, 110 in Germany, 13 in
-DK1 and 8 in DK2. The cases checked against the raw files are written as tickets in
+Germany (national and four control areas, SMARD, with Energy-Charts as a second source), the
+Danish price areas (Energinet settlement data) and the Netherlands (ENTSO-E Transparency Platform)
+goes through rule-based detectors, and through statistical detectors on its residual against the
+model of its area, with thresholds fixed on 2019-2022 (tags `anomaly-thresholds-fr-v1`,
+`anomaly-thresholds-de-v1`, `anomaly-thresholds-dk-v1` and `anomaly-thresholds-nl-v1`). The
+2019-2025 runs give 194 findings in France, 110 in Germany, 13 in DK1, 8 in DK2 and 4 in the
+Netherlands. The cases checked against the raw files are written as tickets in
 [docs/anomalies-2019-2025.md](docs/anomalies-2019-2025.md), among them:
 
 - éCO2mix: the half-hour ending at midnight on 31 December 2025 is empty in all 26 solar and wind
@@ -145,6 +147,8 @@ DK1 and 8 in DK2. The cases checked against the raw files are written as tickets
 - Energinet: the self-consumed solar output that Energinet estimates runs about two hours early
   from 17 June to 14 August 2020, and its negative afternoon values cancel the metered output
   (DK-2).
+- Transparency Platform: Dutch solar published as zero for 68 hours from 4 to 7 February 2019,
+  through two days of daylight without snow (NL-2).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/sum-of-parts-dark.svg">
@@ -311,6 +315,7 @@ ENTSOE_API_TOKEN=... uv run eu-solar-wind-audit estimate-modulation NL wind_onsh
 # Anomalies, with the frozen thresholds of config/anomaly-thresholds.
 uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
+ENTSOE_API_TOKEN=... uv run eu-solar-wind-audit detect-anomalies NL 2019-01-01 2026-01-01 data/processed/anomalies-nl
 # What the published series contain, against Eurostat, references/sdes and references/documentation.
 ENTSOE_API_TOKEN=... uv run eu-solar-wind-audit audit-perimeter data/processed/perimeter
 # The feed-in and consumption signatures, from the solar predictions of calibrate.

@@ -1,24 +1,30 @@
 # Anomalies in published solar and wind series, 2019-2025
 
 The detectors of axis 2 of the [evaluation plan](evaluation-plan.md) were run on the hourly solar
-and wind series of mainland France, Germany and the two Danish price areas, over 1 January 2019 to
-31 December 2025:
+and wind series of mainland France, Germany, the two Danish price areas and the Netherlands, over
+1 January 2019 to 31 December 2025:
 
 ```
 eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
 eu-solar-wind-audit detect-anomalies DK1 2019-01-01 2026-01-01 data/processed/anomalies-dk1
 eu-solar-wind-audit detect-anomalies DK2 2019-01-01 2026-01-01 data/processed/anomalies-dk2
+ENTSOE_API_TOKEN=... eu-solar-wind-audit detect-anomalies NL 2019-01-01 2026-01-01 data/processed/anomalies-nl
 ```
 
 Each country or price area uses the thresholds of `config/anomaly-thresholds/<code>.json`, fixed
 on 2019-2022 before any later year was read (tags `anomaly-thresholds-fr-v1`,
-`anomaly-thresholds-de-v1` and `anomaly-thresholds-dk-v1`). The German model covers Germany and
+`anomaly-thresholds-de-v1`, `anomaly-thresholds-dk-v1` and `anomaly-thresholds-nl-v1`). The German model covers Germany and
 each of its four control areas, whose units are placed by the grid connection points of the
 Marktstammdatenregister. The Danish series are the hourly settlement data of Energinet: solar, the
 three metered size classes plus the self-consumed output that Energinet estimates, and onshore
-and offshore wind, each in its own price area. Each run writes its findings, the level
-breaks left unattributed, and a JSON file with the SHA-256 of every input series.
+and offshore wind, each in its own price area. The Dutch series are the solar, onshore wind and
+offshore wind of the NL zone on the ENTSO-E Transparency Platform, which hold the plants of the
+transmission grid only. Onshore wind alone has a model, on the capacity behind the series: solar
+and offshore wind get the rule-based detectors, and the level breaks of onshore wind are never
+attributed, since no solar series can confirm them. The values of the platform are not
+republished, so the Dutch tickets give dates, durations and shares. Each run writes its findings,
+the level breaks left unattributed, and a JSON file with the SHA-256 of every input series.
 
 A finding is not a defect. The cases below were checked against the raw files of the publisher
 and are written as the tickets that would be sent to it. The other findings follow, with the
@@ -26,20 +32,20 @@ reason they are not attributed to the published data.
 
 ## Findings by kind
 
-| Kind | France (éCO2mix) | Germany (SMARD, Energy-Charts) | DK1 (Energinet) | DK2 (Energinet) |
-|---|---|---|---|---|
-| gap | 26 | 7 | 0 | 0 |
-| negative | 30 | 0 | 7 | 3 |
-| above_capacity | 71 | 0 | 0 | 0 |
-| frozen | 31 | 3 | 0 | 0 |
-| parts_gap | 19 | 51 | 0 | 0 |
-| cross_source_gap | 0 | 22 | 0 | 0 |
-| timestamp_shift | 5 | 0 | 2 | 0 |
-| clock_change_jump | 1 | 0 | 0 | 0 |
-| residual_outlier | 5 | 7 | 4 | 3 |
-| level_break | 4 | 20 | 0 | 2 |
-| clock_change_convention | 2 | 0 | 0 | 0 |
-| Level breaks left unattributed | 10 | 4 | 5 | 5 |
+| Kind | France (éCO2mix) | Germany (SMARD, Energy-Charts) | DK1 (Energinet) | DK2 (Energinet) | Netherlands (ENTSO-E) |
+|---|---|---|---|---|---|
+| gap | 26 | 7 | 0 | 0 | 3 |
+| negative | 30 | 0 | 7 | 3 | 0 |
+| above_capacity | 71 | 0 | 0 | 0 | 0 |
+| frozen | 31 | 3 | 0 | 0 | 1 |
+| parts_gap | 19 | 51 | 0 | 0 | 0 |
+| cross_source_gap | 0 | 22 | 0 | 0 | 0 |
+| timestamp_shift | 5 | 0 | 2 | 0 | 0 |
+| clock_change_jump | 1 | 0 | 0 | 0 | 0 |
+| residual_outlier | 5 | 7 | 4 | 3 | 0 |
+| level_break | 4 | 20 | 0 | 2 | 0 |
+| clock_change_convention | 2 | 0 | 0 | 0 | 0 |
+| Level breaks left unattributed | 10 | 4 | 5 | 5 | 2 |
 
 Times are in UTC unless a time zone is given.
 
@@ -179,6 +185,24 @@ The self-consumption column is below zero at 876 hours in DK1 and 871 in DK2, al
 year it first sits beside the size classes. Most are small: total solar stays below zero at 683
 hours in DK1 and 568 in DK2, by at most 0.6 MWh, at night. No other year has a negative value.
 
+### NL-1. One quarter-hour missing from the three Dutch series at the autumn clock change, 26 October 2025
+
+The Transparency Platform gives no value for the quarter-hour from 00:00 to 00:15 on 26 October
+2025, 02:00 to 02:15 summer time, the first quarter-hour of the hour that the clock change
+repeats, in the solar, the onshore wind and the offshore wind of the NL zone. The other
+quarter-hours of that night are there, and no other hour of 2019 to 2025 is missing from these
+series, at the autumn changes of 2019 to 2024 or at any spring change. Found as a gap in each of
+the three series.
+
+### NL-2. Dutch solar published as zero for two and a half days of daylight, 4 to 7 February 2019
+
+The solar of the NL zone is zero at every quarter-hour from 16:00 on 4 February to 12:00 on
+7 February 2019: 68 hours that hold the daylight of 5 and 6 February and the morning of the 7th.
+ERA5 gives the Dutch box 0.4 to 1.0 kWh m-2 of daily irradiation over these days, and snow of
+more than 5 mm water equivalent on 16 % of its cells on 1 February and on none from 3 February, so
+a whole fleet at zero is not plausible. The series resumes at noon on 7 February. Found as a
+frozen run of solar, 68 hours at zero.
+
 ## Findings not attributed to the published data
 
 - Zero runs of offshore wind (31 `frozen`): 24 to 96 hours at exactly zero in Normandie (7),
@@ -238,6 +262,10 @@ hours in DK1 and 568 in DK2, by at most 0.6 MWh, at night. No other year has a n
   that ERA5 misses.
 - DK1 solar on 25 to 30 August 2021: a shift of +1 h claimed on three days off only, which the
   centroids of the size classes and of the Transparency Platform do not show.
+- Dutch onshore wind (2 level breaks, no solar model): a rise of 51 % against the model on
+  31 October 2019, 3.7 sigmas, and a fall of 10 % on 30 September 2020. They follow the share of
+  the onshore output of CBS that the series holds, 0.41 in 2019, 0.53 in 2020 and 0.49 in 2021,
+  as farms join or leave the grid behind it, which the plan expected.
 
 ## Limits
 
@@ -249,4 +277,6 @@ hours in DK1 and 568 in DK2, by at most 0.6 MWh, at night. No other year has a n
   interpolates linearly between quarter ends.
 - Denmark publishes no total of its two price areas, so its series get no sum-of-parts check;
   the Transparency Platform served to check DK-1 and DK-2 by hand only.
+- The Dutch series cover the transmission grid only, about half of the onshore output of CBS, and
+  their solar 1 to 4 % of the national output; only onshore wind has a model.
 - No case has been reported to its publisher yet.
