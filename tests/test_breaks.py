@@ -215,6 +215,37 @@ def test_a_large_step_of_one_technology_is_left_unattributed() -> None:
     assert found.unattributed["reason"].tolist() == ["single_technology"]
 
 
+def test_the_breaks_of_a_wind_series_alone_are_left_unattributed() -> None:
+    wind: dict[breaks.Technology, Ratios] = {"wind": area({}, {"2020-06-17": np.log(0.5)})["wind"]}
+
+    found = breaks.level_breaks(
+        wind,
+        no_junctions(),
+        series={"wind": SERIES["wind"]},
+        provenance={"wind": PROVENANCE["wind"]},
+        penalties=Penalties(solar=None, wind=200.0, joint=None),
+        start=utc("2020-01-01"),
+        end=utc("2021-01-01"),
+    )
+
+    assert found.findings.empty
+    assert found.unattributed["series"].tolist() == [SERIES["wind"]]
+    assert found.unattributed["reason"].tolist() == ["no_solar_model"]
+
+
+def test_an_area_with_solar_needs_its_solar_and_joint_penalties() -> None:
+    with pytest.raises(ValueError, match="a penalty for each search"):
+        breaks.level_breaks(
+            area({}, {}),
+            no_junctions(),
+            series=SERIES,
+            provenance=PROVENANCE,
+            penalties=Penalties(solar=None, wind=200.0, joint=None),
+            start=utc("2020-01-01"),
+            end=utc("2021-01-01"),
+        )
+
+
 def test_a_common_step_near_a_junction_is_left_unattributed() -> None:
     step = np.log(0.7)
     junctions = pd.DataFrame(

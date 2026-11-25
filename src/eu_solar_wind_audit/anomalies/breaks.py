@@ -70,7 +70,13 @@ JUNCTION_KINDS = ["first_era5t_hour", "first_provisional_capacity_hour", "status
 MATCH_DAYS = 3
 # A joint break is attributed only when the step of each series reaches this many sigmas.
 STEP_FROM_SIGMAS = 1.0
-REASONS = ["near_junction", "no_joint_break", "single_technology", "opposite_signs"]
+REASONS = [
+    "near_junction",
+    "no_joint_break",
+    "single_technology",
+    "opposite_signs",
+    "no_solar_model",
+]
 # Detection runs search the daily ratios from the start of the period of the plan, and report the
 # breaks of [START, END) once the ratios reach 15 days past END (anomaly critique).
 FIRST_DAY = pd.Timestamp("2019-01-01", tz="UTC")
@@ -341,11 +347,12 @@ class Unattributed(Findings):
 
 class Penalties(NamedTuple):
     """Penalties of the search of a solar series, of a wind series, and of the solar and the wind
-    series of an area together."""
+    series of an area together; None for the solar and joint searches of a country without a
+    solar model."""
 
-    solar: float
+    solar: float | None
     wind: float
-    joint: float
+    joint: float | None
 
 
 class LevelBreaks(NamedTuple):
@@ -369,7 +376,8 @@ def level_breaks(
 ) -> LevelBreaks:
     """Level breaks dated in [start, end), both hour starts in UTC, of the solar and the wind
     series of an area: their `ratios`, their ids `series`, the `provenance` of their rows, and the
-    `junctions` of both.
+    `junctions` of both. An area without a solar model gives the ratios of its wind series alone:
+    each of its breaks is unattributed (no_solar_model), since no joint break can confirm it.
 
     Each series is searched alone with the penalty of its technology, and both together with the
     joint penalty, as change_points does. A joint break is attributed to the published data when
@@ -390,8 +398,19 @@ def level_breaks(
     reason.
     """
     grid.check_period(start, end)
-    if set(ratios) != set(TECHNOLOGIES):
-        raise ValueError("expected the ratios of a solar and a wind series")
+    if set(ratios) not in ({"solar", "wind"}, {"wind"}):
+        raise ValueError("expected the ratios of a solar and a wind series, or of a wind series")
+    alone_penalties: dict[Technology, float | None] = {
+        "solar": penalties.solar,
+        "wind": penalties.wind,
+    }
+    searched_alone = {
+        technology: alone_penalties[technology]
+        for technology in TECHNOLOGIES
+        if technology in ratios
+    }
+    if None in searched_alone.values() or ("solar" in ratios and penalties.joint is None):
+        raise ValueError("expected a penalty for each search of the ratios")
     for technology, searched in ratios.items():
         _check_window(searched.daily, series[technology], technology, end)
     ratios = {
@@ -401,7 +420,11 @@ def level_breaks(
     nearby = Junctions.validate(junctions)
     junction_days = nearby.assign(day=nearby["time"].dt.floor("D"))
 
-    joint = change_points(ratios, penalty=penalties.joint)
+    joint = (
+        change_points(ratios, penalty=penalties.joint)
+        if "solar" in ratios and penalties.joint is not None
+        else Breaks.empty()
+    )
     joint_steps: dict[pd.Timestamp, dict[str, float]] = {}
     for row in joint.to_dict("records"):
         joint_steps.setdefault(row["day"], {})[row["technology"]] = row["step_sigmas"]
@@ -430,8 +453,9 @@ def level_breaks(
         else:
             unattributed.append((record, "near_junction"))
 
-    for technology in TECHNOLOGIES:
-        penalty = penalties.solar if technology == "solar" else penalties.wind
+    for technology, penalty in searched_alone.items():
+        if penalty is None:
+            continue
         alone = change_points({technology: ratios[technology]}, penalty=penalty)
         for row in alone.to_dict("records"):
             joint_day = _nearest_day(joint_days, row["day"])
@@ -454,7 +478,12 @@ def level_breaks(
             junction = _nearest_junction(junction_days, row["day"])
             if junction is not None:
                 evidence["junction"] = junction
-            reason = "near_junction" if junction is not None else joint_reason or "no_joint_break"
+            if junction is not None:
+                reason = "near_junction"
+            elif "solar" not in ratios:
+                reason = "no_solar_model"
+            else:
+                reason = joint_reason or "no_joint_break"
             record = _record(row, series[technology], provenance[technology], evidence)
             unattributed.append((record, reason))
 
