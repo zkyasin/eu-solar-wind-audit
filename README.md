@@ -47,7 +47,7 @@ Solar and onshore wind in mainland France and Germany, 2019-2025:
 | 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 | Calibrated on 2019-2025 per price area |
 | 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | Next |
 | 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete | Size classes feed-in only; with self-consumption complete |
-| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Next, without reference |
+| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Estimated, no reference; published above the detectable effect |
 
 The Netherlands already serve axis 3 as a validation series; their other axes follow, then
 Belgium, Spain, Portugal, Italy, Austria and Poland, each published with the level of evidence the
@@ -210,6 +210,15 @@ the volumes are 79 to 90 % of his, which also hold offshore wind. Solar in 2025 
 when home batteries and self-consumption take the midday output. Details in
 [docs/modulation-germany.md](docs/modulation-germany.md).
 
+### Output modulated during negative prices in Denmark
+
+No published volume of Danish modulation exists, so the estimates of the two price areas carry no
+reference and count only where they reach their minimal detectable effect. DK1 solar holds back
+22 % of its potential at the negative-price hours of 2023, 28 % in 2024 and 42 % in 2025, about
+0.3 TWh that year (90 % interval 0.27 to 0.32 TWh); DK1 onshore wind holds back 22 to 26 % in
+2023-2025. DK2 reaches its detectable effect for solar in 2025 and onshore wind in 2024 only.
+Details in [docs/modulation-denmark.md](docs/modulation-denmark.md).
+
 ## How it works
 
 - **Physics model.** ERA5 hourly weather on its 0.25° grid. Solar output comes from pvlib, on the
@@ -265,6 +274,10 @@ uv run eu-solar-wind-audit estimate-modulation FR solar data/processed/modulatio
 uv run eu-solar-wind-audit estimate-modulation FR wind_onshore data/processed/modulation-fr
 uv run eu-solar-wind-audit estimate-modulation DE solar data/processed/modulation-de
 uv run eu-solar-wind-audit estimate-modulation DE wind_onshore data/processed/modulation-de
+uv run eu-solar-wind-audit estimate-modulation DK1 solar data/processed/modulation-dk1
+uv run eu-solar-wind-audit estimate-modulation DK1 wind_onshore data/processed/modulation-dk1
+uv run eu-solar-wind-audit estimate-modulation DK2 solar data/processed/modulation-dk2
+uv run eu-solar-wind-audit estimate-modulation DK2 wind_onshore data/processed/modulation-dk2
 # Anomalies, with the frozen thresholds of config/anomaly-thresholds.
 uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
