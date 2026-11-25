@@ -45,9 +45,9 @@ RETRY_DELAY_SECONDS = 10.0
 RATE_LIMIT_SECONDS = 300.0
 # Settlement data are corrected after delivery, so recent years are downloaded again on each call.
 SETTLED_AFTER = pd.Timedelta(days=90)
-# Years still corrected are kept for the process: the API allows about one request per dataset
-# every five minutes, and a run reads each year for several quantities.
-_unsettled: dict[tuple[Path, int], bytes] = {}
+# A year still corrected is kept for a day under its own name: the API allows about one request per
+# dataset every five minutes, and runs read each year for several quantities and areas.
+RECENT_FOR = pd.Timedelta(days=1)
 
 SETTLEMENT = "ProductionConsumptionSettlement"
 # First year whose solar output is split between the size classes and self-consumption: "Before
@@ -247,17 +247,20 @@ def _records(
 def _year(client: httpx.Client, year: int, cache_dir: Path) -> pd.DataFrame:
     """Settlement records of a local Danish year, with their UTC hour as `time`."""
     path = cache_dir / f"{SETTLEMENT}_{year}.json"
+    recent = cache_dir / f"{SETTLEMENT}_{year}_recent.json"
+    now = pd.Timestamp.now(tz="UTC")
     if path.exists():
         content = path.read_bytes()
-    elif (cache_dir, year) in _unsettled:
-        content = _unsettled[cache_dir, year]
+    elif (
+        recent.exists()
+        and now - pd.Timestamp(recent.stat().st_mtime, unit="s", tz="UTC") < RECENT_FOR
+    ):
+        content = recent.read_bytes()
     else:
         params = {"start": f"{year}-01-01", "end": f"{year + 1}-01-01", "limit": "0"}
         content = _get(client, f"{BASE_URL}/{SETTLEMENT}", params)
-        if pd.Timestamp(year + 1, 1, 1, tz=TIMEZONE) + SETTLED_AFTER <= pd.Timestamp.now(tz="UTC"):
-            _write(path, content)
-        else:
-            _unsettled[cache_dir, year] = content
+        settled = pd.Timestamp(year + 1, 1, 1, tz=TIMEZONE) + SETTLED_AFTER <= now
+        _write(path if settled else recent, content)
     records = pd.DataFrame(
         json.loads(content)["records"], columns=["HourUTC", "PriceArea", *ENERGY_COLUMNS]
     )

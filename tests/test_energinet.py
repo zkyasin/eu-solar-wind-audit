@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -126,29 +127,32 @@ def test_requests_take_local_years_and_settled_years_are_cached(tmp_path: Path) 
     ]
 
 
-def test_the_current_year_is_not_cached(tmp_path: Path) -> None:
-    start = pd.Timestamp.now(tz="UTC").floor("h") - HOUR
-    client, _ = serving({"records": []})
-
-    energinet.fetch_hourly_settlement(
-        "DK1", "solar", start, start + HOUR, client=client, cache_dir=tmp_path
-    )
-
-    assert not any(tmp_path.iterdir())
-
-
-def test_a_year_still_corrected_is_downloaded_once_per_process(tmp_path: Path) -> None:
+def test_a_year_still_corrected_is_kept_for_a_day_under_its_own_name(tmp_path: Path) -> None:
     start = pd.Timestamp.now(tz="UTC").floor("h") - HOUR
     hour = start.strftime("%Y-%m-%dT%H:%M:%S")
-    client, requests = serving({"records": [record(hour, "DK1"), record(hour, "DK2")]})
+    year = start.tz_convert(energinet.TIMEZONE).year
+    client, requests = serving(
+        {"records": [record(hour, "DK1"), record(hour, "DK2")]},
+        {"records": [record(hour, "DK1", SolarPowerGe40kW_MWh=9.0), record(hour, "DK2")]},
+    )
 
     for quantity in ("solar", "wind_onshore"):
         hourly = energinet.fetch_hourly_settlement(
             "DK", quantity, start, start + HOUR, client=client, cache_dir=tmp_path
         )
         assert hourly["energy_mwh"].tolist() == [len(energinet.QUANTITIES[quantity]) * 2.0]
-
+    recent = tmp_path / f"{energinet.SETTLEMENT}_{year}_recent.json"
+    assert [path.name for path in tmp_path.iterdir()] == [recent.name]
     assert len(requests) == 1
+
+    # A day later the year is downloaded again.
+    old = (pd.Timestamp.now(tz="UTC") - energinet.RECENT_FOR - HOUR).timestamp()
+    os.utime(recent, (old, old))
+    hourly = energinet.fetch_hourly_settlement(
+        "DK1", "solar", start, start + HOUR, client=client, cache_dir=tmp_path
+    )
+    assert hourly["energy_mwh"].tolist() == [11.0]
+    assert len(requests) == 2
 
 
 def test_a_rate_limit_waits_the_time_the_api_asks(
