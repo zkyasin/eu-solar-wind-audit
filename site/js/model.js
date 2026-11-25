@@ -9,12 +9,12 @@ import {
   line,
   linear,
   options,
+  paint,
   responsive,
   svg,
   ticks,
   tip,
   tipLine,
-  token,
 } from "./plot.js";
 
 const state = { country: "FR", technology: "solar", year: "2025" };
@@ -83,8 +83,8 @@ export async function renderModel() {
     focus.querySelector("line").setAttribute("x2", cx);
     const lines = [
       html("strong", {}, [day(row.day)]),
-      tipLine(token("--published"), `Published ${energy(row.published)}`),
-      tipLine(token("--model"), `Potential ${energy(row.potential)}`),
+      tipLine(paint("--published"), `Published ${energy(row.published)}`),
+      tipLine(paint("--model"), `Potential ${energy(row.potential)}`),
     ];
     if (row.negativeHours > 0) {
       lines.push(html("span", {}, [`${row.negativeHours} h at negative prices`]));
@@ -190,18 +190,18 @@ function drawDaily(rows, width) {
     svg("path", {
       d: line(at("potential")),
       fill: "none",
-      stroke: token("--model"),
+      stroke: paint("--model"),
       "stroke-width": 1.25,
       "stroke-linejoin": "round",
     }),
     svg("path", {
       d: line(at("published")),
       fill: "none",
-      stroke: token("--published"),
+      stroke: paint("--published"),
       "stroke-width": 1.25,
       "stroke-linejoin": "round",
     }),
-    svg("g", { fill: token("--model"), "fill-opacity": 0.85 }, bars),
+    svg("g", { fill: paint("--model"), "fill-opacity": 0.85 }, bars),
   ]);
 
   const node = svg(

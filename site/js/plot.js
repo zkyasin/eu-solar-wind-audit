@@ -10,7 +10,10 @@ export const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 export function svg(tag, attributes = {}, children = []) {
   const node = document.createElementNS(NS, tag);
   for (const [name, value] of Object.entries(attributes)) {
-    if (value !== null && value !== undefined && value !== false) node.setAttribute(name, value);
+    if (value === null || value === undefined || value === false) continue;
+    // Presentation attributes do not read custom properties; the style does.
+    if (typeof value === "string" && value.startsWith("var(")) node.style.setProperty(name, value);
+    else node.setAttribute(name, value);
   }
   node.append(...children);
   return node;
@@ -173,9 +176,12 @@ export function responsive(plot, render) {
   return draw;
 }
 
-/** The value of a design token, for the colors drawn in canvas or written in tips. */
-export function token(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+/**
+ * A design token as a CSS value. Marks are painted with it through their style, so that they
+ * follow the theme without being drawn again.
+ */
+export function paint(name) {
+  return `var(${name})`;
 }
 
 /** Radio buttons drawn as a segmented control, in the `.options` element named `name`. */

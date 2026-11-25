@@ -2,7 +2,7 @@
 
 import { COUNTRIES, load, TECHNOLOGIES, YEARS } from "./data.js";
 import { energy, number } from "./format.js";
-import { html, linear, options, responsive, svg, ticks, token } from "./plot.js";
+import { html, linear, options, paint, responsive, svg, ticks } from "./plot.js";
 
 const REFERENCES = { FR: "RTE", DE: "Hirth (2026)" };
 
@@ -83,7 +83,7 @@ function drawYears(run, width) {
         x2: cx + half + 2,
         y1: y(period.estimate_gwh),
         y2: y(period.estimate_gwh),
-        stroke: token("--model"),
+        stroke: paint("--model"),
         "stroke-width": 2.5,
       }),
     ];
@@ -94,7 +94,7 @@ function drawYears(run, width) {
           x2: cx + half + 5 + Math.min(14, band * 0.18),
           y1: y(period.reference_gwh),
           y2: y(period.reference_gwh),
-          stroke: token("--published"),
+          stroke: paint("--published"),
           "stroke-width": 2.5,
           "stroke-linecap": "round",
         }),

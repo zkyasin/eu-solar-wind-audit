@@ -2,7 +2,7 @@
 
 import { load } from "./data.js";
 import { day, number } from "./format.js";
-import { html, linear, responsive, svg, tip, tipLine, token } from "./plot.js";
+import { html, linear, paint, responsive, svg, tip, tipLine } from "./plot.js";
 
 const FAMILIES = {
   time: { label: "Missing or shifted hours", color: "--published" },
@@ -110,7 +110,7 @@ export async function renderAnomalies() {
     tipper.show(
       [
         html("strong", {}, [finding.name]),
-        tipLine(token(FAMILIES[finding.family].color), KINDS[finding.kind][1]),
+        tipLine(paint(FAMILIES[finding.family].color), KINDS[finding.kind][1]),
         html("span", {}, [first === last ? day(first) : `${day(first)} to ${day(last)}`]),
       ],
       event.clientX - box.left,
@@ -149,7 +149,7 @@ function renderLegend(findings) {
       const total = findings.filter((finding) => finding.family === family).length;
       return html("li", {}, [
         svg("svg", { class: "key", viewBox: "0 0 24 12", "aria-hidden": "true" }, [
-          svg("rect", { x: 9, y: 0, width: 6, height: 12, rx: 1, fill: token(color) }),
+          svg("rect", { x: 9, y: 0, width: 6, height: 12, rx: 1, fill: paint(color) }),
         ]),
         `${label} · ${total}`,
       ]);
@@ -238,7 +238,7 @@ function drawTimeline(findings, width) {
       width: w,
       height: lane,
       rx: 1,
-      fill: token(FAMILIES[finding.family].color),
+      fill: paint(FAMILIES[finding.family].color),
       "fill-opacity": 0.85,
     });
   });

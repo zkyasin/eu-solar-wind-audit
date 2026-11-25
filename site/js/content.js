@@ -2,7 +2,7 @@
 
 import { load } from "./data.js";
 import { number, percent } from "./format.js";
-import { html, line, linear, responsive, svg, ticks, token } from "./plot.js";
+import { html, line, linear, paint, responsive, svg, ticks } from "./plot.js";
 
 /** The series of the chart, as pairs of a feed-in series and a total over the same fleet. */
 const SERIES = {
@@ -69,7 +69,7 @@ function renderLegend() {
             y1: 6,
             x2: 24,
             y2: 6,
-            stroke: token(color),
+            stroke: paint(color),
             "stroke-dasharray": dashed ? "4 3" : null,
           }),
         ]),
@@ -99,7 +99,7 @@ function drawRatios(years, width) {
       svg("path", {
         d: line(rows.map((row) => [x(row.year), y(row.solar_ratio)])),
         fill: "none",
-        stroke: token(color),
+        stroke: paint(color),
         "stroke-width": 1.75,
         "stroke-dasharray": dashed ? "5 4" : null,
         "stroke-linejoin": "round",
@@ -109,8 +109,8 @@ function drawRatios(years, width) {
           cx: x(row.year),
           cy: y(row.solar_ratio),
           r: 2.75,
-          fill: dashed ? token("--paper") : token(color),
-          stroke: token(color),
+          fill: dashed ? paint("--paper") : paint(color),
+          stroke: paint(color),
           "stroke-width": 1.5,
         }),
       ),

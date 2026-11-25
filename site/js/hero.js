@@ -11,12 +11,12 @@ import {
   html,
   line,
   linear,
+  paint,
   reducedMotion,
   smooth,
   svg,
   tip,
   tipLine,
-  token,
 } from "./plot.js";
 
 const LATEST = YEARS.at(-1);
@@ -118,7 +118,7 @@ function renderRidges(days) {
           d: area(
             top.map((value, i) => [x(i), value === null ? null : y(index, value), base(index)]),
           ),
-          fill: token("--paper"),
+          fill: paint("--paper"),
         }),
         svg("path", {
           class: "held",
@@ -135,14 +135,14 @@ function renderRidges(days) {
           class: "held-edge",
           d: line(at(heldOnly)),
           fill: "none",
-          stroke: token("--model"),
+          stroke: paint("--model"),
           "stroke-width": 1,
         }),
         svg("path", {
           class: "published",
           d: line(at(published)),
           fill: "none",
-          stroke: latest ? token("--published") : token("--dim"),
+          stroke: latest ? paint("--published") : paint("--dim"),
           "stroke-width": latest ? 1.75 : 1.15,
           "stroke-linejoin": "round",
           pathLength: 1,
@@ -164,7 +164,7 @@ function renderRidges(days) {
     );
     const crosshair = svg("g", { class: "focus", visibility: "hidden" }, [
       svg("line", { class: "crosshair", y1: margin.top, y2: height - margin.bottom }),
-      svg("circle", { r: 3.5, fill: token("--ink"), stroke: token("--paper"), "stroke-width": 2 }),
+      svg("circle", { r: 3.5, fill: paint("--ink"), stroke: paint("--paper"), "stroke-width": 2 }),
     ]);
     return svg(
       "svg",
@@ -223,8 +223,8 @@ function renderRidges(days) {
     focus.querySelector("circle").setAttribute("cy", y(index, published[position]));
     const lines = [
       html("strong", {}, [day(row.day)]),
-      tipLine(token("--published"), `Published ${energy(row.published)}`),
-      tipLine(token("--model"), `Potential ${energy(row.potential)}`),
+      tipLine(paint("--published"), `Published ${energy(row.published)}`),
+      tipLine(paint("--model"), `Potential ${energy(row.potential)}`),
     ];
     if (row.negativeHours > 0) {
       lines.push(
