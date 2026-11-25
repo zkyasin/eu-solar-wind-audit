@@ -19,6 +19,20 @@ import {
 
 const state = { country: "FR", technology: "solar", year: "2025" };
 
+/** A link can open the chapter on a series, such as ?country=DK1&technology=solar&year=2025. */
+function fromLink() {
+  const params = new URLSearchParams(location.search);
+  const choices = {
+    country: COUNTRIES,
+    technology: TECHNOLOGIES,
+    year: Object.fromEntries(YEARS.map((year) => [year, year])),
+  };
+  for (const [name, values] of Object.entries(choices)) {
+    const value = params.get(name);
+    if (value !== null && Object.hasOwn(values, value)) state[name] = value;
+  }
+}
+
 const LADDER = [
   ["raw", "Physique, paramètres nominaux"],
   ["climatology", "Climatologie par mois et par heure"],
@@ -27,6 +41,7 @@ const LADDER = [
 ];
 
 export async function renderModel() {
+  fromLink();
   const quality = await load("quality.json");
   renderLadder(quality);
 
@@ -242,12 +257,9 @@ function drawDaily(rows, width) {
 }
 
 function renderLadder(quality) {
-  const series = [
-    ["FR", "solar"],
-    ["FR", "wind_onshore"],
-    ["DE", "solar"],
-    ["DE", "wind_onshore"],
-  ];
+  const series = Object.keys(COUNTRIES).flatMap((country) =>
+    Object.keys(TECHNOLOGIES).map((technology) => [country, technology]),
+  );
   const scope = quality.filter((row) => row.period === "2023-2025");
   const largest = Math.max(...scope.map((row) => row.rmse_cf));
   const container = document.getElementById("model-ladder");

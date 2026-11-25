@@ -40,7 +40,7 @@ def test_the_data_documents_read_by_the_page_are_exported() -> None:
     documents = set(re.findall(r'load\("([^"]+)"\)', scripts))
     documents |= {
         f"daily-{country}-{technology}.json"
-        for country in ("FR", "DE")
+        for country in ("FR", "DE", "DK1", "DK2")
         for technology in ("solar", "wind_onshore")
     }
 

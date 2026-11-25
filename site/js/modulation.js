@@ -5,6 +5,14 @@ import { energy, number, THIN } from "./format.js";
 import { html, linear, options, paint, responsive, svg, ticks } from "./plot.js";
 
 const REFERENCES = { FR: "RTE", DE: "Hirth (2026)" };
+const CAPTIONS = {
+  FR: "Production non injectée chaque année, en GWh. Aucun prix négatif en France en 2022, et la série éolienne française de 2023 inclut l’éolien en mer.",
+  DE: "Production non injectée chaque année, en GWh. Les volumes éoliens de Hirth incluent l’éolien en mer.",
+};
+// Without a published volume, the plan shows a year only above its minimal detectable effect.
+const UNREFERENCED =
+  "Production non injectée chaque année, en GWh. Aucun volume n’est publié pour le Danemark : une année n’apparaît que si son estimation dépasse l’effet minimal détectable.";
+const REFERENCE_KEYS = { FR: "Volume publié par RTE", DE: "Écrêtement par le marché, Hirth (2026)" };
 
 /** The verdicts of the evaluation plan, as the data documents name them. */
 const VERDICTS = { "concordant in volume only": "Concordant en volume seulement" };
@@ -34,12 +42,11 @@ export async function renderModulation() {
     for (const draw of draws) draw();
     renderReadout(runs, country);
     renderVerdict(runs, country);
-    document.getElementById("modulation-caption").textContent =
-      country === "FR"
-        ? "Production non injectée chaque année, en GWh. Aucun prix négatif en France en 2022, et la série éolienne française de 2023 inclut l’éolien en mer."
-        : "Production non injectée chaque année, en GWh. Les volumes éoliens de Hirth incluent l’éolien en mer.";
-    document.getElementById("modulation-reference-key").textContent =
-      country === "FR" ? "Volume publié par RTE" : "Écrêtement par le marché, Hirth (2026)";
+    document.getElementById("modulation-caption").textContent = CAPTIONS[country] ?? UNREFERENCED;
+    const key = document.getElementById("modulation-reference-key");
+    key.textContent = REFERENCE_KEYS[country] ?? "";
+    // The legend items are laid out with flex, which outranks the hidden attribute.
+    key.closest("li").style.display = Object.hasOwn(REFERENCE_KEYS, country) ? "" : "none";
   };
   options("modulation-country", COUNTRIES, country, (value) => {
     country = value;
@@ -162,12 +169,14 @@ function latest(runs, country, technology) {
 function renderReadout(runs, country) {
   const cells = Object.keys(TECHNOLOGIES).map((technology) => {
     const { period } = latest(runs, country, technology);
+    const label = `${TECHNOLOGIES[technology]}, ${YEARS.at(-1)}`;
+    if (!period) return [label, "non concluant", "sous l’effet minimal détectable"];
     const reference = period.reference_gwh;
     const detail =
       reference === null
         ? "sans référence"
         : `${REFERENCES[country]} ${energy(reference)}, ratio ${number(period.estimate_gwh / reference, 2)}`;
-    return [`${TECHNOLOGIES[technology]}, ${YEARS.at(-1)}`, energy(period.estimate_gwh), detail];
+    return [label, energy(period.estimate_gwh), detail];
   });
   document
     .getElementById("modulation-readout")
@@ -201,6 +210,22 @@ function renderVerdict(runs, country) {
           `15${THIN}€/MWh, où le solaire publié dépasse le potentiel de 1,4 à 4,6${THIN}% cinq ` +
           "années sur six, indique que l’estimation solaire est peut-être sous-évaluée de " +
           "quelques pour cent.",
+      ]),
+    );
+    return;
+  }
+  if (country !== "DE") {
+    node.replaceChildren(
+      html("p", { class: "verdict-title" }, ["Pas de référence publiée pour le Danemark"]),
+      html("p", {}, [
+        "Sans volume à comparer, le plan ne publie une estimation danoise que si elle dépasse " +
+          "l’effet minimal détectable. Dans DK1, le solaire non injecté passe de 22 à 42" +
+          `${THIN}% du potentiel des heures à prix négatif entre 2023 et 2025, soit ` +
+          `0,30${THIN}TWh en 2025 : une part de cette taille cadre avec des centrales au sol ` +
+          "qui s’arrêtent quand le prix devient négatif, sans que l’estimation puisse la séparer " +
+          "des congestions du réseau. L’éolien terrestre de DK1 retient 22 à 26" +
+          `${THIN}% de son potentiel. DK2 n’atteint l’effet minimal détectable que pour le ` +
+          "solaire en 2025 et l’éolien terrestre en 2024.",
       ]),
     );
     return;

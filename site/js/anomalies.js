@@ -52,7 +52,10 @@ const ROWS = [
   ["FR", "regional", "12 régions"],
   ["DE", "national", "Allemagne"],
   ["DE", "regional", "4 zones de réglage"],
+  ["DK1", "national", "Danemark DK1"],
+  ["DK2", "national", "Danemark DK2"],
 ];
+const NATIONAL = { FR: "France", DE: "Allemagne", DK1: "Danemark DK1", DK2: "Danemark DK2" };
 
 const START = Date.UTC(2019, 0, 1);
 const END = Date.UTC(2026, 0, 1);
@@ -69,16 +72,17 @@ function describe(series) {
     };
   }
   if (!technology) return { scope: null };
-  const name =
-    source === "odre"
-      ? area === "FR"
-        ? `${TECHNOLOGY[technology]}, France`
-        : `${TECHNOLOGY[technology]}, ${REGIONS[area.slice(3)]}`
-      : area === "DE"
-        ? `${TECHNOLOGY[technology]}, Allemagne`
-        : `${TECHNOLOGY[technology]}, ${area}`;
-  const national = area === "FR" || area === "DE";
-  return { scope: national ? "national" : "regional", name, technology };
+  const national = Object.hasOwn(NATIONAL, area);
+  const place = national
+    ? NATIONAL[area]
+    : source === "odre"
+      ? REGIONS[area.slice(3)]
+      : area;
+  return {
+    scope: national ? "national" : "regional",
+    name: `${TECHNOLOGY[technology]}, ${place}`,
+    technology,
+  };
 }
 
 export async function renderAnomalies() {
@@ -126,10 +130,10 @@ function renderReadout(findings) {
     [
       "Constats, 2019–2025",
       number(findings.length),
-      `France ${count("FR")}, Allemagne ${count("DE")}`,
+      `France ${count("FR")}, Allemagne ${count("DE")}, Danemark ${count("DK1") + count("DK2")}`,
     ],
     ["Types de constat", String(Object.keys(KINDS).length), "des trous aux ruptures de niveau"],
-    ["Vérifiés en tickets", "11", "7 en France, 4 en Allemagne"],
+    ["Vérifiés en tickets", "14", "7 en France, 4 en Allemagne, 3 au Danemark"],
   ];
   document
     .getElementById("anomaly-readout")
@@ -249,7 +253,7 @@ function drawTimeline(findings, width) {
       height,
       viewBox: `0 0 ${width} ${height}`,
       role: "img",
-      "aria-label": `${findings.length} constats des détecteurs dans les séries solaires et éoliennes de France et d’Allemagne, de 2019 à 2025, par groupe de séries et par type.`,
+      "aria-label": `${findings.length} constats des détecteurs dans les séries solaires et éoliennes de France, d’Allemagne et du Danemark, de 2019 à 2025, par groupe de séries et par type.`,
     },
     [
       grid,
