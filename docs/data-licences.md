@@ -46,6 +46,7 @@ What the project may publish:
 | GISCO local administrative units | Eurostat (GISCO), boundaries © EuroGeographics | LAU 2024, 1:1,000,000, EPSG:4326, release of 2026-02-18: Danish and Dutch municipalities | GISCO download rules: non-commercial use, source acknowledged | `© EuroGeographics for the administrative boundaries` | Raw values, non-commercial | Verified 2026-11-25, [statistical units page](https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units) |
 | Danish wind turbine register | Danish Energy Agency (Energistyrelsen) | Stamdataregister for vindkraftanlæg: the register at the end of October 2026 and the historic file of the turbines decommissioned up to the end of 2022 | No licence named; disclaimer only | `Source: Danish Energy Agency (Energistyrelsen), Stamdataregister for vindkraftanlæg` | Nothing: model input only | Read 2026-11-25, [data page](https://ens.dk/analyser-og-statistik/data-oversigt-over-energisektoren) |
 | CBS wind on land | Statistics Netherlands (CBS) | Tables 70960ned (capacity by province) and 71227ned (capacity by hub height), wind on land including inland waters, revised 2026-11-13 | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) | `Bron: CBS` | Raw values, attributed | Verified 2026-11-25, [copyright page](https://www.cbs.nl/nl-nl/over-ons/website/copyright) |
+| RIVM wind turbine map | RIVM, Atlas Leefomgeving | Windturbines - vermogen, snapshot of 1 January 2026, through WFS (layer rivm_20260101_windturbines_vermogen) | [Public Domain Mark 1.0](https://creativecommons.org/publicdomain/mark/1.0/); lineage includes OpenStreetMap | `RIVM, Atlas Leefomgeving, Windturbines - vermogen` | Nothing: model input only | Verified 2026-11-25, metadata record 90f5eab6-9cea-4869-a031-2a228fb82fea on data.rivm.nl |
 
 ## Notes
 
@@ -156,6 +157,11 @@ What the project may publish:
 26. **CBS wind on land.** The copyright page of CBS puts the content of its website under CC BY 4.0
     unless stated otherwise, and the open data portal states nothing else for these tables. CBS
     revises them once a year; the model records the date of the revision it read.
+27. **RIVM wind turbine map.** The metadata record states no use restriction (« Geen
+    beperkingen ») and links the Public Domain Mark 1.0. Its lineage names RIVM, the BGT,
+    Rijkswaterstaat, OpenStreetMap and the Register Externe Veiligheid, and OpenStreetMap data
+    carry the ODbL; so the map only places the Dutch onshore capacity and gives the hub height
+    and specific power of each class, and none of its rows is published.
 
 ## Attribution
 
@@ -187,6 +193,7 @@ Offshore wind farms: this data was downloaded from the EMODnet Portal (https://e
 Danish and Dutch municipalities: © EuroGeographics for the administrative boundaries (GISCO, LAU 2024).
 Denmark, wind turbine register: Danish Energy Agency (Energistyrelsen), Stamdataregister for vindkraftanlæg.
 Netherlands, onshore wind capacity: Bron: CBS, tables 70960ned and 71227ned, CC BY 4.0.
+Netherlands, wind turbine map: RIVM, Atlas Leefomgeving, Windturbines - vermogen, 1 January 2026.
 Baselines: Renewables.ninja (Pfenninger and Staffell 2016; Staffell and Pfenninger 2016), CC BY-NC 4.0.
 Copernicus Climate Change Service (2024): Climate and energy related variables from the Pan-European Climate Database derived from reanalysis and climate projections. Copernicus Climate Change Service (C3S) Climate Data Store (CDS). DOI: 10.24381/cds.f323c5ec (Accessed on <date>). PECD v4.2, modified.
 Copyright © <year> ECMWF/C3S/ENTSO-E. ECMWF & C3S & ENTSO-E does not accept any liability whatsoever for any error or omission in the data, their availability, or for any loss or damage arising from their use.
