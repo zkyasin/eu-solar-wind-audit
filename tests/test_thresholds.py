@@ -9,7 +9,7 @@ from eu_solar_wind_audit import cli, physics
 from eu_solar_wind_audit.anomalies import breaks, inputs, thresholds
 from eu_solar_wind_audit.anomalies.inputs import DetectionInputs, Published, SeriesInputs
 from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
-from eu_solar_wind_audit.sources import ens, mastr
+from eu_solar_wind_audit.sources import cbs, ens, mastr, rivm
 
 PROVENANCE = "RTE, éCO2mix, ODRÉ dataset eco2mix-national-cons-def"
 
@@ -215,6 +215,21 @@ def test_a_country_without_a_solar_model_rests_on_its_wind_alone(tmp_path: Path)
     assert thresholds.read(tmp_path / "NL.json").penalties == fixed.penalties
 
 
+def test_dutch_thresholds_rest_on_the_cbs_revisions_and_the_rivm_rows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cbs, "download", lambda table: Path(table))
+    monkeypatch.setattr(cbs, "modified", lambda folder: "2026-11-13")
+
+    reference = thresholds.reference_model(load_country(CONFIG_DIR / "nl.toml"), "v0-test")
+
+    assert reference["dutch_capacity"] == {
+        "cbs": {"70960ned": "2026-11-13", "71227ned": "2026-11-13"},
+        "rivm_rows_sha256": rivm.ROWS_SHA256,
+    }
+    assert reference["regions"] == "GISCO LAU 2024 municipalities"
+
+
 def rename(item: SeriesInputs, series: str) -> SeriesInputs:
     (part,) = item.published
     return dataclasses.replace(item, published=(dataclasses.replace(part, series=series),))
@@ -256,3 +271,7 @@ def test_the_command_reads_the_inputs_of_a_danish_price_area(
     cli.main(["fix-anomaly-thresholds", zone, "--output", str(tmp_path / f"{zone}.json")])
 
     assert zones == [zone]
+
+
+def test_the_command_reads_the_dutch_inputs() -> None:
+    assert cli.detection_inputs("NL") is inputs.netherlands_inputs

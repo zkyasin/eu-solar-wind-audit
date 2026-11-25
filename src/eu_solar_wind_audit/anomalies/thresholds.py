@@ -1,6 +1,6 @@
-"""Thresholds of the statistical anomaly detectors of a country, mainland France or Germany,
-fixed on 2019-2022 (evaluation plan, axis 2, and Deviations) and kept in
-THRESHOLDS_DIR/<country>.json with the reference model they rest on.
+"""Thresholds of the statistical anomaly detectors of a country or price area, fixed on 2019-2022
+(evaluation plan, axis 2, and Deviations) and kept in THRESHOLDS_DIR/<country>.json with the
+reference model they rest on.
 
 `fix` reads the detection inputs of FIX_YEARS, without margins, and gives:
 - the centroid bias of the model: the median residual of the valid days of NATIONAL_SOLAR;
@@ -32,7 +32,17 @@ from eu_solar_wind_audit import physics
 from eu_solar_wind_audit.anomalies import breaks, residuals, timestamp
 from eu_solar_wind_audit.anomalies.inputs import DetectionInputs, SeriesInputs
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import bkg, energinet, ens, era5, gisco, mastr, natural_earth
+from eu_solar_wind_audit.sources import (
+    bkg,
+    cbs,
+    energinet,
+    ens,
+    era5,
+    gisco,
+    mastr,
+    natural_earth,
+    rivm,
+)
 
 THRESHOLDS_DIR = Path("config/anomaly-thresholds")
 FIX_YEARS = range(2019, 2023)
@@ -61,6 +71,7 @@ REFERENCE_KEYS = (
     "sdes_media",
     "mastr_export",
     "danish_registers",
+    "dutch_capacity",
     "era5_store",
     "regions",
 )
@@ -86,7 +97,8 @@ def reference_model(parameters: Country, git_describe: str | None) -> dict[str, 
     """The reference model of thresholds fixed with the country `parameters`: the SHA-256 of the
     parameters, the source of the capacity (the SDES media for France, the MaStR export for
     Germany, the Energinet dataset and the turbine register for a Danish price area), the ERA5
-    stores and the areas, and the git description of the code."""
+    stores and the areas, and the git description of the code. The capacity of the Netherlands
+    rests on the revisions of the CBS tables and on the rows of the RIVM map."""
     settings = json.dumps(dataclasses.asdict(parameters), sort_keys=True, default=str)
     era5_store = {
         "final": f"s3://{era5.ICECHUNK_BUCKET}/{era5.ICECHUNK_PREFIX}, group {era5.ICECHUNK_GROUP}",
@@ -103,6 +115,18 @@ def reference_model(parameters: Country, git_describe: str | None) -> dict[str, 
             "mastr_export": mastr.EXPORT_URL,
             "era5_store": era5_store,
             "regions": f"BKG VG5000 districts, state of {bkg.EDITION}",
+        }
+    elif parameters.country == "NL":
+        sources = {
+            "dutch_capacity": {
+                "cbs": {
+                    table: cbs.modified(cbs.download(table))
+                    for table in (cbs.PROVINCES, cbs.HUB_HEIGHTS)
+                },
+                "rivm_rows_sha256": rivm.ROWS_SHA256,
+            },
+            "era5_store": era5_store,
+            "regions": f"GISCO {gisco.EDITION} municipalities",
         }
     else:
         sources = {

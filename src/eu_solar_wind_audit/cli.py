@@ -310,12 +310,14 @@ def main(argv: list[str] | None = None) -> None:
 
 
 def detection_inputs(country: str) -> Callable[..., inputs.DetectionInputs]:
-    """The function that gives the inputs of the anomaly detectors of `country`: France, Germany
-    or a Danish price area."""
+    """The function that gives the inputs of the anomaly detectors of `country`: France, Germany,
+    a Danish price area or the Netherlands."""
     if country == "FR":
         return inputs.france_inputs
     if country == "DE":
         return inputs.germany_inputs
+    if country == "NL":
+        return inputs.netherlands_inputs
     return inputs.denmark_inputs
 
 

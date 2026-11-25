@@ -8,7 +8,7 @@ import pytest
 from eu_solar_wind_audit import eligibility, grid, physics
 from eu_solar_wind_audit.anomalies import inputs
 from eu_solar_wind_audit.config import CONFIG_DIR, load_country
-from eu_solar_wind_audit.sources import energinet, energy_charts, odre, sdes, smard
+from eu_solar_wind_audit.sources import energinet, energy_charts, entsoe, odre, sdes, smard
 
 # The SDES wind dashboard of 2026-11-22 cut to Bretagne, Normandie, Corsica and the overseas
 # departments (tests/test_sdes.py).
@@ -408,3 +408,49 @@ def test_danish_hours_still_corrected_are_provisional(
     assert part.provisional
     (rows,) = found.rows
     assert rows.provisional
+
+
+def dutch_quarters(
+    area: str, technology: str, first: pd.Timestamp, last: pd.Timestamp, **_: object
+) -> pd.Series:
+    """Stands in for entsoe.fetch_generation_energy: 25 MWh each quarter-hour, 30 for wind on
+    land, and the first quarter-hour of solar published twice."""
+    quarters = pd.date_range(first, last, freq="15min", inclusive="left", unit="ns")
+    energy = pd.Series(30.0 if technology == "wind_onshore" else 25.0, index=quarters)
+    return pd.concat([energy.iloc[:1], energy]) if technology == "solar" else energy
+
+
+def test_netherlands_inputs_give_onshore_wind_its_model_and_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    start, end = utc("2025-06-10 00:00"), utc("2025-06-11 00:00")
+    monkeypatch.setattr(physics, "model_netherlands", modelled_area)
+    monkeypatch.setattr(entsoe, "fetch_generation_energy", dutch_quarters)
+    monkeypatch.setattr(eligibility, "price_classes", reference_classes)
+
+    found = inputs.netherlands_inputs(
+        httpx.Client(), start, end, load_country(CONFIG_DIR / "nl.toml"), margin=pd.Timedelta(0)
+    )
+
+    assert found.country == "NL"
+    assert set(found.series) == {
+        "entsoe.NL.solar",
+        "entsoe.NL.wind_onshore",
+        "entsoe.NL.wind_offshore",
+    }
+    onshore = found.series["entsoe.NL.wind_onshore"]
+    (part,) = onshore.published
+    assert (part.hourly["energy_mwh"] == 120.0).all()
+    assert part.provenance == inputs.DUTCH_PROVENANCE
+    assert onshore.modelled is not None
+    assert onshore.capacity_mw is not None
+    # The model runs on the capacity behind the series; the output is bounded by the whole fleet.
+    assert onshore.capacity_mw.to_numpy() == pytest.approx(10.0 / physics.DUTCH_SERIES_SHARE)
+    for technology in ("solar", "wind_offshore"):
+        item = found.series[f"entsoe.NL.{technology}"]
+        assert item.modelled is None
+        assert item.capacity_mw is None
+    (rows,) = found.rows
+    assert rows.step == pd.Timedelta(minutes=15)
+    # The repeated quarter-hour reaches the completeness detector.
+    assert rows.values["entsoe.NL.solar"].index.has_duplicates

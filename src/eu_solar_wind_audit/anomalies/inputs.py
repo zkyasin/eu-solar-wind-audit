@@ -29,7 +29,7 @@ from pandera.typing import DataFrame
 from eu_solar_wind_audit import eligibility, grid, physics
 from eu_solar_wind_audit.anomalies import completeness
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import energinet, energy_charts, odre, sdes, smard
+from eu_solar_wind_audit.sources import energinet, energy_charts, entsoe, odre, sdes, smard
 
 # The windowed statistics of a day reach 30 days away from it: the scale of its residual score
 # takes the residuals of the 31 days centred on it, each at the level of the 31 days centred on
@@ -56,6 +56,11 @@ DANISH_SERIES: dict[str, energinet.Quantity] = {
     "wind_offshore": "wind_offshore",
 }
 DANISH_PROVENANCE = f"Energinet, Energi Data Service, {energinet.SETTLEMENT}"
+
+# The series of the NL zone on the Transparency Platform; only onshore wind has a model.
+DUTCH_SERIES: tuple[entsoe.Technology, ...] = ("solar", "wind_onshore", "wind_offshore")
+DUTCH_PROVENANCE = "ENTSO-E Transparency Platform, actual generation per production type (16.1.B&C)"
+QUARTER = pd.Timedelta(minutes=15)
 
 # Saint-Nazaire, the first French offshore farm (odre.FIRST_OFFSHORE_POWER), is in Pays de la Loire.
 FIRST_FARM_REGION = "52"
@@ -434,6 +439,97 @@ def denmark_inputs(
     )
     return DetectionInputs(
         zone, start, end, hours, tuple(rows), series, classes.drop(columns="mean_price")
+    )
+
+
+def netherlands_inputs(
+    client: httpx.Client,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    *,
+    entsoe_cache_dir: Path = entsoe.CACHE_DIR,
+    smard_cache_dir: Path = smard.CACHE_DIR,
+    era5_cache_dir: Path = physics.ERA5_CACHE_DIR,
+    margin: pd.Timedelta = MARGIN,
+) -> DetectionInputs:
+    """Inputs of a detection run over the hours [start, end) of the Netherlands, both hour starts
+    in UTC: the solar, onshore wind and offshore wind of the NL zone on the Transparency Platform,
+    `entsoe.NL.<technology>`, with the price classes of the zone. The platform's own client reads
+    the token of ENTSOE_API_TOKEN; `client` reads the prices.
+
+    Onshore wind is compared with physics.model_netherlands, on the capacity behind the series,
+    and with the capacity of the whole fleet of CBS, which bounds its output; solar and offshore
+    wind with neither (evaluation plan, Deviations). Hours
+    younger than entsoe.SETTLED_AFTER can still be resubmitted: they make the provisional part of
+    each series and the provisional rows.
+    """
+    grid.check_period(start, end)
+    hours = pd.date_range(
+        start - margin, end + margin, freq="h", inclusive="left", unit="ns", name="time"
+    )
+    first, last = hours[0], hours[-1] + grid.HOUR
+    resubmitted = (pd.Timestamp.now(tz="UTC") - entsoe.SETTLED_AFTER).floor("h")
+    resubmitted_from = min(max(resubmitted, first), last)
+    modelled = physics.model_netherlands("wind_onshore", first, last, parameters, era5_cache_dir)
+
+    values: dict[str, pd.Series] = {}
+    series: dict[str, SeriesInputs] = {}
+    for technology in DUTCH_SERIES:
+        series_id = f"entsoe.NL.{technology}"
+        values[series_id] = entsoe.fetch_generation_energy(
+            "NL", technology, first, last, cache_dir=entsoe_cache_dir
+        )
+        hourly = _on_hours(
+            grid.hourly_from_period_start_energy(
+                completeness.on_grid(values[series_id], QUARTER), "15min"
+            ),
+            first,
+            last,
+        )
+        parts = (
+            (False, hourly[hourly.index < resubmitted_from]),
+            (True, hourly[hourly.index >= resubmitted_from]),
+        )
+        onshore = technology == "wind_onshore"
+        series[series_id] = SeriesInputs(
+            technology=technology,
+            published=tuple(
+                Published(series_id, DUTCH_PROVENANCE, provisional, part)
+                for provisional, part in parts
+                if not part.empty
+            ),
+            modelled=modelled if onshore else None,
+            capacity_mw=modelled["capacity_mw"] / physics.DUTCH_SERIES_SHARE if onshore else None,
+            offshore=pd.Series(False, index=hours) if onshore else None,
+        )
+
+    rows = [
+        Rows(
+            dataset="entsoe.A75",
+            provenance=DUTCH_PROVENANCE,
+            provisional=provisional,
+            step=QUARTER,
+            label="start",
+            local_days=None,
+            start=row_start,
+            end=row_end,
+            values={
+                name: raw[(raw.index >= row_start) & (raw.index < row_end)]
+                for name, raw in values.items()
+            },
+        )
+        for provisional, row_start, row_end in (
+            (False, first, resubmitted_from),
+            (True, resubmitted_from, last),
+        )
+        if row_start < row_end
+    ]
+    classes = eligibility.price_classes(
+        first, last, zone="NL", client=client, cache_dir=smard_cache_dir
+    )
+    return DetectionInputs(
+        "NL", start, end, hours, tuple(rows), series, classes.drop(columns="mean_price")
     )
 
 

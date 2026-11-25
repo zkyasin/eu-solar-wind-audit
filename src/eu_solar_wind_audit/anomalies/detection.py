@@ -55,6 +55,7 @@ TIME_ZONES = {
     "DE": energy_charts.TIMEZONE,
     "DK1": energinet.TIMEZONE,
     "DK2": energinet.TIMEZONE,
+    "NL": "Europe/Amsterdam",
 }
 
 
