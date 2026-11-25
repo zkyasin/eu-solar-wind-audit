@@ -32,7 +32,7 @@ from eu_solar_wind_audit import physics
 from eu_solar_wind_audit.anomalies import breaks, residuals, timestamp
 from eu_solar_wind_audit.anomalies.inputs import DetectionInputs, SeriesInputs
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import bkg, era5, mastr, natural_earth
+from eu_solar_wind_audit.sources import bkg, energinet, ens, era5, gisco, mastr, natural_earth
 
 THRESHOLDS_DIR = Path("config/anomaly-thresholds")
 FIX_YEARS = range(2019, 2023)
@@ -42,7 +42,13 @@ FIX_END = pd.Timestamp(FIX_YEARS[-1] + 1, 1, 1, tz="UTC")
 # Deviations).
 RESIDUAL_THRESHOLDS = (6.0, 8.0, 10.0, 12.0, 15.0, 20.0)
 BUDGET = 1
-NATIONAL_SOLAR = {"FR": "odre.FR.solar", "DE": "smard.DE.solar"}
+# The solar series whose centroids set the timestamp bias of each country or zone.
+NATIONAL_SOLAR = {
+    "FR": "odre.FR.solar",
+    "DE": "smard.DE.solar",
+    "DK1": "energinet.DK1.solar",
+    "DK2": "energinet.DK2.solar",
+}
 # The technology of the statistical detectors of each modelled series: French wind holds offshore
 # output from 2022, which its offshore mask leaves out; German onshore wind is published apart.
 DETECTOR_TECHNOLOGIES: dict[str, breaks.Technology] = {
@@ -50,7 +56,14 @@ DETECTOR_TECHNOLOGIES: dict[str, breaks.Technology] = {
     "wind": "wind",
     "wind_onshore": "wind",
 }
-REFERENCE_KEYS = ("parameters_sha256", "sdes_media", "mastr_export", "era5_store", "regions")
+REFERENCE_KEYS = (
+    "parameters_sha256",
+    "sdes_media",
+    "mastr_export",
+    "danish_registers",
+    "era5_store",
+    "regions",
+)
 
 
 @dataclass(frozen=True)
@@ -72,7 +85,8 @@ class Thresholds:
 def reference_model(parameters: Country, git_describe: str | None) -> dict[str, Any]:
     """The reference model of thresholds fixed with the country `parameters`: the SHA-256 of the
     parameters, the source of the capacity (the SDES media for France, the MaStR export for
-    Germany), the ERA5 stores and the areas, and the git description of the code."""
+    Germany, the Energinet dataset and the turbine register for a Danish price area), the ERA5
+    stores and the areas, and the git description of the code."""
     settings = json.dumps(dataclasses.asdict(parameters), sort_keys=True, default=str)
     era5_store = {
         "final": f"s3://{era5.ICECHUNK_BUCKET}/{era5.ICECHUNK_PREFIX}, group {era5.ICECHUNK_GROUP}",
@@ -84,11 +98,20 @@ def reference_model(parameters: Country, git_describe: str | None) -> dict[str, 
             "era5_store": era5_store,
             "regions": f"Natural Earth admin-1 {natural_earth.VERSION}",
         }
-    else:
+    elif parameters.country == "DE":
         sources = {
             "mastr_export": mastr.EXPORT_URL,
             "era5_store": era5_store,
             "regions": f"BKG VG5000 districts, state of {bkg.EDITION}",
+        }
+    else:
+        sources = {
+            "danish_registers": {
+                "solar": f"Energi Data Service, {energinet.CAPACITY}",
+                "wind_onshore": {"current": ens.CURRENT_SHA256, "historic": ens.HISTORIC_SHA256},
+            },
+            "era5_store": era5_store,
+            "regions": f"GISCO {gisco.EDITION} municipalities",
         }
     return {
         "parameters_sha256": hashlib.sha256(settings.encode()).hexdigest(),

@@ -121,12 +121,35 @@ def test_the_nine_public_holidays_of_every_german_land(year: int) -> None:
     assert holidays.strftime("%m-%d").tolist() == expected
 
 
-def test_each_country_has_its_own_holidays() -> None:
-    # Thursday 14 July 2022 is the French National Day, Monday 3 October German Unity Day.
-    hours = pd.DatetimeIndex(["2022-07-14 10:00", "2022-10-03 10:00"], tz="UTC")
+@pytest.mark.parametrize(
+    ("year", "easter_holidays"),
+    [
+        (2019, ["04-18", "04-19", "04-22", "05-17", "05-30", "06-10"]),
+        (2023, ["04-06", "04-07", "04-10", "05-05", "05-18", "05-29"]),
+        (2024, ["03-28", "03-29", "04-01", "05-09", "05-20"]),
+        (2025, ["04-17", "04-18", "04-21", "05-29", "06-09"]),
+    ],
+    ids=["2019", "2023 last store bededag", "2024", "2025"],
+)
+def test_danish_public_holidays(year: int, easter_holidays: list[str]) -> None:
+    holidays = days.PUBLIC_HOLIDAYS["DK1"].holidays(f"{year}-01-01", f"{year}-12-31")
 
-    assert days.day_types(hours, "FR").tolist() == ["sunday_or_holiday", "working_day"]
-    assert days.day_types(hours, "DE").tolist() == ["working_day", "sunday_or_holiday"]
+    assert holidays.strftime("%m-%d").tolist() == ["01-01", *easter_holidays, "12-25", "12-26"]
+    assert days.PUBLIC_HOLIDAYS["DK2"] is days.PUBLIC_HOLIDAYS["DK1"]
+
+
+def test_each_country_has_its_own_holidays() -> None:
+    # Thursday 14 July 2022 is the French National Day, Monday 3 October German Unity Day and
+    # Thursday 6 April 2023 Maundy Thursday.
+    hours = pd.DatetimeIndex(["2022-07-14 10:00", "2022-10-03 10:00", "2023-04-06 10:00"], tz="UTC")
+
+    assert days.day_types(hours, "FR").tolist() == ["sunday_or_holiday", *["working_day"] * 2]
+    assert days.day_types(hours, "DE").tolist() == [
+        "working_day",
+        "sunday_or_holiday",
+        "working_day",
+    ]
+    assert days.day_types(hours, "DK1").tolist() == [*["working_day"] * 2, "sunday_or_holiday"]
 
 
 def test_day_types_need_utc_hours() -> None:

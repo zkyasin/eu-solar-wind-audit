@@ -1,17 +1,23 @@
 # Anomalies in published solar and wind series, 2019-2025
 
 The detectors of axis 2 of the [evaluation plan](evaluation-plan.md) were run on the hourly solar
-and wind series of mainland France and Germany, over 1 January 2019 to 31 December 2025:
+and wind series of mainland France, Germany and the two Danish price areas, over 1 January 2019 to
+31 December 2025:
 
 ```
 eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
+eu-solar-wind-audit detect-anomalies DK1 2019-01-01 2026-01-01 data/processed/anomalies-dk1
+eu-solar-wind-audit detect-anomalies DK2 2019-01-01 2026-01-01 data/processed/anomalies-dk2
 ```
 
-Each country uses the thresholds of `config/anomaly-thresholds/<country>.json`, fixed on 2019-2022
-before any later year was read (tags `anomaly-thresholds-fr-v1` and `anomaly-thresholds-de-v1`).
-The German model covers Germany and each of its four control areas, whose units are placed by the
-grid connection points of the Marktstammdatenregister. Each run writes its findings, the level
+Each country or price area uses the thresholds of `config/anomaly-thresholds/<code>.json`, fixed
+on 2019-2022 before any later year was read (tags `anomaly-thresholds-fr-v1`,
+`anomaly-thresholds-de-v1` and `anomaly-thresholds-dk-v1`). The German model covers Germany and
+each of its four control areas, whose units are placed by the grid connection points of the
+Marktstammdatenregister. The Danish series are the hourly settlement data of Energinet: solar, the
+three metered size classes plus the self-consumed output that Energinet estimates, and onshore
+and offshore wind, each in its own price area. Each run writes its findings, the level
 breaks left unattributed, and a JSON file with the SHA-256 of every input series.
 
 A finding is not a defect. The cases below were checked against the raw files of the publisher
@@ -20,20 +26,20 @@ reason they are not attributed to the published data.
 
 ## Findings by kind
 
-| Kind | France (éCO2mix) | Germany (SMARD, Energy-Charts) |
-|---|---|---|
-| gap | 26 | 7 |
-| negative | 30 | 0 |
-| above_capacity | 71 | 0 |
-| frozen | 31 | 3 |
-| parts_gap | 19 | 51 |
-| cross_source_gap | 0 | 22 |
-| timestamp_shift | 5 | 0 |
-| clock_change_jump | 1 | 0 |
-| residual_outlier | 5 | 7 |
-| level_break | 4 | 20 |
-| clock_change_convention | 2 | 0 |
-| Level breaks left unattributed | 10 | 4 |
+| Kind | France (éCO2mix) | Germany (SMARD, Energy-Charts) | DK1 (Energinet) | DK2 (Energinet) |
+|---|---|---|---|---|
+| gap | 26 | 7 | 0 | 0 |
+| negative | 30 | 0 | 7 | 3 |
+| above_capacity | 71 | 0 | 0 | 0 |
+| frozen | 31 | 3 | 0 | 0 |
+| parts_gap | 19 | 51 | 0 | 0 |
+| cross_source_gap | 0 | 22 | 0 | 0 |
+| timestamp_shift | 5 | 0 | 2 | 0 |
+| clock_change_jump | 1 | 0 | 0 | 0 |
+| residual_outlier | 5 | 7 | 4 | 3 |
+| level_break | 4 | 20 | 0 | 2 |
+| clock_change_convention | 2 | 0 | 0 | 0 |
+| Level breaks left unattributed | 10 | 4 | 5 | 5 |
 
 Times are in UTC unless a time zone is given.
 
@@ -143,6 +149,36 @@ Times are in UTC unless a time zone is given.
   modelled). At the share of about 18 % that TransnetBW held from 10:00 to 15:00, about 3 GWh are
   missing from both series.
 
+### DK-1. Solar published as zero in both price areas, 17 August 2019, 13:00 to 19:00
+
+Energinet publishes 0.0 MWh of solar in DK1 and in DK2 at each hour from 13:00 to 19:00 (15:00 to
+21:00 Danish time) on 17 August 2019, after 121 and 67 MWh at 12:00, while onshore wind and
+consumption keep their usual values. In 2019 the whole solar output is booked as
+SolarPowerSelfConMWh, so this column holds the hole; the same hours of the day before held 879
+and 421 MWh. The Transparency Platform, which Energinet also feeds, gives one and the same value
+at each of these hours in each area, so neither source tells the output of that afternoon. Found
+as residual outliers of DK1 solar (score −23.2) and DK2 solar (−22.6).
+
+### DK-2. Self-consumed solar output about two hours early, 17 June to 14 August 2020
+
+From 17 June to 14 August 2020, SolarPowerSelfConMWh runs ahead of the metered size classes in
+both price areas. The centroid of its daily curve lies 65 to 104 minutes before theirs in DK1 and
+76 to 133 minutes in DK2 (weekly medians); from 15 August to the end of the year the gap stays
+within 24 minutes in DK1 and 38 in DK2. In the afternoon the column turns negative by about the
+metered output, so that total solar falls to zero hours before sunset: at 14:00 on 26 July 2020
+in DK1 the three size classes give 190 MWh and the self-consumption −189.2 MWh, and it reaches
+−213.4 MWh in DK1 and −110.7 MWh in DK2. The size classes and the Transparency Platform keep the
+timing of the model, within 13 minutes in each month from May to September 2020. Found as a shift
+of −1 h of DK1 solar from 18 June to 15 August 2020 and as residual outliers on 26 and 27 July.
+DK2 solar gave more shift claims on 2019-2022 than the budget allows, so no shift is claimed for
+it, but its self-consumption shows the same episode.
+
+### DK-3. Total solar below zero at night, 2020
+
+The self-consumption column is below zero at 876 hours in DK1 and 871 in DK2, all in 2020, the
+year it first sits beside the size classes. Most are small: total solar stays below zero at 683
+hours in DK1 and 568 in DK2, by at most 0.6 MWh, at night. No other year has a negative value.
+
 ## Findings not attributed to the published data
 
 - Zero runs of offshore wind (31 `frozen`): 24 to 96 hours at exactly zero in Normandie (7),
@@ -186,6 +222,23 @@ Times are in UTC unless a time zone is given.
   onshore wind on the night of 21 January 2019. Without a second source by control area, they
   cannot be told apart from weather that ERA5 misses.
 
+- Danish joint level breaks (2): DK2 solar and onshore wind rise at once on 8 December 2023,
+  after solar fell by 79 % on 29 November (left unattributed, one technology). ERA5 puts more
+  than 5 mm water equivalent of snow on 55 % of the cells of the DK2 municipalities on 3 December
+  2023 and on none on 22 and 29 November or on 9 December; the steps of DK2 solar on 4 and 11
+  January 2024, unattributed, fall in the next snow period (45 to 55 % of the cells from 4 to 8
+  January). As in Germany, these are snow, not defects of the series.
+- Danish level breaks left unattributed, besides these (7): onshore wind of DK1 on 12 February
+  2020 (−9 %), 22 November 2021 (+10 %), 12 October 2023 (+13 %), 12 February 2024 (−19 %) and
+  1 October 2025 (+10 %), and of DK2 on 2 March 2020 (−9 %) and 14 February 2024 (−19 %). A step
+  of wind alone can come from the turbine register as well as from the series.
+- Danish residual outliers of onshore wind (4): single hours far below the model, in DK1 at 05:00
+  on 15 December 2022 and 01:00 on 21 August 2024, in DK2 at 08:00 on 16 August 2021 and 23:00
+  on 2 July 2025. Without a second source by price area, they cannot be told apart from weather
+  that ERA5 misses.
+- DK1 solar on 25 to 30 August 2021: a shift of +1 h claimed on three days off only, which the
+  centroids of the size classes and of the Transparency Platform do not show.
+
 ## Limits
 
 - The thresholds rest on 2019-2022. The model knows neither snow cover on modules nor ice on
@@ -194,4 +247,6 @@ Times are in UTC unless a time zone is given.
   solar units, in proportion to the capacity of their district in each area.
 - A finding against the SDES capacity depends on its quarterly figures, which this project
   interpolates linearly between quarter ends.
+- Denmark publishes no total of its two price areas, so its series get no sum-of-parts check;
+  the Transparency Platform served to check DK-1 and DK-2 by hand only.
 - No case has been reported to its publisher yet.

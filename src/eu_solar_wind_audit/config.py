@@ -11,7 +11,8 @@ from eu_solar_wind_audit.sources.era5 import Box
 
 CONFIG_DIR = Path("config/countries")
 
-Perimeter = Literal["metropolitan_without_corsica", "germany"]
+# price_area: the municipalities of the bidding zone that `country` names.
+Perimeter = Literal["metropolitan_without_corsica", "germany", "price_area"]
 
 
 @dataclass(frozen=True)

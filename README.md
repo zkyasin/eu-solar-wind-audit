@@ -24,34 +24,38 @@ its date and reason in the plan's Deviations section.
 
 ## Main results
 
-Solar and onshore wind in mainland France and Germany, 2019-2025:
+Solar and onshore wind in mainland France, Germany and the two Danish price areas, 2019-2025:
 
 1. **Model.** Fitted on the other years, the hourly potential of each year follows the published
-   output with an error of 0.024 to 0.031 in capacity factor and a correlation of 0.98 to 0.99
+   output with an error of 0.024 to 0.031 in capacity factor and a correlation of 0.98 to 0.99 in
+   France and Germany, and of 0.041 to 0.060 and 0.96 to 0.98 in the smaller Danish price areas
    (2023-2025, hours priced 5 €/MWh or more).
-2. **Anomalies.** 194 findings in France and 110 in Germany. Among those checked against the raw
-   files: an empty half-hour in all 26 éCO2mix solar and wind series, and a German control area
-   published as zero for more than a week while the national total kept its output.
+2. **Anomalies.** 194 findings in France, 110 in Germany and 21 in Denmark. Among those checked
+   against the raw files: an empty half-hour in all 26 éCO2mix solar and wind series, a German
+   control area published as zero for more than a week while the national total kept its output,
+   and a Danish estimate of self-consumed solar output two hours early for two months of 2020.
 3. **Content.** SMARD, feed-in only, and Energy-Charts total power, which adds self-consumption,
    land in the cells their producers state, and so do the two Danish series of Energinet, with
    and without its self-consumption estimate. French self-consumption, 1 to 7 % of solar output,
    is too small for yearly statistics to confirm.
 4. **Negative prices.** Mainland France held back an estimated 1.58 TWh of solar output in 2025
    (90 % interval 1.32 to 1.84) and 1.25 TWh of onshore wind (1.15 to 1.34), where RTE publishes
-   1.46 and 1.20 TWh. The yearly volumes agree; the monthly tests of the plan fail.
+   1.46 and 1.20 TWh. The yearly volumes agree; the monthly tests of the plan fail. DK1, which
+   has no published reference, held back an estimated 42 % of its solar potential at
+   negative-price hours in 2025, 0.30 TWh (0.27 to 0.32).
 
 ## Status
 
-| Axis | Mainland France | Germany |
-|---|---|---|
-| 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 |
-| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 |
-| 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete |
-| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) |
+| Axis | Mainland France | Germany | Denmark (DK1, DK2) |
+|---|---|---|---|
+| 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 | Calibrated on 2019-2025 per price area |
+| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | All detectors, 2019-2025 |
+| 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete | Size classes feed-in only; with self-consumption complete |
+| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Estimated, no reference; published above the detectable effect |
 
-Denmark and the Netherlands already serve axis 3 as validation series; their other axes follow,
-then Belgium, Spain, Portugal, Italy, Austria and Poland, each published with the level of
-evidence the plan allows.
+The Netherlands already serve axis 3 as a validation series; their other axes follow, then
+Belgium, Spain, Portugal, Italy, Austria and Poland, each published with the level of evidence the
+plan allows.
 
 ## Results, 2019-2025
 
@@ -72,17 +76,24 @@ solar), published onshore wind was 52 % of its potential and solar 76 %: an esti
 Hourly error of the potential of each year, fitted on the other years, over hours priced 5 €/MWh
 or more. RMSE in capacity factor, 2023-2025:
 
-| Model | France, solar | France, onshore wind | Germany, solar | Germany, onshore wind |
-|---|---|---|---|---|
-| Physics model, nominal parameters | 0.085 | 0.089 | 0.094 | 0.098 |
-| Climatology by month and hour | 0.078 | 0.161 | 0.070 | 0.146 |
-| Calibrated potential | 0.035 | 0.031 | 0.040 | 0.027 |
-| With stratum ratios and annual level | 0.031 | 0.028 | 0.025 | 0.024 |
+| Series | Physics model, nominal parameters | Climatology by month and hour | Calibrated potential | With stratum ratios and annual level | Correlation of the last model |
+|---|---|---|---|---|---|
+| France, solar | 0.085 | 0.078 | 0.035 | 0.031 | 0.986 |
+| France, onshore wind | 0.089 | 0.161 | 0.031 | 0.028 | 0.986 |
+| Germany, solar | 0.094 | 0.070 | 0.040 | 0.025 | 0.981 |
+| Germany, onshore wind | 0.098 | 0.146 | 0.027 | 0.024 | 0.988 |
+| DK1, solar | 0.077 | 0.113 | 0.062 | 0.056 | 0.963 |
+| DK1, onshore wind | 0.123 | 0.202 | 0.045 | 0.041 | 0.981 |
+| DK2, solar | 0.091 | 0.110 | 0.064 | 0.060 | 0.957 |
+| DK2, onshore wind | 0.176 | 0.205 | 0.050 | 0.047 | 0.975 |
 
-The hourly correlation of the last model is 0.986 for both French technologies, 0.981 for German
-solar and 0.988 for German onshore wind. French onshore wind leaves out 2023, when the published
-wind series includes offshore output. Germany is calibrated on the feed-in that SMARD publishes,
-which leaves out self-consumed output; its frozen fits are in `fits/DE` (tag `calibration-de-v1`).
+French onshore wind leaves out 2023, when the published wind series includes offshore output.
+Germany is calibrated on the feed-in that SMARD publishes, which leaves out self-consumed output;
+its frozen fits are in `fits/DE` (tag `calibration-de-v1`). Each Danish price area is calibrated on
+its settlement data, solar with its self-consumed part; the frozen fits are in `fits/DK1` and
+`fits/DK2` (tag `calibration-dk-v1`). The Danish errors are 1.5 to 2.4 times those of France and
+Germany, most likely because a smaller fleet averages out less of the local weather that ERA5
+misses at 0.25°.
 
 Without its annual level, the potential fitted on the other years gives the published output of
 each year to within 10 %, except German solar since 2023. Published output over that potential:
@@ -105,12 +116,13 @@ Fraunhofer ISE puts it at 6 % of German solar output in 2019 and 22 % in 2025.
 
 ### Anomalies in the published series
 
-Every hourly solar and wind series of mainland France (national and 12 regions, éCO2mix) and
-Germany (national and four control areas, SMARD, with Energy-Charts as a second source) goes
-through rule-based detectors, and through statistical detectors on its residual against the model
-of its area, with thresholds fixed on 2019-2022 (tags `anomaly-thresholds-fr-v1` and
-`anomaly-thresholds-de-v1`). The 2019-2025 runs give 194 findings in France and 110 in Germany. The
-cases checked against the raw files are written as tickets in
+Every hourly solar and wind series of mainland France (national and 12 regions, éCO2mix),
+Germany (national and four control areas, SMARD, with Energy-Charts as a second source) and the
+Danish price areas (Energinet settlement data) goes through rule-based detectors, and through
+statistical detectors on its residual against the model of its area, with thresholds fixed on
+2019-2022 (tags `anomaly-thresholds-fr-v1`, `anomaly-thresholds-de-v1` and
+`anomaly-thresholds-dk-v1`). The 2019-2025 runs give 194 findings in France, 110 in Germany, 13 in
+DK1 and 8 in DK2. The cases checked against the raw files are written as tickets in
 [docs/anomalies-2019-2025.md](docs/anomalies-2019-2025.md), among them:
 
 - éCO2mix: the half-hour ending at midnight on 31 December 2025 is empty in all 26 solar and wind
@@ -122,6 +134,11 @@ cases checked against the raw files are written as tickets in
 - SMARD: Amprion solar at about 50 MWh an hour at night from 12 June to 14 July 2025 (DE-3).
 - SMARD: TransnetBW solar published as zero from 16:00 to 20:00 on 12 April 2019, a hole of about
   3 GWh that the national total carries too, so that only the model shows it (DE-4).
+- Energinet: solar published as zero in both price areas from 13:00 to 19:00 on 17 August 2019,
+  where the Transparency Platform repeats one value (DK-1).
+- Energinet: the self-consumed solar output that Energinet estimates runs about two hours early
+  from 17 June to 14 August 2020, and its negative afternoon values cancel the metered output
+  (DK-2).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/sum-of-parts-dark.svg">
@@ -203,18 +220,28 @@ the volumes are 79 to 90 % of his, which also hold offshore wind. Solar in 2025 
 when home batteries and self-consumption take the midday output. Details in
 [docs/modulation-germany.md](docs/modulation-germany.md).
 
+### Output modulated during negative prices in Denmark
+
+No published volume of Danish modulation exists, so the estimates of the two price areas carry no
+reference and count only where they reach their minimal detectable effect. DK1 solar holds back
+22 % of its potential at the negative-price hours of 2023, 28 % in 2024 and 42 % in 2025, about
+0.3 TWh that year (90 % interval 0.27 to 0.32 TWh); DK1 onshore wind holds back 22 to 26 % in
+2023-2025. DK2 reaches its detectable effect for solar in 2025 and onshore wind in 2024 only.
+Details in [docs/modulation-denmark.md](docs/modulation-denmark.md).
+
 ## How it works
 
 - **Physics model.** ERA5 hourly weather on its 0.25° grid. Solar output comes from pvlib, on the
-  capacity of each département (SDES) or Kreis (Marktstammdatenregister), as a mix of systems by
-  orientation and tilt with a DC/AC ratio. Onshore wind comes from turbine power curves by
+  capacity of each département (SDES), Kreis (Marktstammdatenregister) or Danish municipality
+  (Energi Data Service, and the register of the Danish Energy Agency for wind), as a mix of systems
+  by orientation and tilt with a DC/AC ratio. Onshore wind comes from turbine power curves by
   commissioning period, at their hub height.
 - **Calibrated potential.** Three parameters for solar and one for onshore wind, a scale on wind
   speed, fitted with a Huber loss on the hours priced 5 €/MWh or more, leaving one year out; then
   a ratio for each stratum of solar elevation, decile of the modelled capacity factor and day type,
-  shrunk towards the pooled ratio, and a level for each year. The fits are frozen in `fits/FR` and
-  `fits/DE` (tags `calibration-fr-v1` and `calibration-de-v1`), and a test checks that the
-  calibration never reads the reference series.
+  shrunk towards the pooled ratio, and a level for each year. The fits are frozen in `fits/FR`,
+  `fits/DE`, `fits/DK1` and `fits/DK2` (tags `calibration-fr-v1`, `calibration-de-v1` and
+  `calibration-dk-v1`), and a test checks that the calibration never reads the reference series.
 - **Anomaly detectors.** Completeness, timestamp shifts, negative, frozen and above-capacity
   values, outliers of the residual, level breaks (PELT), totals against the sum of their parts and
   against a second source.
@@ -238,7 +265,8 @@ when home batteries and self-consumption take the midday output. Details in
 Python 3.12 and [uv](https://docs.astral.sh/uv/). ERA5 comes from two anonymous cloud copies, the
 other sources from their public interfaces; only the audit of axis 3 needs a free token of the
 ENTSO-E Transparency Platform, in `ENTSOE_API_TOKEN`. Downloads are cached under
-`data/raw`, about 3 GB of ERA5 for France and 1.7 GB for Germany over 2019-2025.
+`data/raw`, about 3 GB of ERA5 for France, 1.7 GB for Germany and 0.7 GB for Denmark over
+2019-2025.
 
 ```sh
 uv sync
@@ -247,11 +275,19 @@ uv run eu-solar-wind-audit calibrate FR solar data/processed/calibration-fr --fi
 uv run eu-solar-wind-audit calibrate FR wind_onshore data/processed/calibration-fr --fits-dir data/processed/fits-fr
 uv run eu-solar-wind-audit calibrate DE solar data/processed/calibration-de --fits-dir data/processed/fits-de
 uv run eu-solar-wind-audit calibrate DE wind_onshore data/processed/calibration-de --fits-dir data/processed/fits-de
+uv run eu-solar-wind-audit calibrate DK1 solar data/processed/calibration-dk1 --fits-dir data/processed/fits-dk1
+uv run eu-solar-wind-audit calibrate DK1 wind_onshore data/processed/calibration-dk1 --fits-dir data/processed/fits-dk1
+uv run eu-solar-wind-audit calibrate DK2 solar data/processed/calibration-dk2 --fits-dir data/processed/fits-dk2
+uv run eu-solar-wind-audit calibrate DK2 wind_onshore data/processed/calibration-dk2 --fits-dir data/processed/fits-dk2
 # Modulation, with the frozen fits and the references of references/rte and references/hirth.
 uv run eu-solar-wind-audit estimate-modulation FR solar data/processed/modulation-fr
 uv run eu-solar-wind-audit estimate-modulation FR wind_onshore data/processed/modulation-fr
 uv run eu-solar-wind-audit estimate-modulation DE solar data/processed/modulation-de
 uv run eu-solar-wind-audit estimate-modulation DE wind_onshore data/processed/modulation-de
+uv run eu-solar-wind-audit estimate-modulation DK1 solar data/processed/modulation-dk1
+uv run eu-solar-wind-audit estimate-modulation DK1 wind_onshore data/processed/modulation-dk1
+uv run eu-solar-wind-audit estimate-modulation DK2 solar data/processed/modulation-dk2
+uv run eu-solar-wind-audit estimate-modulation DK2 wind_onshore data/processed/modulation-dk2
 # Anomalies, with the frozen thresholds of config/anomaly-thresholds.
 uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de

@@ -8,8 +8,8 @@ import pytest
 from eu_solar_wind_audit import cli, physics
 from eu_solar_wind_audit.anomalies import breaks, inputs, thresholds
 from eu_solar_wind_audit.anomalies.inputs import DetectionInputs, Published, SeriesInputs
-from eu_solar_wind_audit.config import CONFIG_DIR, load_country
-from eu_solar_wind_audit.sources import mastr
+from eu_solar_wind_audit.config import CONFIG_DIR, Country, load_country
+from eu_solar_wind_audit.sources import ens, mastr
 
 PROVENANCE = "RTE, éCO2mix, ODRÉ dataset eco2mix-national-cons-def"
 
@@ -166,6 +166,30 @@ def test_german_thresholds_rest_on_the_modelled_smard_series() -> None:
     assert "sdes_media" not in reference
 
 
+def test_danish_thresholds_rest_on_the_settlement_series_of_the_price_area() -> None:
+    french = detection_inputs("2019-01-01", "2020-01-01")
+    series = {
+        "energinet.DK2.solar": rename(french.series["odre.FR.solar"], "energinet.DK2.solar"),
+        "energinet.DK2.wind_onshore": dataclasses.replace(
+            rename(french.series["odre.FR.wind"], "energinet.DK2.wind_onshore"),
+            technology="wind_onshore",
+        ),
+    }
+    reference = thresholds.reference_model(load_country(CONFIG_DIR / "dk2.toml"), "v0-test")
+
+    fixed = thresholds.fix(dataclasses.replace(french, country="DK2", series=series), reference)
+
+    assert fixed.country == "DK2"
+    assert set(fixed.profiles) == {"energinet.DK2.solar", "energinet.DK2.wind_onshore"}
+    assert reference["danish_registers"]["wind_onshore"]["current"] == ens.CURRENT_SHA256
+    assert reference["regions"] == "GISCO LAU 2024 municipalities"
+    assert "mastr_export" not in reference
+    # A Danish file is refused once the register it rests on changes.
+    changed = reference | {"danish_registers": {"wind_onshore": {"current": "another"}}}
+    with pytest.raises(ValueError, match="danish_registers"):
+        thresholds.check_reference(fixed, changed)
+
+
 def rename(item: SeriesInputs, series: str) -> SeriesInputs:
     (part,) = item.published
     return dataclasses.replace(item, published=(dataclasses.replace(part, series=series),))
@@ -188,3 +212,22 @@ def test_the_command_fixes_the_thresholds_of_2019_2022_without_margins(
 
     assert calls == [(thresholds.FIX_START, thresholds.FIX_END, pd.Timedelta(0))]
     assert thresholds.read(tmp_path / "FR.json").country == "FR"
+
+
+@pytest.mark.parametrize("zone", ["DK1", "DK2"])
+def test_the_command_reads_the_inputs_of_a_danish_price_area(
+    zone: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    zones: list[str] = []
+
+    def denmark_inputs(
+        client: object, start: pd.Timestamp, end: pd.Timestamp, parameters: Country, **_: object
+    ) -> DetectionInputs:
+        zones.append(parameters.country)
+        return detection_inputs()
+
+    monkeypatch.setattr(inputs, "denmark_inputs", denmark_inputs)
+
+    cli.main(["fix-anomaly-thresholds", zone, "--output", str(tmp_path / f"{zone}.json")])
+
+    assert zones == [zone]

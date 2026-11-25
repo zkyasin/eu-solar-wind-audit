@@ -1,0 +1,2075 @@
+{
+ "technology": "wind_onshore",
+ "git_describe": "anomaly-thresholds-de-v1-93-gca737cd",
+ "final": {
+  "calibration": {
+   "speed_scale": 0.8139979608494057,
+   "speed_scale_at_bound": false,
+   "fit": {
+    "f_scale": 0.045523493579597264,
+    "cost": 56.549141740806675,
+    "nfev": 3,
+    "status": 2,
+    "message": "`ftol` termination condition is satisfied.",
+    "eligible_hours": 57047,
+    "training_years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ]
+   }
+  },
+  "strata": {
+   "decile_edges": [
+    0.027514331149142722,
+    0.0562454813850028,
+    0.09147797201260119,
+    0.13434958444355688,
+    0.1822098714204995,
+    0.24061171501829556,
+    0.308488253149698,
+    0.3917612499791579,
+    0.5184070200147627
+   ],
+   "pooled_ratio": 0.9996477199810043,
+   "table": [
+    {
+     "elevation_band": "night",
+     "decile": 1,
+     "day_type": "working_day",
+     "training_hours": 1443,
+     "distinct_days": 356,
+     "raw_ratio": 1.090372884387773,
+     "shrunk_ratio": 1.0886233633110582
+    },
+    {
+     "elevation_band": "night",
+     "decile": 1,
+     "day_type": "saturday",
+     "training_hours": 353,
+     "distinct_days": 85,
+     "raw_ratio": 1.1262384414727855,
+     "shrunk_ratio": 1.1166065387505848
+    },
+    {
+     "elevation_band": "night",
+     "decile": 1,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 333,
+     "distinct_days": 73,
+     "raw_ratio": 1.0190883243163942,
+     "shrunk_ratio": 1.0173872714370475
+    },
+    {
+     "elevation_band": "night",
+     "decile": 2,
+     "day_type": "working_day",
+     "training_hours": 1774,
+     "distinct_days": 532,
+     "raw_ratio": 0.9862676867250931,
+     "shrunk_ratio": 0.9864414533907543
+    },
+    {
+     "elevation_band": "night",
+     "decile": 2,
+     "day_type": "saturday",
+     "training_hours": 332,
+     "distinct_days": 111,
+     "raw_ratio": 1.014248359651774,
+     "shrunk_ratio": 1.0133822200102875
+    },
+    {
+     "elevation_band": "night",
+     "decile": 2,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 418,
+     "distinct_days": 124,
+     "raw_ratio": 1.013160117226942,
+     "shrunk_ratio": 1.0124380807328843
+    },
+    {
+     "elevation_band": "night",
+     "decile": 3,
+     "day_type": "working_day",
+     "training_hours": 1884,
+     "distinct_days": 649,
+     "raw_ratio": 0.9477481376426283,
+     "shrunk_ratio": 0.948301944161483
+    },
+    {
+     "elevation_band": "night",
+     "decile": 3,
+     "day_type": "saturday",
+     "training_hours": 402,
+     "distinct_days": 122,
+     "raw_ratio": 0.9801991627937297,
+     "shrunk_ratio": 0.9812545108581554
+    },
+    {
+     "elevation_band": "night",
+     "decile": 3,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 423,
+     "distinct_days": 142,
+     "raw_ratio": 0.9909206624280544,
+     "shrunk_ratio": 0.991330658420475
+    },
+    {
+     "elevation_band": "night",
+     "decile": 4,
+     "day_type": "working_day",
+     "training_hours": 2020,
+     "distinct_days": 735,
+     "raw_ratio": 0.9380591896891481,
+     "shrunk_ratio": 0.9386402135598261
+    },
+    {
+     "elevation_band": "night",
+     "decile": 4,
+     "day_type": "saturday",
+     "training_hours": 398,
+     "distinct_days": 132,
+     "raw_ratio": 0.927267130838034,
+     "shrunk_ratio": 0.9309121964783275
+    },
+    {
+     "elevation_band": "night",
+     "decile": 4,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 488,
+     "distinct_days": 168,
+     "raw_ratio": 0.9411270534845153,
+     "shrunk_ratio": 0.9434678801443749
+    },
+    {
+     "elevation_band": "night",
+     "decile": 5,
+     "day_type": "working_day",
+     "training_hours": 2068,
+     "distinct_days": 761,
+     "raw_ratio": 0.9304678809131929,
+     "shrunk_ratio": 0.931098426321363
+    },
+    {
+     "elevation_band": "night",
+     "decile": 5,
+     "day_type": "saturday",
+     "training_hours": 387,
+     "distinct_days": 144,
+     "raw_ratio": 0.9093449574300835,
+     "shrunk_ratio": 0.9135311782105897
+    },
+    {
+     "elevation_band": "night",
+     "decile": 5,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 527,
+     "distinct_days": 186,
+     "raw_ratio": 0.9493252578746115,
+     "shrunk_ratio": 0.9511504248940144
+    },
+    {
+     "elevation_band": "night",
+     "decile": 6,
+     "day_type": "working_day",
+     "training_hours": 2109,
+     "distinct_days": 761,
+     "raw_ratio": 0.9271452783226029,
+     "shrunk_ratio": 0.9278061078689684
+    },
+    {
+     "elevation_band": "night",
+     "decile": 6,
+     "day_type": "saturday",
+     "training_hours": 398,
+     "distinct_days": 141,
+     "raw_ratio": 0.9541664129937585,
+     "shrunk_ratio": 0.9563175558918039
+    },
+    {
+     "elevation_band": "night",
+     "decile": 6,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 539,
+     "distinct_days": 184,
+     "raw_ratio": 0.958936809677036,
+     "shrunk_ratio": 0.9604288325677574
+    },
+    {
+     "elevation_band": "night",
+     "decile": 7,
+     "day_type": "working_day",
+     "training_hours": 2131,
+     "distinct_days": 744,
+     "raw_ratio": 0.944633960208882,
+     "shrunk_ratio": 0.9451467382626834
+    },
+    {
+     "elevation_band": "night",
+     "decile": 7,
+     "day_type": "saturday",
+     "training_hours": 433,
+     "distinct_days": 153,
+     "raw_ratio": 0.9472951084318965,
+     "shrunk_ratio": 0.9495855351871699
+    },
+    {
+     "elevation_band": "night",
+     "decile": 7,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 472,
+     "distinct_days": 162,
+     "raw_ratio": 0.9384437710429294,
+     "shrunk_ratio": 0.9409788458510153
+    },
+    {
+     "elevation_band": "night",
+     "decile": 8,
+     "day_type": "working_day",
+     "training_hours": 2136,
+     "distinct_days": 659,
+     "raw_ratio": 0.9671644536807529,
+     "shrunk_ratio": 0.9675058693926174
+    },
+    {
+     "elevation_band": "night",
+     "decile": 8,
+     "day_type": "saturday",
+     "training_hours": 472,
+     "distinct_days": 143,
+     "raw_ratio": 0.9596850621127635,
+     "shrunk_ratio": 0.9615499861466147
+    },
+    {
+     "elevation_band": "night",
+     "decile": 8,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 409,
+     "distinct_days": 150,
+     "raw_ratio": 0.9773418043461811,
+     "shrunk_ratio": 0.9783363356165236
+    },
+    {
+     "elevation_band": "night",
+     "decile": 9,
+     "day_type": "working_day",
+     "training_hours": 2116,
+     "distinct_days": 568,
+     "raw_ratio": 0.9574875746893226,
+     "shrunk_ratio": 0.9580008286320039
+    },
+    {
+     "elevation_band": "night",
+     "decile": 9,
+     "day_type": "saturday",
+     "training_hours": 440,
+     "distinct_days": 122,
+     "raw_ratio": 0.9564546538273543,
+     "shrunk_ratio": 0.9587984636186376
+    },
+    {
+     "elevation_band": "night",
+     "decile": 9,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 438,
+     "distinct_days": 119,
+     "raw_ratio": 0.9983190921200064,
+     "shrunk_ratio": 0.9983929047789507
+    },
+    {
+     "elevation_band": "night",
+     "decile": 10,
+     "day_type": "working_day",
+     "training_hours": 2397,
+     "distinct_days": 398,
+     "raw_ratio": 0.9572368589120163,
+     "shrunk_ratio": 0.957969886140369
+    },
+    {
+     "elevation_band": "night",
+     "decile": 10,
+     "day_type": "saturday",
+     "training_hours": 418,
+     "distinct_days": 78,
+     "raw_ratio": 0.9667142986043582,
+     "shrunk_ratio": 0.969426462717729
+    },
+    {
+     "elevation_band": "night",
+     "decile": 10,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 456,
+     "distinct_days": 91,
+     "raw_ratio": 0.959564127650067,
+     "shrunk_ratio": 0.9624272413879911
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 1,
+     "day_type": "working_day",
+     "training_hours": 447,
+     "distinct_days": 263,
+     "raw_ratio": 1.0703440810402838,
+     "shrunk_ratio": 1.0685112124202283
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 1,
+     "day_type": "saturday",
+     "training_hours": 102,
+     "distinct_days": 64,
+     "raw_ratio": 1.088850266933322,
+     "shrunk_ratio": 1.080055649628164
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 1,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 99,
+     "distinct_days": 51,
+     "raw_ratio": 1.1261459184934077,
+     "shrunk_ratio": 1.1108788945350143
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 2,
+     "day_type": "working_day",
+     "training_hours": 526,
+     "distinct_days": 337,
+     "raw_ratio": 0.9732233540984043,
+     "shrunk_ratio": 0.9737610592181084
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 2,
+     "day_type": "saturday",
+     "training_hours": 101,
+     "distinct_days": 65,
+     "raw_ratio": 0.9454643937829471,
+     "shrunk_ratio": 0.9507322171633138
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 2,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 127,
+     "distinct_days": 80,
+     "raw_ratio": 0.9934442259949798,
+     "shrunk_ratio": 0.9939433576950047
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 3,
+     "day_type": "working_day",
+     "training_hours": 536,
+     "distinct_days": 379,
+     "raw_ratio": 0.9179157036876116,
+     "shrunk_ratio": 0.9193978905115849
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 3,
+     "day_type": "saturday",
+     "training_hours": 110,
+     "distinct_days": 73,
+     "raw_ratio": 1.0321685901960074,
+     "shrunk_ratio": 1.0293230140521947
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 3,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 119,
+     "distinct_days": 88,
+     "raw_ratio": 0.9496471333178208,
+     "shrunk_ratio": 0.9533313870719501
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 4,
+     "day_type": "working_day",
+     "training_hours": 507,
+     "distinct_days": 358,
+     "raw_ratio": 0.9141991196917271,
+     "shrunk_ratio": 0.9158378599712474
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 4,
+     "day_type": "saturday",
+     "training_hours": 105,
+     "distinct_days": 72,
+     "raw_ratio": 0.9404735864060016,
+     "shrunk_ratio": 0.9457168640645461
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 4,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 159,
+     "distinct_days": 104,
+     "raw_ratio": 0.9315017025432827,
+     "shrunk_ratio": 0.9357991991384543
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 5,
+     "day_type": "working_day",
+     "training_hours": 493,
+     "distinct_days": 358,
+     "raw_ratio": 0.9231054787349158,
+     "shrunk_ratio": 0.9245734121286763
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 5,
+     "day_type": "saturday",
+     "training_hours": 114,
+     "distinct_days": 75,
+     "raw_ratio": 0.9163275735753467,
+     "shrunk_ratio": 0.9234402690002199
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 5,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 133,
+     "distinct_days": 97,
+     "raw_ratio": 0.9239765433106325,
+     "shrunk_ratio": 0.9290697955865229
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 6,
+     "day_type": "working_day",
+     "training_hours": 565,
+     "distinct_days": 379,
+     "raw_ratio": 0.918213555178191,
+     "shrunk_ratio": 0.9196903405502628
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 6,
+     "day_type": "saturday",
+     "training_hours": 107,
+     "distinct_days": 75,
+     "raw_ratio": 0.9694406535779928,
+     "shrunk_ratio": 0.972019305588006
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 6,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 131,
+     "distinct_days": 92,
+     "raw_ratio": 0.9455061211500946,
+     "shrunk_ratio": 0.9493343150068255
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 7,
+     "day_type": "working_day",
+     "training_hours": 590,
+     "distinct_days": 392,
+     "raw_ratio": 0.9437385324332355,
+     "shrunk_ratio": 0.94471939537267
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 7,
+     "day_type": "saturday",
+     "training_hours": 123,
+     "distinct_days": 79,
+     "raw_ratio": 0.9688042739252042,
+     "shrunk_ratio": 0.9713147869762577
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 7,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 114,
+     "distinct_days": 79,
+     "raw_ratio": 0.9357860812913127,
+     "shrunk_ratio": 0.9409841216497761
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 8,
+     "day_type": "working_day",
+     "training_hours": 537,
+     "distinct_days": 348,
+     "raw_ratio": 0.971822342412467,
+     "shrunk_ratio": 0.9723710118293114
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 8,
+     "day_type": "saturday",
+     "training_hours": 110,
+     "distinct_days": 66,
+     "raw_ratio": 0.9764068296496622,
+     "shrunk_ratio": 0.9786354081745854
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 8,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 127,
+     "distinct_days": 77,
+     "raw_ratio": 0.9754799189067489,
+     "shrunk_ratio": 0.9774939023296035
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 9,
+     "day_type": "working_day",
+     "training_hours": 614,
+     "distinct_days": 360,
+     "raw_ratio": 0.9746572399598783,
+     "shrunk_ratio": 0.9751338976169569
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 9,
+     "day_type": "saturday",
+     "training_hours": 118,
+     "distinct_days": 63,
+     "raw_ratio": 0.9893838753991128,
+     "shrunk_ratio": 0.9904102598573019
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 9,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 113,
+     "distinct_days": 70,
+     "raw_ratio": 1.017587318556257,
+     "shrunk_ratio": 1.0159564459585066
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 10,
+     "day_type": "working_day",
+     "training_hours": 640,
+     "distinct_days": 287,
+     "raw_ratio": 0.979157661558982,
+     "shrunk_ratio": 0.9796455200928396
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 10,
+     "day_type": "saturday",
+     "training_hours": 100,
+     "distinct_days": 44,
+     "raw_ratio": 1.0269347543275773,
+     "shrunk_ratio": 1.0231894751035377
+    },
+    {
+     "elevation_band": "0-10",
+     "decile": 10,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 130,
+     "distinct_days": 64,
+     "raw_ratio": 1.00459948281116,
+     "shrunk_ratio": 1.0041112808419896
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 1,
+     "day_type": "working_day",
+     "training_hours": 547,
+     "distinct_days": 292,
+     "raw_ratio": 1.1551382899842426,
+     "shrunk_ratio": 1.1514980425259729
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 1,
+     "day_type": "saturday",
+     "training_hours": 137,
+     "distinct_days": 73,
+     "raw_ratio": 1.1647552898602622,
+     "shrunk_ratio": 1.1503083774958272
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 1,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 124,
+     "distinct_days": 62,
+     "raw_ratio": 1.2061350484136046,
+     "shrunk_ratio": 1.1851870585726163
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 2,
+     "day_type": "working_day",
+     "training_hours": 534,
+     "distinct_days": 328,
+     "raw_ratio": 1.0390192375326244,
+     "shrunk_ratio": 1.0381965491061727
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 2,
+     "day_type": "saturday",
+     "training_hours": 108,
+     "distinct_days": 73,
+     "raw_ratio": 1.0768045572922496,
+     "shrunk_ratio": 1.0700533340275156
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 2,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 101,
+     "distinct_days": 72,
+     "raw_ratio": 1.0875135010737706,
+     "shrunk_ratio": 1.0797279255339054
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 3,
+     "day_type": "working_day",
+     "training_hours": 514,
+     "distinct_days": 342,
+     "raw_ratio": 0.9907386516420925,
+     "shrunk_ratio": 0.9909173435571996
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 3,
+     "day_type": "saturday",
+     "training_hours": 105,
+     "distinct_days": 66,
+     "raw_ratio": 0.9883353585197243,
+     "shrunk_ratio": 0.989420105509162
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 3,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 127,
+     "distinct_days": 84,
+     "raw_ratio": 1.0045640612370923,
+     "shrunk_ratio": 1.00418588114047
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 4,
+     "day_type": "working_day",
+     "training_hours": 468,
+     "distinct_days": 307,
+     "raw_ratio": 0.9714198767617299,
+     "shrunk_ratio": 0.972049159890822
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 4,
+     "day_type": "saturday",
+     "training_hours": 101,
+     "distinct_days": 69,
+     "raw_ratio": 0.9803432324235629,
+     "shrunk_ratio": 0.9821212773301694
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 4,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 148,
+     "distinct_days": 93,
+     "raw_ratio": 0.9396258770562195,
+     "shrunk_ratio": 0.9438274060609544
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 5,
+     "day_type": "working_day",
+     "training_hours": 491,
+     "distinct_days": 324,
+     "raw_ratio": 0.9693910089989476,
+     "shrunk_ratio": 0.9700308790197162
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 5,
+     "day_type": "saturday",
+     "training_hours": 101,
+     "distinct_days": 66,
+     "raw_ratio": 0.9796897555348436,
+     "shrunk_ratio": 0.9816035329474891
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 5,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 119,
+     "distinct_days": 83,
+     "raw_ratio": 0.9827407653366724,
+     "shrunk_ratio": 0.9840557506978982
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 6,
+     "day_type": "working_day",
+     "training_hours": 480,
+     "distinct_days": 318,
+     "raw_ratio": 0.9875074179989779,
+     "shrunk_ratio": 0.987768901426283
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 6,
+     "day_type": "saturday",
+     "training_hours": 84,
+     "distinct_days": 64,
+     "raw_ratio": 1.0081011236287156,
+     "shrunk_ratio": 1.0072676894662653
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 6,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 109,
+     "distinct_days": 73,
+     "raw_ratio": 0.997046245690807,
+     "shrunk_ratio": 0.9972738746911992
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 7,
+     "day_type": "working_day",
+     "training_hours": 535,
+     "distinct_days": 351,
+     "raw_ratio": 0.9904553092288395,
+     "shrunk_ratio": 0.9906350491038818
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 7,
+     "day_type": "saturday",
+     "training_hours": 121,
+     "distinct_days": 77,
+     "raw_ratio": 1.0077522879520748,
+     "shrunk_ratio": 1.007076907287819
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 7,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 95,
+     "distinct_days": 72,
+     "raw_ratio": 1.0515163995417212,
+     "shrunk_ratio": 1.0469204405933032
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 8,
+     "day_type": "working_day",
+     "training_hours": 546,
+     "distinct_days": 332,
+     "raw_ratio": 1.015566988218617,
+     "shrunk_ratio": 1.0152382717653328
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 8,
+     "day_type": "saturday",
+     "training_hours": 91,
+     "distinct_days": 57,
+     "raw_ratio": 0.9981068808417782,
+     "shrunk_ratio": 0.998275410122631
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 8,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 96,
+     "distinct_days": 62,
+     "raw_ratio": 1.0413032214682416,
+     "shrunk_ratio": 1.0370773010275074
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 9,
+     "day_type": "working_day",
+     "training_hours": 600,
+     "distinct_days": 332,
+     "raw_ratio": 1.0174533401954513,
+     "shrunk_ratio": 1.0170856725214066
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 9,
+     "day_type": "saturday",
+     "training_hours": 115,
+     "distinct_days": 59,
+     "raw_ratio": 1.052994116143676,
+     "shrunk_ratio": 1.0473361650355137
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 9,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 114,
+     "distinct_days": 62,
+     "raw_ratio": 1.0520383272076128,
+     "shrunk_ratio": 1.0467233380686816
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 10,
+     "day_type": "working_day",
+     "training_hours": 636,
+     "distinct_days": 259,
+     "raw_ratio": 0.9915922511793903,
+     "shrunk_ratio": 0.9918042372004855
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 10,
+     "day_type": "saturday",
+     "training_hours": 91,
+     "distinct_days": 37,
+     "raw_ratio": 1.0333423012083014,
+     "shrunk_ratio": 1.0279817996494132
+    },
+    {
+     "elevation_band": "10-20",
+     "decile": 10,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 94,
+     "distinct_days": 46,
+     "raw_ratio": 1.0216662603016484,
+     "shrunk_ratio": 1.0187581512026955
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 1,
+     "day_type": "working_day",
+     "training_hours": 497,
+     "distinct_days": 254,
+     "raw_ratio": 1.380154021905706,
+     "shrunk_ratio": 1.3699488720456565
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 1,
+     "day_type": "saturday",
+     "training_hours": 122,
+     "distinct_days": 62,
+     "raw_ratio": 1.4345832995430372,
+     "shrunk_ratio": 1.3904594001671788
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 1,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 77,
+     "distinct_days": 50,
+     "raw_ratio": 1.4043109355179828,
+     "shrunk_ratio": 1.3546154529081784
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 2,
+     "day_type": "working_day",
+     "training_hours": 381,
+     "distinct_days": 243,
+     "raw_ratio": 1.1707185486133989,
+     "shrunk_ratio": 1.1659285654116918
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 2,
+     "day_type": "saturday",
+     "training_hours": 72,
+     "distinct_days": 55,
+     "raw_ratio": 1.1967838987381416,
+     "shrunk_ratio": 1.1745265882333034
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 2,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 95,
+     "distinct_days": 65,
+     "raw_ratio": 1.1802769362616816,
+     "shrunk_ratio": 1.1627157624566158
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 3,
+     "day_type": "working_day",
+     "training_hours": 362,
+     "distinct_days": 243,
+     "raw_ratio": 1.1346582589559677,
+     "shrunk_ratio": 1.1308779638646687
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 3,
+     "day_type": "saturday",
+     "training_hours": 65,
+     "distinct_days": 50,
+     "raw_ratio": 1.1561702152341307,
+     "shrunk_ratio": 1.1369481544135713
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 3,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 69,
+     "distinct_days": 49,
+     "raw_ratio": 1.128589368759935,
+     "shrunk_ratio": 1.1124716626625688
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 4,
+     "day_type": "working_day",
+     "training_hours": 333,
+     "distinct_days": 234,
+     "raw_ratio": 1.134203572251277,
+     "shrunk_ratio": 1.1302953109820162
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 4,
+     "day_type": "saturday",
+     "training_hours": 70,
+     "distinct_days": 52,
+     "raw_ratio": 1.11229039449619,
+     "shrunk_ratio": 1.0989260093842188
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 4,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 87,
+     "distinct_days": 60,
+     "raw_ratio": 1.1917909645301246,
+     "shrunk_ratio": 1.1717162971891717
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 5,
+     "day_type": "working_day",
+     "training_hours": 335,
+     "distinct_days": 239,
+     "raw_ratio": 1.074542710668163,
+     "shrunk_ratio": 1.0724115523965774
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 5,
+     "day_type": "saturday",
+     "training_hours": 70,
+     "distinct_days": 56,
+     "raw_ratio": 1.07100111781296,
+     "shrunk_ratio": 1.0630729624982982
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 5,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 79,
+     "distinct_days": 53,
+     "raw_ratio": 1.1368571002723842,
+     "shrunk_ratio": 1.1208493392383898
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 6,
+     "day_type": "working_day",
+     "training_hours": 320,
+     "distinct_days": 225,
+     "raw_ratio": 1.078690663224942,
+     "shrunk_ratio": 1.076305746833961
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 6,
+     "day_type": "saturday",
+     "training_hours": 58,
+     "distinct_days": 44,
+     "raw_ratio": 1.0965075945291176,
+     "shrunk_ratio": 1.0832131019440825
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 6,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 62,
+     "distinct_days": 41,
+     "raw_ratio": 1.1884888912751341,
+     "shrunk_ratio": 1.16094955379474
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 7,
+     "day_type": "working_day",
+     "training_hours": 303,
+     "distinct_days": 230,
+     "raw_ratio": 1.0796788115447482,
+     "shrunk_ratio": 1.0773150240302072
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 7,
+     "day_type": "saturday",
+     "training_hours": 53,
+     "distinct_days": 40,
+     "raw_ratio": 1.102157226029231,
+     "shrunk_ratio": 1.0868898527880058
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 7,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 62,
+     "distinct_days": 51,
+     "raw_ratio": 1.1092413816972142,
+     "shrunk_ratio": 1.0960145604556026
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 8,
+     "day_type": "working_day",
+     "training_hours": 353,
+     "distinct_days": 232,
+     "raw_ratio": 1.0604496595372543,
+     "shrunk_ratio": 1.0586688495920922
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 8,
+     "day_type": "saturday",
+     "training_hours": 59,
+     "distinct_days": 43,
+     "raw_ratio": 1.0884735526141756,
+     "shrunk_ratio": 1.0760379360455317
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 8,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 58,
+     "distinct_days": 38,
+     "raw_ratio": 1.0867850936788646,
+     "shrunk_ratio": 1.0732303911036418
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 9,
+     "day_type": "working_day",
+     "training_hours": 327,
+     "distinct_days": 193,
+     "raw_ratio": 1.0658498043503761,
+     "shrunk_ratio": 1.063532731397448
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 9,
+     "day_type": "saturday",
+     "training_hours": 58,
+     "distinct_days": 34,
+     "raw_ratio": 1.1388882671106708,
+     "shrunk_ratio": 1.1151154907714593
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 9,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 49,
+     "distinct_days": 32,
+     "raw_ratio": 1.110532620361751,
+     "shrunk_ratio": 1.0906302023446939
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 10,
+     "day_type": "working_day",
+     "training_hours": 332,
+     "distinct_days": 150,
+     "raw_ratio": 0.999229217789836,
+     "shrunk_ratio": 0.9992478771232002
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 10,
+     "day_type": "saturday",
+     "training_hours": 39,
+     "distinct_days": 19,
+     "raw_ratio": 1.1099802087188868,
+     "shrunk_ratio": 1.0802753079048415
+    },
+    {
+     "elevation_band": "20-30",
+     "decile": 10,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 35,
+     "distinct_days": 17,
+     "raw_ratio": 1.061157713227554,
+     "shrunk_ratio": 1.0432172985306436
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 1,
+     "day_type": "working_day",
+     "training_hours": 416,
+     "distinct_days": 209,
+     "raw_ratio": 1.7798166287129766,
+     "shrunk_ratio": 1.7545333770411071
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 1,
+     "day_type": "saturday",
+     "training_hours": 89,
+     "distinct_days": 44,
+     "raw_ratio": 1.6534465105864515,
+     "shrunk_ratio": 1.5637094216798215
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 1,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 82,
+     "distinct_days": 38,
+     "raw_ratio": 1.7375209696093106,
+     "shrunk_ratio": 1.6227406863337963
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 2,
+     "day_type": "working_day",
+     "training_hours": 314,
+     "distinct_days": 212,
+     "raw_ratio": 1.3554217485201225,
+     "shrunk_ratio": 1.3440499759184157
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 2,
+     "day_type": "saturday",
+     "training_hours": 65,
+     "distinct_days": 37,
+     "raw_ratio": 1.501764379858805,
+     "shrunk_ratio": 1.421882183969155
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 2,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 83,
+     "distinct_days": 55,
+     "raw_ratio": 1.3635428331314763,
+     "shrunk_ratio": 1.3224579010015842
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 3,
+     "day_type": "working_day",
+     "training_hours": 275,
+     "distinct_days": 186,
+     "raw_ratio": 1.296234099770215,
+     "shrunk_ratio": 1.2854770808141298
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 3,
+     "day_type": "saturday",
+     "training_hours": 56,
+     "distinct_days": 37,
+     "raw_ratio": 1.3331055754292191,
+     "shrunk_ratio": 1.2800554620624576
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 3,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 53,
+     "distinct_days": 33,
+     "raw_ratio": 1.3326901660786183,
+     "shrunk_ratio": 1.2744077380115357
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 4,
+     "day_type": "working_day",
+     "training_hours": 272,
+     "distinct_days": 183,
+     "raw_ratio": 1.253601920423948,
+     "shrunk_ratio": 1.244245713039208
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 4,
+     "day_type": "saturday",
+     "training_hours": 46,
+     "distinct_days": 31,
+     "raw_ratio": 1.306023149106738,
+     "shrunk_ratio": 1.2495855700572607
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 4,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 59,
+     "distinct_days": 40,
+     "raw_ratio": 1.3160702919317229,
+     "shrunk_ratio": 1.2689435258965094
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 5,
+     "day_type": "working_day",
+     "training_hours": 262,
+     "distinct_days": 180,
+     "raw_ratio": 1.2208498380820918,
+     "shrunk_ratio": 1.212569544891142
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 5,
+     "day_type": "saturday",
+     "training_hours": 54,
+     "distinct_days": 40,
+     "raw_ratio": 1.234167207471285,
+     "shrunk_ratio": 1.199238773164222
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 5,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 47,
+     "distinct_days": 33,
+     "raw_ratio": 1.2657786700178906,
+     "shrunk_ratio": 1.2192057537614354
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 6,
+     "day_type": "working_day",
+     "training_hours": 225,
+     "distinct_days": 159,
+     "raw_ratio": 1.2154959197116946,
+     "shrunk_ratio": 1.2063938871929305
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 6,
+     "day_type": "saturday",
+     "training_hours": 49,
+     "distinct_days": 35,
+     "raw_ratio": 1.2106772704465598,
+     "shrunk_ratio": 1.1755056787023006
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 6,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 40,
+     "distinct_days": 27,
+     "raw_ratio": 1.2885741911006747,
+     "shrunk_ratio": 1.2290893293995662
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 7,
+     "day_type": "working_day",
+     "training_hours": 231,
+     "distinct_days": 160,
+     "raw_ratio": 1.160543789489977,
+     "shrunk_ratio": 1.1537996428638524
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 7,
+     "day_type": "saturday",
+     "training_hours": 37,
+     "distinct_days": 28,
+     "raw_ratio": 1.188613588495704,
+     "shrunk_ratio": 1.150820414792764
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 7,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 42,
+     "distinct_days": 28,
+     "raw_ratio": 1.1581246803250858,
+     "shrunk_ratio": 1.1264292882562694
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 8,
+     "day_type": "working_day",
+     "training_hours": 250,
+     "distinct_days": 148,
+     "raw_ratio": 1.1519899688151505,
+     "shrunk_ratio": 1.1451099962871567
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 8,
+     "day_type": "saturday",
+     "training_hours": 41,
+     "distinct_days": 28,
+     "raw_ratio": 1.1915488587630882,
+     "shrunk_ratio": 1.1531686310066716
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 8,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 42,
+     "distinct_days": 23,
+     "raw_ratio": 1.223405328645904,
+     "shrunk_ratio": 1.1711952199574274
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 9,
+     "day_type": "working_day",
+     "training_hours": 243,
+     "distinct_days": 142,
+     "raw_ratio": 1.0935201846226588,
+     "shrunk_ratio": 1.0891100688341246
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 9,
+     "day_type": "saturday",
+     "training_hours": 26,
+     "distinct_days": 16,
+     "raw_ratio": 1.176522542505341,
+     "shrunk_ratio": 1.1226910747805428
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 9,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 23,
+     "distinct_days": 16,
+     "raw_ratio": 1.1735312979666244,
+     "shrunk_ratio": 1.1206102090144792
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 10,
+     "day_type": "working_day",
+     "training_hours": 174,
+     "distinct_days": 90,
+     "raw_ratio": 1.0066117143553035,
+     "shrunk_ratio": 1.006109158060251
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 10,
+     "day_type": "saturday",
+     "training_hours": 14,
+     "distinct_days": 8,
+     "raw_ratio": 1.0357629624616809,
+     "shrunk_ratio": 1.018909182637365
+    },
+    {
+     "elevation_band": "30-40",
+     "decile": 10,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 13,
+     "distinct_days": 9,
+     "raw_ratio": 1.1311979358216935,
+     "shrunk_ratio": 1.073644716391392
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 1,
+     "day_type": "working_day",
+     "training_hours": 418,
+     "distinct_days": 167,
+     "raw_ratio": 2.049684212079009,
+     "shrunk_ratio": 2.007441364695756
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 1,
+     "day_type": "saturday",
+     "training_hours": 76,
+     "distinct_days": 30,
+     "raw_ratio": 2.217987250593689,
+     "shrunk_ratio": 1.9874905826399378
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 1,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 57,
+     "distinct_days": 26,
+     "raw_ratio": 2.32935882043505,
+     "shrunk_ratio": 2.047298890035707
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 2,
+     "day_type": "working_day",
+     "training_hours": 321,
+     "distinct_days": 175,
+     "raw_ratio": 1.5553420382668066,
+     "shrunk_ratio": 1.533969179871199
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 2,
+     "day_type": "saturday",
+     "training_hours": 48,
+     "distinct_days": 25,
+     "raw_ratio": 1.5976370430966615,
+     "shrunk_ratio": 1.4668268786651115
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 2,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 66,
+     "distinct_days": 34,
+     "raw_ratio": 1.334864780244069,
+     "shrunk_ratio": 1.2776325992235458
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 3,
+     "day_type": "working_day",
+     "training_hours": 284,
+     "distinct_days": 149,
+     "raw_ratio": 1.4221158438360821,
+     "shrunk_ratio": 1.403158940842585
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 3,
+     "day_type": "saturday",
+     "training_hours": 43,
+     "distinct_days": 23,
+     "raw_ratio": 1.3218024707913578,
+     "shrunk_ratio": 1.2466330289356087
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 3,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 60,
+     "distinct_days": 26,
+     "raw_ratio": 1.4173673655325416,
+     "shrunk_ratio": 1.3287601679913064
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 4,
+     "day_type": "working_day",
+     "training_hours": 223,
+     "distinct_days": 129,
+     "raw_ratio": 1.3339818271899067,
+     "shrunk_ratio": 1.3167734540247427
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 4,
+     "day_type": "saturday",
+     "training_hours": 30,
+     "distinct_days": 21,
+     "raw_ratio": 1.2089415378297816,
+     "shrunk_ratio": 1.1566180833675872
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 4,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 35,
+     "distinct_days": 19,
+     "raw_ratio": 1.3717359072276847,
+     "shrunk_ratio": 1.2715583183535784
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 5,
+     "day_type": "working_day",
+     "training_hours": 190,
+     "distinct_days": 116,
+     "raw_ratio": 1.2870783401042534,
+     "shrunk_ratio": 1.2707204999346375
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 5,
+     "day_type": "saturday",
+     "training_hours": 39,
+     "distinct_days": 21,
+     "raw_ratio": 1.3218823977078353,
+     "shrunk_ratio": 1.2413237282761276
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 5,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 38,
+     "distinct_days": 21,
+     "raw_ratio": 1.2781768449976958,
+     "shrunk_ratio": 1.2085445637435228
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 6,
+     "day_type": "working_day",
+     "training_hours": 213,
+     "distinct_days": 125,
+     "raw_ratio": 1.2664780565367655,
+     "shrunk_ratio": 1.2523279629315356
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 6,
+     "day_type": "saturday",
+     "training_hours": 39,
+     "distinct_days": 23,
+     "raw_ratio": 1.335058184843479,
+     "shrunk_ratio": 1.256795743042235
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 6,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 27,
+     "distinct_days": 17,
+     "raw_ratio": 1.3517067887755752,
+     "shrunk_ratio": 1.249022893710492
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 7,
+     "day_type": "working_day",
+     "training_hours": 175,
+     "distinct_days": 106,
+     "raw_ratio": 1.2086840169995166,
+     "shrunk_ratio": 1.195734865856777
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 7,
+     "day_type": "saturday",
+     "training_hours": 32,
+     "distinct_days": 19,
+     "raw_ratio": 1.3356201116506183,
+     "shrunk_ratio": 1.2451660062011067
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 7,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 33,
+     "distinct_days": 19,
+     "raw_ratio": 1.1877090231826835,
+     "shrunk_ratio": 1.1370771338591543
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 8,
+     "day_type": "working_day",
+     "training_hours": 174,
+     "distinct_days": 95,
+     "raw_ratio": 1.2105122373140658,
+     "shrunk_ratio": 1.196041142987287
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 8,
+     "day_type": "saturday",
+     "training_hours": 25,
+     "distinct_days": 16,
+     "raw_ratio": 1.234009983171221,
+     "shrunk_ratio": 1.1626823378524593
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 8,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 33,
+     "distinct_days": 18,
+     "raw_ratio": 1.2568990182748163,
+     "shrunk_ratio": 1.1848686547525489
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 9,
+     "day_type": "working_day",
+     "training_hours": 166,
+     "distinct_days": 83,
+     "raw_ratio": 1.1415209142879585,
+     "shrunk_ratio": 1.1304863325085288
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 9,
+     "day_type": "saturday",
+     "training_hours": 27,
+     "distinct_days": 13,
+     "raw_ratio": 1.21580154179553,
+     "shrunk_ratio": 1.140147704160446
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 9,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 13,
+     "distinct_days": 7,
+     "raw_ratio": 1.1872211710808638,
+     "shrunk_ratio": 1.0934344455309342
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 10,
+     "day_type": "working_day",
+     "training_hours": 80,
+     "distinct_days": 36,
+     "raw_ratio": 1.0190213913331527,
+     "shrunk_ratio": 1.0158675378572215
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 10,
+     "day_type": "saturday",
+     "training_hours": 8,
+     "distinct_days": 4,
+     "raw_ratio": 1.0689669609837518,
+     "shrunk_ratio": 1.024854716709276
+    },
+    {
+     "elevation_band": "40-50",
+     "decile": 10,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 7,
+     "distinct_days": 3,
+     "raw_ratio": 1.1578762147202364,
+     "shrunk_ratio": 1.0471162684027737
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 1,
+     "day_type": "working_day",
+     "training_hours": 214,
+     "distinct_days": 80,
+     "raw_ratio": 2.0883710727996623,
+     "shrunk_ratio": 2.0007726421131036
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 1,
+     "day_type": "saturday",
+     "training_hours": 31,
+     "distinct_days": 12,
+     "raw_ratio": 2.235188534404667,
+     "shrunk_ratio": 1.779989286985423
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 1,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 41,
+     "distinct_days": 13,
+     "raw_ratio": 2.4497764267916686,
+     "shrunk_ratio": 1.9422313794079362
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 2,
+     "day_type": "working_day",
+     "training_hours": 193,
+     "distinct_days": 89,
+     "raw_ratio": 1.573373948352917,
+     "shrunk_ratio": 1.5315397442007983
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 2,
+     "day_type": "saturday",
+     "training_hours": 18,
+     "distinct_days": 8,
+     "raw_ratio": 1.6726226173207968,
+     "shrunk_ratio": 1.3585676652288936
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 2,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 28,
+     "distinct_days": 15,
+     "raw_ratio": 1.4918685035420836,
+     "shrunk_ratio": 1.3352527996817403
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 3,
+     "day_type": "working_day",
+     "training_hours": 186,
+     "distinct_days": 90,
+     "raw_ratio": 1.3999387275058481,
+     "shrunk_ratio": 1.3710517475813748
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 3,
+     "day_type": "saturday",
+     "training_hours": 16,
+     "distinct_days": 10,
+     "raw_ratio": 1.447159895495389,
+     "shrunk_ratio": 1.2628901761659366
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 3,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 15,
+     "distinct_days": 9,
+     "raw_ratio": 1.5102778700762702,
+     "shrunk_ratio": 1.2868771794095915
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 4,
+     "day_type": "working_day",
+     "training_hours": 125,
+     "distinct_days": 67,
+     "raw_ratio": 1.3148972386080746,
+     "shrunk_ratio": 1.2850763381974057
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 4,
+     "day_type": "saturday",
+     "training_hours": 16,
+     "distinct_days": 9,
+     "raw_ratio": 1.3714868724310385,
+     "shrunk_ratio": 1.2088072432341486
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 4,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 15,
+     "distinct_days": 7,
+     "raw_ratio": 1.4589306916259621,
+     "shrunk_ratio": 1.2292892058034832
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 5,
+     "day_type": "working_day",
+     "training_hours": 109,
+     "distinct_days": 60,
+     "raw_ratio": 1.2975510145845397,
+     "shrunk_ratio": 1.2664267897752153
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 5,
+     "day_type": "saturday",
+     "training_hours": 31,
+     "distinct_days": 14,
+     "raw_ratio": 1.3132249761891817,
+     "shrunk_ratio": 1.2086992241197891
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 5,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 17,
+     "distinct_days": 8,
+     "raw_ratio": 1.4757362671323826,
+     "shrunk_ratio": 1.2535616117950727
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 6,
+     "day_type": "working_day",
+     "training_hours": 117,
+     "distinct_days": 61,
+     "raw_ratio": 1.27499259031578,
+     "shrunk_ratio": 1.2466482654283766
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 6,
+     "day_type": "saturday",
+     "training_hours": 23,
+     "distinct_days": 14,
+     "raw_ratio": 1.2502210933999722,
+     "shrunk_ratio": 1.1666966355936497
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 6,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 10,
+     "distinct_days": 6,
+     "raw_ratio": 1.3230747318546396,
+     "shrunk_ratio": 1.1489217254611437
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 7,
+     "day_type": "working_day",
+     "training_hours": 94,
+     "distinct_days": 50,
+     "raw_ratio": 1.2463783695808404,
+     "shrunk_ratio": 1.2160781143668256
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 7,
+     "day_type": "saturday",
+     "training_hours": 13,
+     "distinct_days": 7,
+     "raw_ratio": 1.2958717266129824,
+     "shrunk_ratio": 1.1477597232969934
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 7,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 16,
+     "distinct_days": 10,
+     "raw_ratio": 1.1287125413555525,
+     "shrunk_ratio": 1.0755682031425033
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 8,
+     "day_type": "working_day",
+     "training_hours": 115,
+     "distinct_days": 54,
+     "raw_ratio": 1.1995112235921117,
+     "shrunk_ratio": 1.1765760674400174
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 8,
+     "day_type": "saturday",
+     "training_hours": 9,
+     "distinct_days": 4,
+     "raw_ratio": 1.3086945311083726,
+     "shrunk_ratio": 1.1120283785727747
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 8,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 21,
+     "distinct_days": 11,
+     "raw_ratio": 1.2974329654993928,
+     "shrunk_ratio": 1.1816275922422417
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 9,
+     "day_type": "working_day",
+     "training_hours": 79,
+     "distinct_days": 45,
+     "raw_ratio": 1.1307040566101858,
+     "shrunk_ratio": 1.1130618574485653
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 9,
+     "day_type": "saturday",
+     "training_hours": 16,
+     "distinct_days": 9,
+     "raw_ratio": 1.1922007734463096,
+     "shrunk_ratio": 1.1079588125552386
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 9,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 10,
+     "distinct_days": 6,
+     "raw_ratio": 1.200341317728772,
+     "shrunk_ratio": 1.092275534326128
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 10,
+     "day_type": "working_day",
+     "training_hours": 35,
+     "distinct_days": 15,
+     "raw_ratio": 1.011914415844226,
+     "shrunk_ratio": 1.0080113762513827
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 10,
+     "day_type": "saturday",
+     "training_hours": 6,
+     "distinct_days": 3,
+     "raw_ratio": 1.0703984227392405,
+     "shrunk_ratio": 1.020872930808475
+    },
+    {
+     "elevation_band": "50+",
+     "decile": 10,
+     "day_type": "sunday_or_holiday",
+     "training_hours": 0,
+     "distinct_days": 0,
+     "raw_ratio": null,
+     "shrunk_ratio": 0.9996477199810043
+    }
+   ]
+  }
+ },
+ "folds": {
+  "2019": {
+   "speed_scale": 0.8129245497717422,
+   "speed_scale_at_bound": false,
+   "fit": {
+    "f_scale": 0.044835114321296964,
+    "cost": 47.73293696835778,
+    "nfev": 3,
+    "status": 2,
+    "message": "`ftol` termination condition is satisfied.",
+    "eligible_hours": 48564,
+    "training_years": [
+     2020,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ]
+   }
+  },
+  "2020": {
+   "speed_scale": 0.8174244255275086,
+   "speed_scale_at_bound": false,
+   "fit": {
+    "f_scale": 0.045600479735824394,
+    "cost": 47.269869895583675,
+    "nfev": 5,
+    "status": 3,
+    "message": "`xtol` termination condition is satisfied.",
+    "eligible_hours": 49407,
+    "training_years": [
+     2019,
+     2021,
+     2022,
+     2023,
+     2024,
+     2025
+    ]
+   }
+  },
+  "2021": {
+   "speed_scale": 0.8177389161925176,
+   "speed_scale_at_bound": false,
+   "fit": {
+    "f_scale": 0.045414618982268645,
+    "cost": 45.2373481361906,
+    "nfev": 4,
+    "status": 3,
+    "message": "`xtol` termination condition is satisfied.",
+    "eligible_hours": 48506,
+    "training_years": [
+     2019,
+     2020,
+     2022,
+     2023,
+     2024,
+     2025
+    ]
+   }
+  },
+  "2022": {
+   "speed_scale": 0.8140219271709976,
+   "speed_scale_at_bound": false,
+   "fit": {
+    "f_scale": 0.04496834584542232,
+    "cost": 46.55112037800539,
+    "nfev": 4,
+    "status": 3,
+    "message": "`xtol` termination condition is satisfied.",
+    "eligible_hours": 48460,
+    "training_years": [
+     2019,
+     2020,
+     2021,
+     2023,
+     2024,
+     2025
+    ]
+   }
+  },
+  "2023": {
+   "speed_scale": 0.810699663139849,
+   "speed_scale_at_bound": false,
+   "fit": {
+    "f_scale": 0.045836157618771925,
+    "cost": 50.021045175698866,
+    "nfev": 4,
+    "status": 3,
+    "message": "`xtol` termination condition is satisfied.",
+    "eligible_hours": 48986,
+    "training_years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2024,
+     2025
+    ]
+   }
+  },
+  "2024": {
+   "speed_scale": 0.8113654053949748,
+   "speed_scale_at_bound": false,
+   "fit": {
+    "f_scale": 0.04589101367420926,
+    "cost": 50.64073655238498,
+    "nfev": 4,
+    "status": 3,
+    "message": "`xtol` termination condition is satisfied.",
+    "eligible_hours": 49049,
+    "training_years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2025
+    ]
+   }
+  },
+  "2025": {
+   "speed_scale": 0.8134667683772039,
+   "speed_scale_at_bound": false,
+   "fit": {
+    "f_scale": 0.0460724886591215,
+    "cost": 51.56398167948256,
+    "nfev": 3,
+    "status": 2,
+    "message": "`ftol` termination condition is satisfied.",
+    "eligible_hours": 49310,
+    "training_years": [
+     2019,
+     2020,
+     2021,
+     2022,
+     2023,
+     2024
+    ]
+   }
+  }
+ }
+}

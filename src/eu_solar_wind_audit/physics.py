@@ -1,6 +1,8 @@
 """Uncalibrated physics model of the solar and onshore wind output of mainland France and of its
-12 éCO2mix regions, and of Germany, from ERA5, the PV and wind modules and the capacity of each
-area: the SDES capacity per department in France, the MaStR capacity per district in Germany.
+12 éCO2mix regions, of Germany and of the Danish price areas, from ERA5, the PV and wind modules
+and the capacity of each area: the SDES capacity per department in France, the MaStR capacity per
+district in Germany, the capacity per municipality of Energinet and of the register of the Danish
+Energy Agency in Denmark.
 
 Output is energy in MWh for each hour [t, t + 1 h), labelled t in UTC: the sum over ERA5 cells of
 capacity factor times capacity in MW.
@@ -22,7 +24,17 @@ from pandera.typing import DataFrame, Series
 
 from eu_solar_wind_audit import grid, pv, spatial, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
-from eu_solar_wind_audit.sources import bkg, era5, mastr, natural_earth, odre, sdes
+from eu_solar_wind_audit.sources import (
+    bkg,
+    energinet,
+    ens,
+    era5,
+    gisco,
+    mastr,
+    natural_earth,
+    odre,
+    sdes,
+)
 
 Technology = Literal["solar", "wind_onshore"]
 
@@ -39,6 +51,9 @@ DAY = pd.Timedelta(days=1)
 MASTR_PROVISIONAL_MONTHS = 3
 # The German panel starts a year before the evaluation period, for the margins of its runs.
 MASTR_PANEL_START = pd.Timestamp("2018-01-31")
+# The Danish registers are revised after the fact too: IEA PVPS reports 310 MWp of solar registered
+# in 2024 that was installed in 2025.
+DANISH_PROVISIONAL_MONTHS = 3
 
 
 class Modelled(grid.Hourly):
@@ -480,6 +495,87 @@ def model_germany_areas(
     return {name: Modelled.validate(pd.concat(year[name] for year in years)) for name in parts}
 
 
+def load_denmark_capacity(
+    technology: Technology, parameters: Country, cache_dir: Path = energinet.CACHE_DIR
+) -> pd.DataFrame:
+    """Month-end capacity of the municipalities of the price area of `parameters` in the columns
+    of sdes.monthly_capacity, the municipality number standing for the department code and the
+    price area for the region, with the `generation` of the capacity: for onshore wind, the window
+    of parameters.wind_onshore in which its turbines were connected, 0 for solar.
+
+    Solar is the capacity of Energi Data Service at midnight on the first day of each month, taken
+    as the capacity at the end of the month before; onshore wind, the turbines of the register of
+    the Danish Energy Agency from MASTR_PANEL_START on (sources.ens). The last
+    DANISH_PROVISIONAL_MONTHS months of each panel are provisional.
+    """
+    zone = parameters.country
+    if technology == "solar":
+        capacity = energinet.fetch_capacity(cache_dir=cache_dir)
+        capacity = capacity[capacity["price_area"].eq(zone)]
+        rows = pd.DataFrame(
+            {
+                "municipality": capacity["municipality"],
+                "month_end": capacity["month_start"] - DAY,
+                "capacity_mw": capacity["solar_mw"],
+                "generation": 0,
+            }
+        )
+    else:
+        turbines = ens.read_turbines()
+        turbines = turbines[energinet.price_area(turbines["municipality"]).eq(zone)]
+        year = turbines["connected"].dt.year.to_numpy()
+        ends = [
+            np.inf
+            if generation.last_commissioning_year is None
+            else float(generation.last_commissioning_year)
+            for generation in parameters.wind_onshore
+        ]
+        rows = pd.concat(
+            [
+                ens.monthly_capacity(
+                    turbines[(year > low) & (year <= high)], MASTR_PANEL_START, ens.LAST_MONTH_END
+                ).assign(generation=generation)
+                for generation, (low, high) in enumerate(zip([-np.inf, *ends], ends, strict=False))
+            ],
+            ignore_index=True,
+        )
+    code = rows["municipality"].astype(str)
+    last = rows["month_end"].max()
+    return pd.DataFrame(
+        {
+            "department_code": code,
+            "department": code,
+            "region": zone,
+            "technology": technology,
+            "month_end": rows["month_end"],
+            "capacity_mw": rows["capacity_mw"],
+            "provisional": rows["month_end"]
+            > last - pd.offsets.MonthEnd(DANISH_PROVISIONAL_MONTHS),
+            "generation": rows["generation"],
+        }
+    )
+
+
+def model_denmark(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    cache_dir: Path = ERA5_CACHE_DIR,
+) -> DataFrame[Modelled]:
+    """Hourly modelled output of the onshore fleet of the Danish price area of `parameters` for
+    hours [start, end), both hour starts in UTC, computed one calendar year at a time; see
+    `model`."""
+    grid.check_period(start, end)
+    monthly = load_denmark_capacity(technology, parameters)
+    municipalities = gisco.load_municipalities("DK")
+    years = [
+        model(technology, first, stop, parameters, monthly, municipalities, cache_dir)
+        for first, stop in _calendar_years(start, end)
+    ]
+    return Modelled.validate(pd.concat(years))
+
+
 def model_france(
     technology: Technology,
     start: pd.Timestamp,
@@ -523,7 +619,8 @@ def model_france_regions(
 
 def _in_perimeter(monthly: pd.DataFrame, parameters: Country) -> pd.DataFrame:
     """Rows of `monthly` in the perimeter of `parameters`: mainland France without Corsica, or
-    every district of Germany."""
+    every district of Germany or municipality of a Danish price area, the only rows of their
+    panels."""
     if parameters.perimeter == "metropolitan_without_corsica":
         return sdes.metropolitan_without_corsica(monthly)
     return monthly

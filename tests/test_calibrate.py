@@ -108,6 +108,30 @@ def test_calibrate_germany_takes_its_config_and_writes_its_fit_in_fits_de(
     assert description["inputs"]["published"] == "SMARD.de, feed-in of Germany, filter 4067"
 
 
+def test_calibrate_a_danish_price_area_takes_its_config_and_writes_its_fit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(
+        eligibility,
+        "year_inputs",
+        lambda client, technology, year, parameters: wind_year(year, "DK2"),
+    )
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config").symlink_to(Path(__file__).parents[1] / "config")
+
+    cli.main(["calibrate", "DK2", "wind_onshore", "out"])
+
+    frozen = fits.read(tmp_path / "fits" / "DK2" / "wind_onshore.json")
+    assert sorted(frozen.fold_calibrations) == YEARS
+    description = json.loads((tmp_path / "out" / "wind_onshore-calibration.json").read_text())
+    assert description["inputs"]["prices"] == "SMARD.de, day-ahead prices of DK2, filter 253"
+    assert description["inputs"]["published"] == (
+        "Energi Data Service, ProductionConsumptionSettlement of DK2: "
+        "OnshoreWindLt50kW_MWh + OnshoreWindGe50kW_MWh"
+    )
+    assert description["inputs"]["regions"] == "GISCO LAU 2024 municipalities"
+
+
 def test_calibrate_refuses_a_config_of_another_country(tmp_path: Path) -> None:
     config = CONFIG_DIR / "fr.toml"
 

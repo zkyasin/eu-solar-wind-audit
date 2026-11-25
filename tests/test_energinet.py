@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -58,6 +59,19 @@ def test_solar_is_the_sum_of_the_three_plant_sizes(tmp_path: Path) -> None:
     assert hourly["complete"].all()
 
 
+def test_total_solar_adds_the_self_consumed_output(tmp_path: Path) -> None:
+    hourly = settlement(
+        tmp_path,
+        "DK2",
+        "solar_total",
+        record("2024-06-01T10:00:00", "DK2", SolarPowerGe40kW_MWh=500.0, SolarPowerSelfConMWh=80.0),
+        record("2024-06-01T11:00:00", "DK2", SolarPowerSelfConMWh=None),
+    )
+
+    assert hourly["energy_mwh"].iloc[0] == 582.0
+    assert hourly["complete"].tolist() == [True, False]
+
+
 def test_denmark_is_complete_when_both_areas_are(tmp_path: Path) -> None:
     hourly = settlement(
         tmp_path,
@@ -113,15 +127,32 @@ def test_requests_take_local_years_and_settled_years_are_cached(tmp_path: Path) 
     ]
 
 
-def test_the_current_year_is_not_cached(tmp_path: Path) -> None:
+def test_a_year_still_corrected_is_kept_for_a_day_under_its_own_name(tmp_path: Path) -> None:
     start = pd.Timestamp.now(tz="UTC").floor("h") - HOUR
-    client, _ = serving({"records": []})
-
-    energinet.fetch_hourly_settlement(
-        "DK1", "solar", start, start + HOUR, client=client, cache_dir=tmp_path
+    hour = start.strftime("%Y-%m-%dT%H:%M:%S")
+    year = start.tz_convert(energinet.TIMEZONE).year
+    client, requests = serving(
+        {"records": [record(hour, "DK1"), record(hour, "DK2")]},
+        {"records": [record(hour, "DK1", SolarPowerGe40kW_MWh=9.0), record(hour, "DK2")]},
     )
 
-    assert not any(tmp_path.iterdir())
+    for quantity in ("solar", "wind_onshore"):
+        hourly = energinet.fetch_hourly_settlement(
+            "DK", quantity, start, start + HOUR, client=client, cache_dir=tmp_path
+        )
+        assert hourly["energy_mwh"].tolist() == [len(energinet.QUANTITIES[quantity]) * 2.0]
+    recent = tmp_path / f"{energinet.SETTLEMENT}_{year}_recent.json"
+    assert [path.name for path in tmp_path.iterdir()] == [recent.name]
+    assert len(requests) == 1
+
+    # A day later the year is downloaded again.
+    old = (pd.Timestamp.now(tz="UTC") - energinet.RECENT_FOR - HOUR).timestamp()
+    os.utime(recent, (old, old))
+    hourly = energinet.fetch_hourly_settlement(
+        "DK1", "solar", start, start + HOUR, client=client, cache_dir=tmp_path
+    )
+    assert hourly["energy_mwh"].tolist() == [11.0]
+    assert len(requests) == 2
 
 
 def test_a_rate_limit_waits_the_time_the_api_asks(
@@ -165,3 +196,71 @@ def test_capacity_per_municipality_and_its_price_area() -> None:
     assert capacity["price_area"].isna().iloc[0]
     assert (capacity["month_start"] == pd.Timestamp("2025-12-01")).all()
     assert capacity["wind_offshore_mw"].isna().all()
+
+
+def test_price_area_of_municipality_numbers() -> None:
+    numbers = pd.Series([101, 400, 410, 860, 1, None], dtype="Int64")
+
+    areas = energinet.price_area(numbers)
+
+    assert areas.tolist()[:4] == ["DK2", "DK2", "DK1", "DK1"]
+    assert areas.iloc[4:].isna().all()
+
+
+def test_settlement_values_keep_each_record_of_one_area(tmp_path: Path) -> None:
+    client, _ = serving(
+        {
+            "records": [
+                record("2024-06-01T11:00:00", "DK1", OnshoreWindGe50kW_MWh=300.0),
+                record("2024-06-01T10:00:00", "DK1", OnshoreWindLt50kW_MWh=None),
+                record("2024-06-01T10:00:00", "DK1"),
+                record("2024-06-01T10:00:00", "DK2"),
+                record("2024-06-01T12:00:00", "DK1"),
+            ]
+        }
+    )
+
+    values = energinet.fetch_settlement_values(
+        "DK1", "wind_onshore", START, START + 2 * HOUR, client=client, cache_dir=tmp_path
+    )
+
+    # The repeated hour keeps both records, in the order they came; the hour after the period goes.
+    assert values.index.tolist() == [START, START, START + HOUR]
+    assert np.isnan(values.iloc[0])
+    assert values.iloc[1:].tolist() == [2.0, 301.0]
+
+
+def capacity_of(month_starts: list[str], solar: list[float]) -> pd.DataFrame:
+    return energinet.parse_capacity(
+        {
+            "records": [
+                {
+                    "Month": f"{month}T00:00:00",
+                    "MunicipalityNo": number,
+                    "SolarPowerCapacity": mw / 2,
+                    "OnshoreWindCapacity": 1.0,
+                    "OffshoreWindCapacity": 0.0,
+                }
+                for month, mw in zip(month_starts, solar, strict=True)
+                for number in ("730", "751", "101")
+            ]
+        }
+    )
+
+
+def test_capacity_is_linear_between_the_first_days_of_months_in_danish_time() -> None:
+    capacity = capacity_of(["2024-06-01", "2024-07-01"], [100.0, 130.0])
+    # Midnight on 1 June 2024 in Copenhagen is 22:00 UTC on 31 May.
+    start = pd.Timestamp("2024-05-31 22:00", tz="UTC")
+
+    hourly = energinet.hourly_capacity(capacity, "DK1", "solar", start, start + 720 * HOUR)
+
+    # Two municipalities of DK1 hold half of the figure each; Copenhagen is in DK2.
+    assert hourly.iloc[0] == pytest.approx(100.0)
+    assert hourly.iloc[360] == pytest.approx(115.0)
+    assert (
+        energinet.hourly_capacity(capacity, "DK2", "wind_onshore", start, start + HOUR).iloc[0]
+        == 1.0
+    )
+    with pytest.raises(ValueError, match="no solar capacity of DK1"):
+        energinet.hourly_capacity(capacity, "DK1", "solar", start - HOUR, start)

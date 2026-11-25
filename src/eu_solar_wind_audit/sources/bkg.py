@@ -5,12 +5,12 @@ The edition is the state of 1 January 2026: 401 districts, since Hanau left the 
 on that day. The district code is the first five digits of the Amtlicher Gemeindeschlüssel (AGS).
 """
 
-import hashlib
-import time
 from pathlib import Path
 
 import geopandas as gpd
 import httpx
+
+from eu_solar_wind_audit.sources import pinned
 
 EDITION = "2026-01-01"
 URL = (
@@ -20,8 +20,6 @@ URL = (
 SHA256 = "ceb0419ed572ec11763e999f97776ba08727a131fc6c8a65a418cc495c310dde"
 MEMBER = "vg5000_ebenen_0101/DE_VG5000.gpkg"
 RAW_DIR = Path("data/raw/bkg")
-TIMEOUT_SECONDS = 120.0
-RETRY_DELAYS_SECONDS = (2.0, 10.0)
 
 # GF (Geofaktor) 9 is the part of a unit that has lower levels, that is its land area. On the Land
 # level, GF 8 rows are the 12-nautical-mile coastal sea and the Bodensee, which hold no districts.
@@ -31,28 +29,7 @@ LAND_AREA = 9
 def download_vg5000(client: httpx.Client | None = None, raw_dir: Path = RAW_DIR) -> Path:
     """Path of the pinned VG5000 zip, downloaded and checked unless already cached."""
     dest = raw_dir / f"vg5000_{EDITION}.utm32s.gpkg.ebenen.zip"
-    if dest.exists():
-        return dest
-    if client is None:
-        with httpx.Client(timeout=TIMEOUT_SECONDS) as own_client:
-            return download_vg5000(own_client, raw_dir)
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    partial = dest.with_name(dest.name + ".part")
-    # The server sometimes closes the connection mid-transfer.
-    for delay in RETRY_DELAYS_SECONDS:
-        try:
-            digest = _stream_to(client, partial)
-            break
-        except httpx.TransportError:
-            time.sleep(delay)
-    else:
-        digest = _stream_to(client, partial)
-    if digest != SHA256:
-        partial.unlink()
-        raise ValueError(f"{URL}: SHA-256 {digest}, expected {SHA256}")
-    partial.replace(dest)
-    return dest
+    return pinned.download(URL, SHA256, dest, client)
 
 
 def load_districts(path: Path | None = None) -> gpd.GeoDataFrame:
@@ -68,17 +45,6 @@ def load_laender(path: Path | None = None) -> gpd.GeoDataFrame:
     laender = _read_land_area(path, "vg5000_lan", ["AGS", "GEN", "GF"])
     laender = laender.rename(columns={"AGS": "region", "GEN": "name"})
     return _checked(laender[["region", "name", "geometry"]], digits=2)
-
-
-def _stream_to(client: httpx.Client, dest: Path) -> str:
-    digest = hashlib.sha256()
-    with client.stream("GET", URL) as response:
-        response.raise_for_status()
-        with dest.open("wb") as file:
-            for chunk in response.iter_bytes():
-                digest.update(chunk)
-                file.write(chunk)
-    return digest.hexdigest()
 
 
 def _read_land_area(path: Path | None, layer: str, columns: list[str]) -> gpd.GeoDataFrame:

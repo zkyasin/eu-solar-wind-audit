@@ -7,8 +7,9 @@ from eu_solar_wind_audit.config import Country, WindGeneration, load_country
 from eu_solar_wind_audit.pv import PVParameters, System
 from eu_solar_wind_audit.sources.era5 import Box
 
-FRANCE = Path(__file__).parents[1] / "config" / "countries" / "fr.toml"
-GERMANY = Path(__file__).parents[1] / "config" / "countries" / "de.toml"
+COUNTRIES = Path(__file__).parents[1] / "config" / "countries"
+FRANCE = COUNTRIES / "fr.toml"
+GERMANY = COUNTRIES / "de.toml"
 
 MINIMAL = """
 country = "XX"
@@ -139,6 +140,24 @@ def test_germany_file_is_valid() -> None:
     ]
 
 
-@pytest.mark.parametrize("path", [FRANCE, GERMANY], ids=["FR", "DE"])
+@pytest.mark.parametrize("zone", ["DK1", "DK2"])
+def test_danish_files_are_valid(zone: str) -> None:
+    denmark = load_country(COUNTRIES / f"{zone.lower()}.toml")
+
+    assert denmark.country == zone
+    assert denmark.perimeter == "price_area"
+    assert denmark.solar.fleet == load_country(GERMANY).solar.fleet
+    assert [generation.last_commissioning_year for generation in denmark.wind_onshore] == [
+        2000,
+        2012,
+        None,
+    ]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [FRANCE, GERMANY, COUNTRIES / "dk1.toml", COUNTRIES / "dk2.toml"],
+    ids=["FR", "DE", "DK1", "DK2"],
+)
 def test_the_dc_ac_ratio_of_each_country_is_on_the_grid_of_precompute(path: Path) -> None:
     assert load_country(path).solar.dc_ac_ratio in precompute.DC_AC_GRID

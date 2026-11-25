@@ -1,9 +1,9 @@
-"""Days of mainland France and Germany, as the calibrated potential uses them (evaluation plan,
-"Two model objects" and Deviations): the type of each day for the strata, and its sky class from
-the fleet clear-sky index.
+"""Days of mainland France, Germany and the Danish price areas, as the calibrated potential uses
+them (evaluation plan, "Two model objects" and Deviations): the type of each day for the strata,
+and its sky class from the fleet clear-sky index.
 
-Both countries keep Central European Time, so their days are those of Europe/Paris. Hours are UTC
-hour starts; each takes the type and the sky class of the local day it starts in.
+The three countries keep Central European Time, so their days are those of Europe/Paris. Hours are
+UTC hour starts; each takes the type and the sky class of the local day it starts in.
 """
 
 import numpy as np
@@ -53,7 +53,25 @@ GERMANY = AbstractHolidayCalendar(
         Holiday("Second Day of Christmas", month=12, day=26),
     ],
 )
-PUBLIC_HOLIDAYS = {"FR": FRANCE, "DE": GERMANY}
+# The public holidays of the Danish Church, which the Holidays Act protects. Store bededag, the
+# fourth Friday after Easter, ceased to be one on 1 January 2024. Constitution Day and Christmas
+# Eve are days off under many agreements, not public holidays, and are left out.
+DENMARK = AbstractHolidayCalendar(
+    "Denmark",
+    rules=[
+        Holiday("New Year's Day", month=1, day=1),
+        Holiday("Maundy Thursday", month=1, day=1, offset=[Easter(), Day(-3)]),
+        GoodFriday,
+        EasterMonday,
+        Holiday("Store bededag", month=1, day=1, offset=[Easter(), Day(26)], end_date="2023-12-31"),
+        ASCENSION_DAY,
+        WHIT_MONDAY,
+        Holiday("Christmas Day", month=12, day=25),
+        Holiday("Second Day of Christmas", month=12, day=26),
+    ],
+)
+# Keyed by the zones that calibration and detection runs name.
+PUBLIC_HOLIDAYS = {"FR": FRANCE, "DE": GERMANY, "DK1": DENMARK, "DK2": DENMARK}
 
 DAY_TYPES = ["working_day", "saturday", "sunday_or_holiday"]
 

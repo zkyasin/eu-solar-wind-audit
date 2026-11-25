@@ -6,9 +6,10 @@ import hashlib
 import json
 import math
 import subprocess
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pandas as pd
@@ -50,6 +51,8 @@ WEEK_START = pd.Timestamp("2025-06-02", tz="Europe/Paris")
 # The year of findings DE-1 and DE-2 of docs/anomalies-2019-2025.md.
 SUM_OF_PARTS_YEAR = 2025
 TECHNOLOGIES: tuple[physics.Technology, ...] = ("solar", "wind_onshore")
+# The countries that the web page shows.
+SITE_COUNTRIES = ("FR", "DE")
 # The published modulation volumes each country is compared with, and the technology of Hirth
 # (2026) that holds onshore wind: his wind is onshore and offshore together.
 REFERENCES = {"FR": Path("references/rte"), "DE": Path("references/hirth")}
@@ -106,7 +109,8 @@ def main(argv: list[str] | None = None) -> None:
     estimate = commands.add_parser(
         "estimate-modulation",
         help="estimate the output of a country modulated during negative prices with the frozen "
-        "fit, and compare it with the volumes of RTE for France or of Hirth (2026) for Germany",
+        "fit, and compare it with the volumes of RTE for France or of Hirth (2026) for Germany; "
+        "Denmark has no reference",
     )
     estimate.add_argument("country", choices=list(eligibility.PRICE_ZONES))
     estimate.add_argument("technology", choices=["solar", "wind_onshore"])
@@ -114,7 +118,9 @@ def main(argv: list[str] | None = None) -> None:
     estimate.add_argument("--config", type=Path, help="config/countries/<country>.toml by default")
     estimate.add_argument("--fits-dir", type=Path, help="fits/<COUNTRY> by default")
     estimate.add_argument(
-        "--references", type=Path, help="references/rte or references/hirth by default"
+        "--references",
+        type=Path,
+        help="references/rte for France or references/hirth for Germany by default",
     )
     estimate.add_argument(
         "--replicates",
@@ -127,7 +133,7 @@ def main(argv: list[str] | None = None) -> None:
         help="fix the thresholds of the statistical anomaly detectors of a country on 2019-2022 "
         "and write them with the reference model they rest on",
     )
-    fix.add_argument("country", choices=["FR", "DE"])
+    fix.add_argument("country", choices=list(detection.TIME_ZONES))
     fix.add_argument("--config", type=Path, help="config/countries/<country>.toml by default")
     fix.add_argument(
         "--output", type=Path, help="config/anomaly-thresholds/<COUNTRY>.json by default"
@@ -137,7 +143,7 @@ def main(argv: list[str] | None = None) -> None:
         help="run the anomaly detectors on the published series of a country over a period, and "
         "write the findings with a JSON file describing the run",
     )
-    anomalies.add_argument("country", choices=["FR", "DE"])
+    anomalies.add_argument("country", choices=list(detection.TIME_ZONES))
     anomalies.add_argument("start", type=date.fromisoformat, help="first day, UTC")
     anomalies.add_argument("end", type=date.fromisoformat, help="day after the last one, UTC")
     anomalies.add_argument(
@@ -242,15 +248,14 @@ def main(argv: list[str] | None = None) -> None:
             args.output,
             parameters,
             fits.read(fits_dir / f"{args.technology}.json"),
-            args.references or REFERENCES[args.country],
+            args.references or REFERENCES.get(args.country),
             args.replicates,
         ):
             print(path)
     elif args.command == "fix-anomaly-thresholds":
         parameters = load_country(args.config or CONFIG_DIR / f"{args.country.lower()}.toml")
-        country_inputs = inputs.france_inputs if args.country == "FR" else inputs.germany_inputs
         with odre.make_client() as client:
-            found = country_inputs(
+            found = detection_inputs(args.country)(
                 client,
                 thresholds.FIX_START,
                 thresholds.FIX_END,
@@ -276,10 +281,9 @@ def main(argv: list[str] | None = None) -> None:
             "sha256": hashlib.sha256(thresholds_path.read_bytes()).hexdigest(),
             "git_describe": fixed.reference_model["git_describe"],
         }
-        country_inputs = inputs.france_inputs if args.country == "FR" else inputs.germany_inputs
         with odre.make_client() as client:
             # The level breaks read the daily ratios from their first day on.
-            found = country_inputs(client, breaks.FIRST_DAY, end, parameters)
+            found = detection_inputs(args.country)(client, breaks.FIRST_DAY, end, parameters)
         detected = detection.detect(found, fixed, start, end)
         for path in detection.write(args.output, found, detected, start, end, run):
             print(path)
@@ -303,6 +307,31 @@ def main(argv: list[str] | None = None) -> None:
             *draw_sum_of_parts(args.output, args.anomalies, drawn),
         ]:
             print(path)
+
+
+def detection_inputs(country: str) -> Callable[..., inputs.DetectionInputs]:
+    """The function that gives the inputs of the anomaly detectors of `country`: France, Germany
+    or a Danish price area."""
+    if country == "FR":
+        return inputs.france_inputs
+    if country == "DE":
+        return inputs.germany_inputs
+    return inputs.denmark_inputs
+
+
+def hourly_load(
+    client: httpx.Client, country: str, start: pd.Timestamp, end: pd.Timestamp
+) -> pd.DataFrame:
+    """Hourly consumption that the placebo matches on, over the UTC hours [start, end): the
+    éCO2mix consumption of France, the SMARD load of Germany, the gross consumption of a Danish
+    price area on Energi Data Service."""
+    if country == "FR":
+        return odre.national_hourly(client, "load", start, end)
+    if country == "DE":
+        return smard.fetch_hourly_load("DE", start, end, client=client)
+    return energinet.fetch_hourly_settlement(
+        cast(energinet.Area, country), "gross_consumption", start, end, client=client
+    )
 
 
 def run_metadata(
@@ -337,7 +366,7 @@ def estimate_modulation(
     output: Path,
     parameters: Country,
     fit: fits.Fit,
-    reference_dir: Path,
+    reference_dir: Path | None,
     replicates: int,
 ) -> list[Path]:
     """Estimate the modulation of `technology` in the country of `parameters` over every year of
@@ -346,8 +375,9 @@ def estimate_modulation(
     sensitivity; give the minimal detectable effect of each year from the leave-one-year-out
     folds, and, with an interval, run the placebo and the injection. Compare the estimate with the
     volumes of `reference_dir`: for France the RTE files, with the verdict of the plan when there
-    is an interval; for Germany the yearly volumes of Hirth (2026), by their ratio only. Write the
-    tables and a JSON summary to `output`. Gives the paths written."""
+    is an interval; for Germany the yearly volumes of Hirth (2026), by their ratio only; a Danish
+    price area has none. Write the tables and a JSON summary to `output`. Gives the paths
+    written."""
     # The reference series are imported here only, so that calibrate never loads them.
     from eu_solar_wind_audit import comparison, references
 
@@ -359,11 +389,7 @@ def estimate_modulation(
             eligibility.year_inputs(client, technology, year, parameters)
             for year in evaluation.TRAINING_YEARS
         ]
-        consumption = (
-            odre.national_hourly(client, "load", first, end)
-            if country == "FR"
-            else smard.fetch_hourly_load("DE", first, end, client=client)
-        )
+        consumption = hourly_load(client, country, first, end)
     hours = modulation.negative_hours(years, fit)
     months = modulation.months(hours)
     estimate = months["modulation_gwh"]
@@ -375,13 +401,14 @@ def estimate_modulation(
     covariates = pd.concat([inputs.arrays.covariates for inputs in years])
     errors = detectability.daily_errors(report.predictions, covariates, technology, country)
     mde_gwh = detectability.minimal_detectable_effects(errors, hours)
-    references.verify_manifest(reference_dir)
+    if reference_dir is not None:
+        references.verify_manifest(reference_dir)
 
     output.mkdir(parents=True, exist_ok=True)
     tables: dict[str, pd.DataFrame] = {"modulation-hours": hours, "modulation-months": months}
     against: dict[str, Any] = {}
     found = None
-    if country == "FR":
+    if country == "FR" and reference_dir is not None:
         found = comparison.compare(
             months, references.load_rte_modulation(reference_dir), technology
         )
@@ -421,7 +448,7 @@ def estimate_modulation(
         tables["placebo-years"] = checked.years
         tables["placebo-pairs"] = checked.pairs.to_frame()
         placebo_years = checked.years
-    if country == "DE":
+    if country == "DE" and reference_dir is not None:
         hirth = references.load_hirth_curtailment(reference_dir)
         published = hirth[hirth["technology"] == HIRTH_TECHNOLOGIES[technology]]
         yearly = tables.get("modulation-intervals", estimates.to_frame())
@@ -801,7 +828,8 @@ def export_site_data(output: Path, processed: Path) -> list[Path]:
     modulations = []
     found = []
     runs = {}
-    for country, time_zone in detection.TIME_ZONES.items():
+    for country in SITE_COUNTRIES:
+        time_zone = detection.TIME_ZONES[country]
         calibration_dir = processed / f"calibration-{country.lower()}"
         modulation_dir = processed / f"modulation-{country.lower()}"
         anomalies_dir = processed / f"anomalies-{country.lower()}"

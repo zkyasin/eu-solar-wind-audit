@@ -5,16 +5,18 @@ judges.
 Rule-based detectors run on every series: completeness on the raw rows of each dataset; negative
 values, values above capacity and frozen values on each part of a series; the national totals
 against the sum of their regions or control areas, and Energy-Charts public power against SMARD.
+Denmark publishes no total of its two price areas.
 An offshore wind series with an offshore mask is checked on the hours it flags only, since éCO2mix
 publishes zeros for the regions and the months without offshore farms. Values above capacity are
 checked where the capacity is positive: the SDES capacity of a region grows from zero over the
 quarter of its first farm.
 
 Statistical detectors run on the series with a model, the solar and onshore wind of the areas of
-France and Germany: timestamp shifts and clock-change jumps of the solar series that the thresholds
-make eligible, residual outliers, and the level breaks of the solar and the wind series of each
-area. They read the wind of an area as `onshore_wind` gives it, with the thresholds and the profile
-of its wind series (detector design), so that no hour is judged twice.
+France and Germany and of the Danish price areas: timestamp shifts and clock-change jumps of the
+solar series that the thresholds make eligible, residual outliers, and the level breaks of the solar
+and the wind series of each area. They read the wind of an area as `onshore_wind` gives it, with
+the thresholds and the profile of its wind series (detector design), so that no hour is judged
+twice.
 """
 
 import hashlib
@@ -44,10 +46,15 @@ from eu_solar_wind_audit.anomalies.inputs import (
     SeriesInputs,
 )
 from eu_solar_wind_audit.anomalies.thresholds import Thresholds
-from eu_solar_wind_audit.sources import energy_charts, odre, smard
+from eu_solar_wind_audit.sources import energinet, energy_charts, odre, smard
 
 # The local time of the clock changes of each country.
-TIME_ZONES = {"FR": odre.TIMEZONE, "DE": energy_charts.TIMEZONE}
+TIME_ZONES = {
+    "FR": odre.TIMEZONE,
+    "DE": energy_charts.TIMEZONE,
+    "DK1": energinet.TIMEZONE,
+    "DK2": energinet.TIMEZONE,
+}
 
 
 @dataclass(frozen=True)

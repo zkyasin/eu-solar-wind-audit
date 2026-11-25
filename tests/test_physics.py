@@ -1,4 +1,5 @@
 import dataclasses
+import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from eu_solar_wind_audit import physics, pv, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.physics import read_weather, split_by_commissioning
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import bkg, era5, natural_earth, odre, sdes
+from eu_solar_wind_audit.sources import bkg, ens, era5, gisco, natural_earth, odre, sdes
 
 SDES_SOLAR = Path(__file__).parent / "fixtures" / "sdes" / "solaire-pv-2026-t2.xlsx"
 STEP = 0.25
@@ -925,3 +926,104 @@ def test_each_control_area_gets_the_output_of_its_units(
     assert {name: frame["energy_mwh"].iloc[0] for name, frame in found.items()} == pytest.approx(
         expected
     )
+
+
+DENMARK_WEST = dataclasses.replace(
+    COUNTRY,
+    country="DK1",
+    time_zone="Europe/Copenhagen",
+    perimeter="price_area",
+    wind_onshore=(
+        WindGeneration("VestasV82_1.65MW_82", 45.0, 2000),
+        WindGeneration("VestasV82_1.65MW_82", 70.0, 2012),
+        WindGeneration("IEA_Reference_3.4MW_130", 90.0),
+    ),
+)
+# Randers (730, in DK1) covers one cell, Copenhagen (101, in DK2) another.
+MUNICIPALITIES = gpd.GeoDataFrame(
+    {"region": ["101", "730"]},
+    geometry=[box(*cell(45.25, 2.25)), box(*cell(45.0, 2.0))],
+    crs="EPSG:4326",
+)
+
+
+def capacity_payload(path: Path) -> Path:
+    """A CapacityPerMunicipality response for the first days of January to June 2025, cached as
+    energinet.fetch_capacity keeps it: Randers holds 20 MW of solar, 1 MW more each month, and
+    Copenhagen 10 MW."""
+    records = [
+        {
+            "Month": f"2025-{month:02d}-01T00:00:00",
+            "MunicipalityNo": number,
+            "SolarPowerCapacity": solar + (month - 1 if number == "730" else 0),
+            "OnshoreWindCapacity": 0.0,
+            "OffshoreWindCapacity": 0.0,
+        }
+        for month in range(1, 7)
+        for number, solar in (("101", 10.0), ("730", 20.0))
+    ]
+    (path / "CapacityPerMunicipality.json").write_text(json.dumps({"records": records}))
+    return path
+
+
+def test_danish_solar_capacity_is_that_of_the_first_day_of_the_month_after(
+    tmp_path: Path,
+) -> None:
+    found = physics.load_denmark_capacity("solar", DENMARK_WEST, capacity_payload(tmp_path))
+
+    assert found["department_code"].unique().tolist() == ["730"]
+    assert found["region"].unique().tolist() == ["DK1"]
+    by_month = found.set_index("month_end")
+    assert by_month.loc[pd.Timestamp("2024-12-31"), "capacity_mw"] == 20.0
+    assert by_month.loc[pd.Timestamp("2025-05-31"), "capacity_mw"] == 25.0
+    # The panel ends with May; its last three months are provisional.
+    assert by_month["provisional"].tolist() == [False, False, False, True, True, True]
+
+
+def danish_turbines() -> pd.DataFrame:
+    """Turbines of the register: three in Randers from three windows, one of them decommissioned
+    in March 2025, and one in Copenhagen."""
+    return pd.DataFrame(
+        {
+            "turbine": [f"57071500000000000{number}" for number in range(4)],
+            "connected": pd.to_datetime(["1998-05-01", "2010-05-01", "2015-05-01", "2015-05-01"]),
+            "decommissioned": pd.DatetimeIndex(["2025-03-15", pd.NaT, pd.NaT, pd.NaT]),
+            "capacity_kw": [600.0, 2000.0, 3600.0, 2300.0],
+            "rotor_diameter_m": [44.0, 90.0, 126.0, 93.0],
+            "hub_height_m": [45.0, 80.0, 87.0, 80.0],
+            "municipality": pd.array([730, 730, 730, 101], dtype="Int64"),
+            "offshore": False,
+        }
+    )
+
+
+def test_danish_wind_is_split_by_the_grid_connection_of_its_turbines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ens, "read_turbines", danish_turbines)
+
+    found = physics.load_denmark_capacity("wind_onshore", DENMARK_WEST)
+
+    assert found["department_code"].unique().tolist() == ["730"]
+    assert capacity_at(found, "2025-02-28", 0) == pytest.approx(0.6)
+    assert capacity_at(found, "2025-03-31", 0) == pytest.approx(0.0)
+    assert capacity_at(found, "2025-03-31", 1) == pytest.approx(2.0)
+    assert capacity_at(found, "2025-03-31", 2) == pytest.approx(3.6)
+    assert found["month_end"].min() == physics.MASTR_PANEL_START
+    assert found.loc[found["provisional"], "month_end"].min() == pd.Timestamp("2026-08-31")
+
+
+def test_model_denmark_reads_the_capacity_and_the_municipalities(
+    monkeypatch: pytest.MonkeyPatch, store: FakeStore, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(wind, "capacity_factor", constant_factor(0.5))
+    monkeypatch.setattr(ens, "read_turbines", danish_turbines)
+    monkeypatch.setattr(gisco, "load_municipalities", lambda country: MUNICIPALITIES)
+
+    found = physics.model_denmark(
+        "wind_onshore", utc("2025-04-01"), utc("2025-04-02"), DENMARK_WEST, tmp_path
+    )
+
+    # 5.6 MW in Randers once the turbine of 1998 is gone.
+    assert found["capacity_mw"].iloc[0] == pytest.approx(5.6)
+    assert found["energy_mwh"].iloc[0] == pytest.approx(2.8)
