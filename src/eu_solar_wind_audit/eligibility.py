@@ -20,12 +20,12 @@ from pandera.typing import DataFrame, Index, Series
 
 from eu_solar_wind_audit import evaluation, grid, physics, precompute, regimes
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import bkg, energinet, gisco, natural_earth, odre, smard
+from eu_solar_wind_audit.sources import bkg, energinet, entsoe, gisco, natural_earth, odre, smard
 
 FINAL_STATUSES = ["definitive", "consolidated"]
 # The day-ahead zone of each country, a key of smard.PRICES.
 # Keyed by the zone each calibration runs on.
-PRICE_ZONES = {"FR": "FR", "DE": "DE-LU", "DK1": "DK1", "DK2": "DK2"}
+PRICE_ZONES = {"FR": "FR", "DE": "DE-LU", "DK1": "DK1", "DK2": "DK2", "NL": "NL"}
 
 
 class Eligibility(pa.DataFrameModel):
@@ -191,16 +191,20 @@ def year_inputs(
     odre_cache_dir: Path = odre.CACHE_DIR,
     smard_cache_dir: Path = smard.CACHE_DIR,
     energinet_cache_dir: Path = energinet.CACHE_DIR,
+    entsoe_cache_dir: Path = entsoe.CACHE_DIR,
     era5_cache_dir: Path = physics.ERA5_CACHE_DIR,
 ) -> YearInputs:
     """Calibration inputs of `technology` in the country of `parameters` on the hours of the UTC
     year `year`: the published series, the `price_classes` of its zone, and the arrays of
     precompute.solar or precompute.wind_onshore from the capacity and the areas that
-    physics.model_france, physics.model_germany or physics.model_denmark load.
+    physics.model_france, physics.model_germany, physics.model_denmark or
+    physics.model_netherlands load.
 
     The published series is national solar or the onshore wind of odre.onshore_hourly for France,
-    the SMARD feed-in of Germany for Germany, and the settlement data of the price area for
-    Denmark: solar with its self-consumed part, and onshore wind.
+    the SMARD feed-in of Germany for Germany, the settlement data of the price area for Denmark:
+    solar with its self-consumed part, and onshore wind, and the onshore wind of the NL zone on the
+    Transparency Platform for the Netherlands, which has no solar model. The platform's client
+    reads the token of ENTSOE_API_TOKEN.
     """
     country = parameters.country
     start = pd.Timestamp(year, 1, 1, tz="UTC")
@@ -231,8 +235,14 @@ def year_inputs(
         )
         monthly = physics.load_denmark_capacity(technology, parameters)
         regions = gisco.load_municipalities("DK")
+    elif country == "NL" and technology == "wind_onshore":
+        published = entsoe.fetch_hourly_generation(
+            "NL", technology, start, end, cache_dir=entsoe_cache_dir
+        )
+        monthly = physics.load_netherlands_capacity()
+        regions = gisco.load_municipalities("NL")
     else:
-        raise ValueError(f"no calibration inputs for {country}")
+        raise ValueError(f"no calibration inputs for {technology} in {country}")
     classes = price_classes(
         start, end, zone=PRICE_ZONES[country], client=client, cache_dir=smard_cache_dir
     )

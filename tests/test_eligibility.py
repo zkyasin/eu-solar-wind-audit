@@ -15,7 +15,16 @@ from shapely.geometry import box
 from eu_solar_wind_audit import days, eligibility, physics, precompute, regimes
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.pv import PVParameters, System
-from eu_solar_wind_audit.sources import bkg, energinet, era5, gisco, natural_earth, odre, smard
+from eu_solar_wind_audit.sources import (
+    bkg,
+    energinet,
+    entsoe,
+    era5,
+    gisco,
+    natural_earth,
+    odre,
+    smard,
+)
 
 SHARED_RULES = [
     "consolidated_or_definitive",
@@ -191,8 +200,8 @@ def test_a_country_without_calibration_inputs_is_refused() -> None:
     given = inputs(HOURS)
     classes = regimes.classify_hours(given.prices)
 
-    with pytest.raises(ValueError, match="no calibration inputs for NL"):
-        eligibility.eligible_hours("NL", "solar", given.published, given.covariates, classes)
+    with pytest.raises(ValueError, match="no calibration inputs for BE"):
+        eligibility.eligible_hours("BE", "solar", given.published, given.covariates, classes)
 
 
 def test_covariates_on_other_hours_are_refused() -> None:
@@ -607,3 +616,61 @@ def test_year_inputs_of_a_danish_price_area(
     day_type = inputs.arrays.covariates["day_type"]
     assert day_type[pd.Timestamp("2022-04-14 10:00", tz="UTC")] == "sunday_or_holiday"
     assert day_type[pd.Timestamp("2022-07-14 10:00", tz="UTC")] == "working_day"
+
+
+NETHERLANDS = Country(
+    country="NL",
+    time_zone="Europe/Amsterdam",
+    perimeter="price_area",
+    era5_box=BOX,
+    solar=None,
+    wind_onshore=tuple(
+        WindGeneration(generation.turbine, generation.hub_height_m)
+        for generation in COUNTRY.wind_onshore
+    ),
+)
+
+
+def published_onshore(
+    area: str, technology: str, start: pd.Timestamp, end: pd.Timestamp, **_: object
+) -> pd.DataFrame:
+    """Stands in for entsoe.fetch_hourly_generation: 300 MWh every hour."""
+    hours = pd.date_range(start, end, freq="h", inclusive="left", unit="ns", name="time")
+    return pd.DataFrame({"energy_mwh": 300.0, "complete": True}, index=hours)
+
+
+def test_year_inputs_of_the_netherlands(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    panel = pd.concat(
+        [
+            capacity_panel("wind_onshore").assign(generation=generation)
+            for generation in range(len(NETHERLANDS.wind_onshore))
+        ]
+    ).assign(department_code="730", department="730", region="NL")
+    monkeypatch.setattr(physics, "load_netherlands_capacity", lambda: panel)
+    monkeypatch.setattr(gisco, "load_municipalities", lambda country: MUNICIPALITIES)
+    monkeypatch.setattr(entsoe, "fetch_hourly_generation", published_onshore)
+    monkeypatch.setattr(era5, "read_era5", weather)
+    prices = pd.Series(50.0, index=quarter_hours("2021-12-31 23:00", "2023-01-01 01:00"))
+
+    with serving(smard_files(prices, "NL"), []) as client:
+        inputs = eligibility.year_inputs(
+            client,
+            "wind_onshore",
+            2022,
+            NETHERLANDS,
+            smard_cache_dir=tmp_path / "smard",
+            era5_cache_dir=tmp_path / "era5",
+        )
+
+    assert inputs.country == "NL"
+    assert inputs.published.index.equals(YEAR_HOURS)
+    assert inputs.published["energy_mwh"].eq(300.0).all()
+    # King's Day, Wednesday 27 April 2022, is a Dutch holiday; Thursday 14 July is not.
+    day_type = inputs.arrays.covariates["day_type"]
+    assert day_type[pd.Timestamp("2022-04-27 10:00", tz="UTC")] == "sunday_or_holiday"
+    assert day_type[pd.Timestamp("2022-07-14 10:00", tz="UTC")] == "working_day"
+
+
+def test_the_netherlands_have_no_solar_inputs() -> None:
+    with pytest.raises(ValueError, match="no calibration inputs for solar in NL"):
+        eligibility.year_inputs(httpx.Client(), "solar", 2022, NETHERLANDS)

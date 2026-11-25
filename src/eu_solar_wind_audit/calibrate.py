@@ -33,7 +33,17 @@ from eu_solar_wind_audit import (
     strata,
 )
 from eu_solar_wind_audit.config import Country
-from eu_solar_wind_audit.sources import bkg, energinet, ens, gisco, mastr, natural_earth, smard
+from eu_solar_wind_audit.sources import (
+    bkg,
+    cbs,
+    energinet,
+    ens,
+    gisco,
+    mastr,
+    natural_earth,
+    rivm,
+    smard,
+)
 
 
 @dataclass(frozen=True)
@@ -193,6 +203,18 @@ def _sources(country: str, technology: physics.Technology) -> dict[str, str]:
             "regions": f"BKG VG5000 districts, state of {bkg.EDITION}",
             "prices": prices,
             "published": f"SMARD.de, feed-in of Germany, filter {smard.FEED_IN[technology]}",
+        }
+    if country == "NL":
+        revisions = ", ".join(
+            f"{table} revised {cbs.modified(cbs.download(table))}"
+            for table in (cbs.PROVINCES, cbs.HUB_HEIGHTS)
+        )
+        return {
+            "capacity": f"CBS ({revisions}), spread by the RIVM map {rivm.LAYER}",
+            "regions": f"GISCO {gisco.EDITION} municipalities",
+            "prices": prices,
+            "published": "ENTSO-E Transparency Platform, actual generation of onshore wind (B19) "
+            "of the NL zone",
         }
     quantity: energinet.Quantity = "solar_total" if technology == "solar" else technology
     capacity = (
