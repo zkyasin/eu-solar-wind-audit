@@ -602,6 +602,12 @@ function redraw() {
 }
 
 async function main() {
+  // A link can open the explorer on a series, such as ?country=DK1&technology=solar&period=2025.
+  const params = new URLSearchParams(location.search);
+  for (const [name, options] of [["country", COUNTRIES], ["technology", TECHNOLOGIES], ["period", PERIODS]]) {
+    const chosen = params.get(name);
+    if (chosen !== null && Object.hasOwn(options, chosen)) state[name] = chosen;
+  }
   segmented("country", COUNTRIES);
   segmented("technology", TECHNOLOGIES);
   segmented("period", PERIODS);
