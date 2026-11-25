@@ -1050,3 +1050,57 @@ def test_model_denmark_reads_the_capacity_and_the_municipalities(
     # 5.6 MW in Randers once the turbine of 1998 is gone.
     assert found["capacity_mw"].iloc[0] == pytest.approx(5.6)
     assert found["energy_mwh"].iloc[0] == pytest.approx(2.8)
+
+
+def dutch_capacity(
+    placed: list[tuple[str, str, float]] | None = None,
+) -> pd.DataFrame:
+    """netherlands_capacity of two provinces at the ends of 2017 and 2018: A grows from 100 to
+    200 MW, B stays at 50 MW, and hubs of 71 to 95 m first appear in 2018."""
+    provinces = pd.DataFrame(
+        {
+            "year": [2017, 2017, 2018, 2018],
+            "group": ["A", "B", "A", "B"],
+            "capacity_mw": [100.0, 50.0, 200.0, 50.0],
+        }
+    )
+    classes = pd.DataFrame(
+        {
+            "year": [2017] * 3 + [2018] * 3,
+            "group": ["up to 70 m", "71 to 95 m", "96 m or more"] * 2,
+            "capacity_mw": [100.0, 0.0, 50.0, 100.0, 50.0, 100.0],
+        }
+    )
+    rows = placed or [("A", "m1", 30.0), ("A", "m2", 10.0), ("B", "m3", 5.0)]
+    return physics.netherlands_capacity(
+        provinces, classes, pd.DataFrame(rows, columns=["province", "region", "capacity_mw"])
+    )
+
+
+def test_dutch_provinces_are_spread_over_their_municipalities_by_the_map() -> None:
+    capacity = dutch_capacity()
+    end_2018 = capacity[capacity["month_end"] == "2018-12-31"]
+
+    by_municipality = end_2018.groupby("department_code")["capacity_mw"].sum()
+    assert by_municipality.to_dict() == pytest.approx({"m1": 150.0, "m2": 50.0, "m3": 50.0})
+    # Shares of the classes at the end of 2018: 100, 50 and 100 MW of 250.
+    by_class = end_2018.groupby("generation")["capacity_mw"].sum()
+    assert by_class.to_dict() == pytest.approx({0: 100.0, 1: 50.0, 2: 100.0})
+
+
+def test_dutch_capacity_is_linear_between_year_ends_then_held_and_provisional() -> None:
+    capacity = dutch_capacity()
+    totals = capacity.groupby("month_end")["capacity_mw"].sum()
+    final = capacity.groupby("month_end")["provisional"].any()
+
+    middle = pd.Timestamp("2018-06-30")
+    elapsed = (middle - pd.Timestamp("2017-12-31")) / pd.Timedelta(days=365)
+    assert totals[middle] == pytest.approx(150.0 + 100.0 * elapsed)
+    assert totals["2019-12-31"] == pytest.approx(250.0)
+    assert not final[:"2018-12-31"].any()
+    assert final["2019-01-31":].all()
+
+
+def test_a_dutch_province_without_turbines_on_the_map_is_refused() -> None:
+    with pytest.raises(ValueError, match=r"no turbine of the RIVM map in \['B'\]"):
+        dutch_capacity([("A", "m1", 30.0)])

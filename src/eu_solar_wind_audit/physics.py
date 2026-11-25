@@ -1,8 +1,9 @@
 """Uncalibrated physics model of the solar and onshore wind output of mainland France and of its
-12 éCO2mix regions, of Germany and of the Danish price areas, from ERA5, the PV and wind modules
-and the capacity of each area: the SDES capacity per department in France, the MaStR capacity per
-district in Germany, the capacity per municipality of Energinet and of the register of the Danish
-Energy Agency in Denmark.
+12 éCO2mix regions, of Germany and of the Danish price areas, and of the onshore wind output of the
+Netherlands, from ERA5, the PV and wind modules and the capacity of each area: the SDES capacity
+per department in France, the MaStR capacity per district in Germany, the capacity per
+municipality of Energinet and of the register of the Danish Energy Agency in Denmark, and the
+capacity of CBS per province, spread over municipalities by the RIVM map, in the Netherlands.
 
 Output is energy in MWh for each hour [t, t + 1 h), labelled t in UTC: the sum over ERA5 cells of
 capacity factor times capacity in MW.
@@ -26,6 +27,7 @@ from eu_solar_wind_audit import grid, pv, spatial, wind
 from eu_solar_wind_audit.config import Country, WindGeneration
 from eu_solar_wind_audit.sources import (
     bkg,
+    cbs,
     energinet,
     ens,
     era5,
@@ -33,6 +35,7 @@ from eu_solar_wind_audit.sources import (
     mastr,
     natural_earth,
     odre,
+    rivm,
     sdes,
 )
 
@@ -54,6 +57,9 @@ MASTR_PANEL_START = pd.Timestamp("2018-01-31")
 # The Danish registers are revised after the fact too: IEA PVPS reports 310 MWp of solar registered
 # in 2024 that was installed in 2025.
 DANISH_PROVISIONAL_MONTHS = 3
+# CBS gives capacity at year ends; the Dutch panel starts at the end of this year, so that the
+# margins of runs on 2019 have capacity.
+DUTCH_FIRST_YEAR_END = 2017
 
 
 class Modelled(grid.Hourly):
@@ -571,6 +577,106 @@ def model_denmark(
     grid.check_period(start, end)
     monthly = load_denmark_capacity(technology, parameters)
     municipalities = gisco.load_municipalities("DK")
+    years = [
+        model(technology, first, stop, parameters, monthly, municipalities, cache_dir)
+        for first, stop in _calendar_years(start, end)
+    ]
+    return Modelled.validate(pd.concat(years))
+
+
+def load_netherlands_capacity(cbs_dir: Path = cbs.RAW_DIR) -> pd.DataFrame:
+    """`netherlands_capacity` of the CBS tables and of the RIVM map placed in the LAU polygons of
+    GISCO."""
+    turbines = rivm.onshore(rivm.read_turbines())
+    return netherlands_capacity(
+        cbs.province_capacity(cbs.download(cbs.PROVINCES, raw_dir=cbs_dir)),
+        cbs.hub_height_capacity(cbs.download(cbs.HUB_HEIGHTS, raw_dir=cbs_dir)),
+        rivm.municipality_capacity(turbines, gisco.load_municipalities("NL")),
+    )
+
+
+def netherlands_capacity(
+    provinces: pd.DataFrame, classes: pd.DataFrame, placed: pd.DataFrame
+) -> pd.DataFrame:
+    """Month-end capacity of the Dutch onshore fleet by municipality and hub height class, in the
+    columns of load_denmark_capacity, the index of the class in cbs.HUB_HEIGHT_CLASSES standing for
+    the generation (evaluation plan, Deviations).
+
+    The capacity of each province at each year end, `provinces` as cbs.province_capacity gives it,
+    is linear in time between year ends from the end of DUTCH_FIRST_YEAR_END. It is spread over the
+    municipalities of the province in proportion to their capacity in `placed`, as
+    rivm.municipality_capacity gives it, and split by the national shares of the hub height
+    classes of `classes`, as cbs.hub_height_capacity gives them. Month ends in the year after the
+    last year of CBS keep its capacity and are provisional.
+    """
+    by_year = provinces.pivot(index="year", columns="group", values="capacity_mw")
+    class_names = list(dict.fromkeys(cbs.HUB_HEIGHT_CLASSES.values()))
+    by_class = classes.pivot(index="year", columns="group", values="capacity_mw")[class_names]
+    last_year = int(by_year.index.max())
+    months = pd.date_range(
+        f"{DUTCH_FIRST_YEAR_END}-12-31", f"{last_year + 1}-12-31", freq="ME", name="month_end"
+    )
+    by_month = _between_year_ends(by_year, months)
+    class_capacity = _between_year_ends(by_class, months)
+    shares = class_capacity.div(class_capacity.sum(axis="columns"), axis="index")
+
+    missing = sorted(set(by_month.columns) - set(placed["province"]))
+    if missing:
+        raise ValueError(f"no turbine of the RIVM map in {missing}")
+    weights = placed.assign(
+        weight=placed["capacity_mw"] / placed.groupby("province")["capacity_mw"].transform("sum")
+    )
+    rows = (
+        by_month.melt(var_name="province", value_name="province_mw", ignore_index=False)
+        .reset_index()
+        .merge(weights[["province", "region", "weight"]], on="province")
+    )
+    class_rows = shares.set_axis(range(len(class_names)), axis="columns").melt(
+        var_name="generation", value_name="share", ignore_index=False
+    )
+    rows = rows.merge(class_rows.reset_index(), on="month_end")
+    rows["capacity_mw"] = rows["province_mw"] * rows["weight"] * rows["share"]
+    # The map can give the turbines of one municipality to two provinces near their border.
+    capacity = (
+        rows.groupby(["month_end", "region", "generation"])["capacity_mw"].sum().reset_index()
+    )
+    return pd.DataFrame(
+        {
+            "department_code": capacity["region"],
+            "department": capacity["region"],
+            "region": "NL",
+            "technology": "wind_onshore",
+            "month_end": capacity["month_end"],
+            "capacity_mw": capacity["capacity_mw"],
+            "provisional": capacity["month_end"] > pd.Timestamp(last_year, 12, 31),
+            "generation": capacity["generation"],
+        }
+    )
+
+
+def _between_year_ends(year_ends: pd.DataFrame, months: pd.DatetimeIndex) -> pd.DataFrame:
+    """`year_ends`, indexed by year, at each of `months`: linear in time between the ends of two
+    years, and at the value of the last year end after it."""
+    known = year_ends.set_axis(pd.to_datetime([f"{year}-12-31" for year in year_ends.index]))
+    filled = known.reindex(known.index.union(months)).interpolate(method="time").ffill()
+    return filled.loc[months].set_axis(months)
+
+
+def model_netherlands(
+    technology: Technology,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    parameters: Country,
+    cache_dir: Path = ERA5_CACHE_DIR,
+) -> DataFrame[Modelled]:
+    """Hourly modelled output of the Dutch onshore fleet for hours [start, end), both hour starts
+    in UTC, computed one calendar year at a time; see `model`. The Netherlands have no solar
+    model."""
+    grid.check_period(start, end)
+    if technology != "wind_onshore":
+        raise ValueError("the Dutch model covers onshore wind only")
+    monthly = load_netherlands_capacity()
+    municipalities = gisco.load_municipalities("NL")
     years = [
         model(technology, first, stop, parameters, monthly, municipalities, cache_dir)
         for first, stop in _calendar_years(start, end)
