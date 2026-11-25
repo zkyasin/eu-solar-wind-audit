@@ -8,7 +8,7 @@ import pytest
 from synthetic import PV, solar_year
 
 from eu_solar_wind_audit import calibration, cli, eligibility, fits, folds, modulation, strata
-from eu_solar_wind_audit.sources import odre, smard
+from eu_solar_wind_audit.sources import energinet, odre, smard
 
 YEARS = (2019, 2020, 2021)
 
@@ -228,3 +228,48 @@ def test_the_command_compares_germany_with_hirth_without_a_verdict(
     years = pd.read_parquet(tmp_path / "out" / "solar-hirth-years.parquet")
     assert years["reference_gwh"].tolist() == [600.0]
     assert {"low_gwh", "high_gwh", "estimate_gwh", "ratio"} <= set(years.columns)
+
+
+def test_the_command_estimates_a_danish_price_area_without_reference(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fit: fits.Fit
+) -> None:
+    def year_inputs(
+        client: object, technology: str, year: int, parameters: object
+    ) -> eligibility.YearInputs:
+        return solar_year(year, country="DK1")
+
+    loads: list[tuple[str, str]] = []
+
+    def settlement(
+        area: str, quantity: str, start: pd.Timestamp, end: pd.Timestamp, **_: object
+    ) -> pd.DataFrame:
+        loads.append((area, quantity))
+        hours = pd.date_range(start, end, freq="h", inclusive="left", name="time")
+        return pd.DataFrame({"energy_mwh": 2e3, "complete": True}, index=hours)
+
+    monkeypatch.setattr(eligibility, "year_inputs", year_inputs)
+    monkeypatch.setattr(energinet, "fetch_hourly_settlement", settlement)
+    fits.write(tmp_path / "fits" / "solar.json", fit)
+
+    cli.main(
+        [
+            "estimate-modulation",
+            "DK1",
+            "solar",
+            str(tmp_path / "out"),
+            "--fits-dir",
+            str(tmp_path / "fits"),
+            "--replicates",
+            "3",
+        ]
+    )
+
+    # The placebo matches on the gross consumption of the price area.
+    assert loads == [("DK1", "gross_consumption")]
+    names = {path.name for path in (tmp_path / "out").iterdir()}
+    assert "solar-modulation-intervals.parquet" in names
+    assert not {"solar-rte-years.parquet", "solar-hirth-years.parquet"} & names
+    summary = json.loads((tmp_path / "out" / "solar-modulation.json").read_text())
+    assert summary["country"] == "DK1"
+    assert summary["verdict"] is None
+    assert "hirth_ratios" not in summary

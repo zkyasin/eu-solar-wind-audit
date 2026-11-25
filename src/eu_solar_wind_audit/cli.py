@@ -9,7 +9,7 @@ import subprocess
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import httpx
 import pandas as pd
@@ -109,7 +109,8 @@ def main(argv: list[str] | None = None) -> None:
     estimate = commands.add_parser(
         "estimate-modulation",
         help="estimate the output of a country modulated during negative prices with the frozen "
-        "fit, and compare it with the volumes of RTE for France or of Hirth (2026) for Germany",
+        "fit, and compare it with the volumes of RTE for France or of Hirth (2026) for Germany; "
+        "Denmark has no reference",
     )
     estimate.add_argument("country", choices=list(eligibility.PRICE_ZONES))
     estimate.add_argument("technology", choices=["solar", "wind_onshore"])
@@ -117,7 +118,9 @@ def main(argv: list[str] | None = None) -> None:
     estimate.add_argument("--config", type=Path, help="config/countries/<country>.toml by default")
     estimate.add_argument("--fits-dir", type=Path, help="fits/<COUNTRY> by default")
     estimate.add_argument(
-        "--references", type=Path, help="references/rte or references/hirth by default"
+        "--references",
+        type=Path,
+        help="references/rte for France or references/hirth for Germany by default",
     )
     estimate.add_argument(
         "--replicates",
@@ -245,7 +248,7 @@ def main(argv: list[str] | None = None) -> None:
             args.output,
             parameters,
             fits.read(fits_dir / f"{args.technology}.json"),
-            args.references or REFERENCES[args.country],
+            args.references or REFERENCES.get(args.country),
             args.replicates,
         ):
             print(path)
@@ -316,6 +319,21 @@ def detection_inputs(country: str) -> Callable[..., inputs.DetectionInputs]:
     return inputs.denmark_inputs
 
 
+def hourly_load(
+    client: httpx.Client, country: str, start: pd.Timestamp, end: pd.Timestamp
+) -> pd.DataFrame:
+    """Hourly consumption that the placebo matches on, over the UTC hours [start, end): the
+    éCO2mix consumption of France, the SMARD load of Germany, the gross consumption of a Danish
+    price area on Energi Data Service."""
+    if country == "FR":
+        return odre.national_hourly(client, "load", start, end)
+    if country == "DE":
+        return smard.fetch_hourly_load("DE", start, end, client=client)
+    return energinet.fetch_hourly_settlement(
+        cast(energinet.Area, country), "gross_consumption", start, end, client=client
+    )
+
+
 def run_metadata(
     technology: physics.Technology, parameters: Country, hourly: pd.DataFrame
 ) -> dict[str, Any]:
@@ -348,7 +366,7 @@ def estimate_modulation(
     output: Path,
     parameters: Country,
     fit: fits.Fit,
-    reference_dir: Path,
+    reference_dir: Path | None,
     replicates: int,
 ) -> list[Path]:
     """Estimate the modulation of `technology` in the country of `parameters` over every year of
@@ -357,8 +375,9 @@ def estimate_modulation(
     sensitivity; give the minimal detectable effect of each year from the leave-one-year-out
     folds, and, with an interval, run the placebo and the injection. Compare the estimate with the
     volumes of `reference_dir`: for France the RTE files, with the verdict of the plan when there
-    is an interval; for Germany the yearly volumes of Hirth (2026), by their ratio only. Write the
-    tables and a JSON summary to `output`. Gives the paths written."""
+    is an interval; for Germany the yearly volumes of Hirth (2026), by their ratio only; a Danish
+    price area has none. Write the tables and a JSON summary to `output`. Gives the paths
+    written."""
     # The reference series are imported here only, so that calibrate never loads them.
     from eu_solar_wind_audit import comparison, references
 
@@ -370,11 +389,7 @@ def estimate_modulation(
             eligibility.year_inputs(client, technology, year, parameters)
             for year in evaluation.TRAINING_YEARS
         ]
-        consumption = (
-            odre.national_hourly(client, "load", first, end)
-            if country == "FR"
-            else smard.fetch_hourly_load("DE", first, end, client=client)
-        )
+        consumption = hourly_load(client, country, first, end)
     hours = modulation.negative_hours(years, fit)
     months = modulation.months(hours)
     estimate = months["modulation_gwh"]
@@ -386,13 +401,14 @@ def estimate_modulation(
     covariates = pd.concat([inputs.arrays.covariates for inputs in years])
     errors = detectability.daily_errors(report.predictions, covariates, technology, country)
     mde_gwh = detectability.minimal_detectable_effects(errors, hours)
-    references.verify_manifest(reference_dir)
+    if reference_dir is not None:
+        references.verify_manifest(reference_dir)
 
     output.mkdir(parents=True, exist_ok=True)
     tables: dict[str, pd.DataFrame] = {"modulation-hours": hours, "modulation-months": months}
     against: dict[str, Any] = {}
     found = None
-    if country == "FR":
+    if country == "FR" and reference_dir is not None:
         found = comparison.compare(
             months, references.load_rte_modulation(reference_dir), technology
         )
@@ -432,7 +448,7 @@ def estimate_modulation(
         tables["placebo-years"] = checked.years
         tables["placebo-pairs"] = checked.pairs.to_frame()
         placebo_years = checked.years
-    if country == "DE":
+    if country == "DE" and reference_dir is not None:
         hirth = references.load_hirth_curtailment(reference_dir)
         published = hirth[hirth["technology"] == HIRTH_TECHNOLOGIES[technology]]
         yearly = tables.get("modulation-intervals", estimates.to_frame())
