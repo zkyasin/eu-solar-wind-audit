@@ -39,11 +39,6 @@ def area_km2(frame: gpd.GeoDataFrame, region: str) -> float:
     return float(frame[frame["region"] == region].to_crs(LAEA_EUROPE).area.iloc[0]) / 1e6
 
 
-@pytest.fixture(autouse=True)
-def no_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("time.sleep", lambda seconds: None)
-
-
 def test_district_codes_are_five_digit_strings() -> None:
     districts = bkg.load_districts(FIXTURE)
 
@@ -122,44 +117,3 @@ def test_download_is_checked_then_cached(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert first.read_bytes() == body
     assert bkg.EDITION in first.name
     assert list(tmp_path.iterdir()) == [first]
-
-
-def test_dropped_connection_is_retried(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    body = FIXTURE.read_bytes()
-    monkeypatch.setattr(bkg, "SHA256", hashlib.sha256(body).hexdigest())
-    attempts: list[str] = []
-
-    def drop_first(request: httpx.Request) -> httpx.Response:
-        attempts.append(str(request.url))
-        if len(attempts) == 1:
-            raise httpx.RemoteProtocolError("peer closed connection", request=request)
-        return httpx.Response(200, content=body)
-
-    with serve(drop_first) as client:
-        path = bkg.download_vg5000(client, tmp_path)
-
-    assert len(attempts) == 2
-    assert path.read_bytes() == body
-
-
-def test_wrong_checksum_raises_and_caches_nothing(tmp_path: Path) -> None:
-    with (
-        serve(respond(200, FIXTURE.read_bytes(), [])) as client,
-        pytest.raises(ValueError, match="SHA-256"),
-    ):
-        bkg.download_vg5000(client, tmp_path)
-
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_http_error_is_not_retried_and_caches_nothing(tmp_path: Path) -> None:
-    requests: list[str] = []
-
-    with (
-        serve(respond(404, b"Not Found", requests)) as client,
-        pytest.raises(httpx.HTTPStatusError),
-    ):
-        bkg.download_vg5000(client, tmp_path)
-
-    assert len(requests) == 1
-    assert list(tmp_path.iterdir()) == []

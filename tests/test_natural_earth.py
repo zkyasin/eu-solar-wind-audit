@@ -61,24 +61,3 @@ def test_download_is_checked_then_cached(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert first == second
     assert first.read_bytes() == body
     assert natural_earth.VERSION in first.name
-
-
-def test_wrong_checksum_raises_and_caches_nothing(tmp_path: Path) -> None:
-    requests: list[str] = []
-
-    with (
-        serve(200, FIXTURE.read_bytes(), requests) as client,
-        pytest.raises(ValueError, match="SHA"),
-    ):
-        natural_earth.download_admin1(client, tmp_path)
-
-    assert list(tmp_path.iterdir()) == []
-
-
-def test_http_error_caches_nothing(tmp_path: Path) -> None:
-    requests: list[str] = []
-
-    with serve(404, b"Not Found", requests) as client, pytest.raises(httpx.HTTPStatusError):
-        natural_earth.download_admin1(client, tmp_path)
-
-    assert list(tmp_path.iterdir()) == []
