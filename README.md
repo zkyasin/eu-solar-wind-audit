@@ -24,12 +24,14 @@ its date and reason in the plan's Deviations section.
 
 ## Main results
 
-Solar and onshore wind in mainland France, Germany and the two Danish price areas, 2019-2025:
+Solar and onshore wind in mainland France, Germany and the two Danish price areas, and onshore
+wind in the Netherlands, 2019-2025:
 
 1. **Model.** Fitted on the other years, the hourly potential of each year follows the published
    output with an error of 0.024 to 0.031 in capacity factor and a correlation of 0.98 to 0.99 in
-   France and Germany, and of 0.041 to 0.060 and 0.96 to 0.98 in the smaller Danish price areas
-   (2023-2025, hours priced 5 €/MWh or more).
+   France and Germany, of 0.041 to 0.060 and 0.96 to 0.98 in the smaller Danish price areas, and
+   of 0.042 and 0.98 for the Dutch onshore wind of the transmission grid (2023-2025, hours priced
+   5 €/MWh or more).
 2. **Anomalies.** 194 findings in France, 110 in Germany and 21 in Denmark. Among those checked
    against the raw files: an empty half-hour in all 26 éCO2mix solar and wind series, a German
    control area published as zero for more than a week while the national total kept its output,
@@ -46,16 +48,15 @@ Solar and onshore wind in mainland France, Germany and the two Danish price area
 
 ## Status
 
-| Axis | Mainland France | Germany | Denmark (DK1, DK2) |
-|---|---|---|---|
-| 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 | Calibrated on 2019-2025 per price area |
-| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | All detectors, 2019-2025 |
-| 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete | Size classes feed-in only; with self-consumption complete |
-| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Estimated, no reference; published above the detectable effect |
+| Axis | Mainland France | Germany | Denmark (DK1, DK2) | Netherlands |
+|---|---|---|---|---|
+| 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 | Calibrated on 2019-2025 per price area | Onshore wind calibrated on 2019-2025 |
+| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | All detectors, 2019-2025 | Next |
+| 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete | Size classes feed-in only; with self-consumption complete | Transmission grid only |
+| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Estimated, no reference; published above the detectable effect | Next |
 
-The Netherlands already serve axis 3 as a validation series; their other axes follow, then
-Belgium, Spain, Portugal, Italy, Austria and Poland, each published with the level of evidence the
-plan allows.
+Belgium, Spain, Portugal, Italy, Austria and Poland follow, each published with the level of
+evidence the plan allows.
 
 ## Results, 2019-2025
 
@@ -86,6 +87,7 @@ or more. RMSE in capacity factor, 2023-2025:
 | DK1, onshore wind | 0.123 | 0.202 | 0.045 | 0.041 | 0.981 |
 | DK2, solar | 0.091 | 0.110 | 0.064 | 0.060 | 0.957 |
 | DK2, onshore wind | 0.176 | 0.205 | 0.050 | 0.047 | 0.975 |
+| Netherlands, onshore wind | 0.140 | 0.197 | 0.050 | 0.042 | 0.978 |
 
 French onshore wind leaves out 2023, when the published wind series includes offshore output.
 Germany is calibrated on the feed-in that SMARD publishes, which leaves out self-consumed output;
@@ -93,7 +95,11 @@ its frozen fits are in `fits/DE` (tag `calibration-de-v1`). Each Danish price ar
 its settlement data, solar with its self-consumed part; the frozen fits are in `fits/DK1` and
 `fits/DK2` (tag `calibration-dk-v1`). The Danish errors are 1.5 to 2.4 times those of France and
 Germany, most likely because a smaller fleet averages out less of the local weather that ERA5
-misses at 0.25°.
+misses at 0.25°. Dutch onshore wind is calibrated on the series of the NL zone on the ENTSO-E
+Transparency Platform, which holds the farms of the transmission grid only: its capacity is that
+of CBS times 0.486, the share of the CBS output that the series holds over 2019-2022, and the
+capacity factors are counted on it (plan, Deviations). The frozen fit is in `fits/NL` (tag
+`calibration-nl-v1`).
 
 Without its annual level, the potential fitted on the other years gives the published output of
 each year to within 10 %, except German solar since 2023. Published output over that potential:
@@ -235,13 +241,15 @@ Details in [docs/modulation-denmark.md](docs/modulation-denmark.md).
   capacity of each département (SDES), Kreis (Marktstammdatenregister) or Danish municipality
   (Energi Data Service, and the register of the Danish Energy Agency for wind), as a mix of systems
   by orientation and tilt with a DC/AC ratio. Onshore wind comes from turbine power curves by
-  commissioning period, at their hub height.
+  commissioning period, at their hub height; in the Netherlands, by hub height class (CBS), on
+  the capacity of each province spread over municipalities by the turbine map of RIVM.
 - **Calibrated potential.** Three parameters for solar and one for onshore wind, a scale on wind
   speed, fitted with a Huber loss on the hours priced 5 €/MWh or more, leaving one year out; then
   a ratio for each stratum of solar elevation, decile of the modelled capacity factor and day type,
   shrunk towards the pooled ratio, and a level for each year. The fits are frozen in `fits/FR`,
-  `fits/DE`, `fits/DK1` and `fits/DK2` (tags `calibration-fr-v1`, `calibration-de-v1` and
-  `calibration-dk-v1`), and a test checks that the calibration never reads the reference series.
+  `fits/DE`, `fits/DK1`, `fits/DK2` and `fits/NL` (tags `calibration-fr-v1`,
+  `calibration-de-v1`, `calibration-dk-v1` and `calibration-nl-v1`), and a test checks that the
+  calibration never reads the reference series.
 - **Anomaly detectors.** Completeness, timestamp shifts, negative, frozen and above-capacity
   values, outliers of the residual, level breaks (PELT), totals against the sum of their parts and
   against a second source.
@@ -263,10 +271,10 @@ Details in [docs/modulation-denmark.md](docs/modulation-denmark.md).
 ## Reproduce
 
 Python 3.12 and [uv](https://docs.astral.sh/uv/). ERA5 comes from two anonymous cloud copies, the
-other sources from their public interfaces; only the audit of axis 3 needs a free token of the
-ENTSO-E Transparency Platform, in `ENTSOE_API_TOKEN`. Downloads are cached under
-`data/raw`, about 3 GB of ERA5 for France, 1.7 GB for Germany and 0.7 GB for Denmark over
-2019-2025.
+other sources from their public interfaces; the audit of axis 3 and the Netherlands need a free
+token of the ENTSO-E Transparency Platform, in `ENTSOE_API_TOKEN`. Downloads are cached under
+`data/raw`, about 3 GB of ERA5 for France, 1.7 GB for Germany, 0.7 GB for Denmark and 0.3 GB for
+the Netherlands over 2019-2025.
 
 ```sh
 uv sync
@@ -279,6 +287,7 @@ uv run eu-solar-wind-audit calibrate DK1 solar data/processed/calibration-dk1 --
 uv run eu-solar-wind-audit calibrate DK1 wind_onshore data/processed/calibration-dk1 --fits-dir data/processed/fits-dk1
 uv run eu-solar-wind-audit calibrate DK2 solar data/processed/calibration-dk2 --fits-dir data/processed/fits-dk2
 uv run eu-solar-wind-audit calibrate DK2 wind_onshore data/processed/calibration-dk2 --fits-dir data/processed/fits-dk2
+ENTSOE_API_TOKEN=... uv run eu-solar-wind-audit calibrate NL wind_onshore data/processed/calibration-nl --fits-dir data/processed/fits-nl
 # Modulation, with the frozen fits and the references of references/rte and references/hirth.
 uv run eu-solar-wind-audit estimate-modulation FR solar data/processed/modulation-fr
 uv run eu-solar-wind-audit estimate-modulation FR wind_onshore data/processed/modulation-fr
