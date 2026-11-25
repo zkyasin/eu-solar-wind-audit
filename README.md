@@ -53,7 +53,7 @@ wind in the Netherlands, 2019-2025:
 | 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 | Calibrated on 2019-2025 per price area | Onshore wind calibrated on 2019-2025 |
 | 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | All detectors, 2019-2025 | Next |
 | 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete | Size classes feed-in only; with self-consumption complete | Transmission grid only |
-| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Estimated, no reference; published above the detectable effect | Next |
+| 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Estimated, no reference; published above the detectable effect | Onshore wind estimated, no reference; inconclusive every year |
 
 Belgium, Spain, Portugal, Italy, Austria and Poland follow, each published with the level of
 evidence the plan allows.
@@ -235,6 +235,16 @@ reference and count only where they reach their minimal detectable effect. DK1 s
 2023-2025. DK2 reaches its detectable effect for solar in 2025 and onshore wind in 2024 only.
 Details in [docs/modulation-denmark.md](docs/modulation-denmark.md).
 
+### Output modulated during negative prices in the Netherlands
+
+Dutch onshore wind of the transmission grid holds back an estimated 16 % of its potential at the
+negative-price hours of 2023, 17 % in 2024 and 23 % in 2025, 135 GWh that year (90 % interval 117
+to 154 GWh). No published volume exists, and no year reaches its minimal detectable effect, so
+under the plan every estimate is inconclusive. The detectable effect is set by a few calm days
+whose potential is near zero; without them it would fall below the estimates, but the rule is the
+one fixed for all countries. Details in
+[docs/modulation-netherlands.md](docs/modulation-netherlands.md).
+
 ## How it works
 
 - **Physics model.** ERA5 hourly weather on its 0.25° grid. Solar output comes from pvlib, on the
@@ -297,6 +307,7 @@ uv run eu-solar-wind-audit estimate-modulation DK1 solar data/processed/modulati
 uv run eu-solar-wind-audit estimate-modulation DK1 wind_onshore data/processed/modulation-dk1
 uv run eu-solar-wind-audit estimate-modulation DK2 solar data/processed/modulation-dk2
 uv run eu-solar-wind-audit estimate-modulation DK2 wind_onshore data/processed/modulation-dk2
+ENTSOE_API_TOKEN=... uv run eu-solar-wind-audit estimate-modulation NL wind_onshore data/processed/modulation-nl
 # Anomalies, with the frozen thresholds of config/anomaly-thresholds.
 uv run eu-solar-wind-audit detect-anomalies FR 2019-01-01 2026-01-01 data/processed/anomalies-fr
 uv run eu-solar-wind-audit detect-anomalies DE 2019-01-01 2026-01-01 data/processed/anomalies-de
