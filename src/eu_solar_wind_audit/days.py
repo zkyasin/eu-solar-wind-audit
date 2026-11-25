@@ -1,10 +1,12 @@
-"""Days of mainland France, Germany and the Danish price areas, as the calibrated potential uses
-them (evaluation plan, "Two model objects" and Deviations): the type of each day for the strata,
-and its sky class from the fleet clear-sky index.
+"""Days of mainland France, Germany, the Danish price areas and the Netherlands, as the calibrated
+potential uses them (evaluation plan, "Two model objects" and Deviations): the type of each day for
+the strata, and its sky class from the fleet clear-sky index.
 
-The three countries keep Central European Time, so their days are those of Europe/Paris. Hours are
+The four countries keep Central European Time, so their days are those of Europe/Paris. Hours are
 UTC hour starts; each takes the type and the sky class of the local day it starts in.
 """
+
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -70,8 +72,42 @@ DENMARK = AbstractHolidayCalendar(
         Holiday("Second Day of Christmas", month=12, day=26),
     ],
 )
+
+
+def _sunday_to_saturday(day: datetime) -> datetime:
+    return day - timedelta(days=1) if day.weekday() == 6 else day
+
+
+# The public holidays of the Algemene termijnenwet, article 3. King's Day moves to the Saturday
+# before when 27 April is a Sunday. 5 May is a day off under many agreements only every fifth
+# year; it is kept every year, as the law lists it. Good Friday is not among them.
+NETHERLANDS = AbstractHolidayCalendar(
+    "Netherlands",
+    rules=[
+        Holiday("New Year's Day", month=1, day=1),
+        EasterMonday,
+        Holiday(
+            "King's Day",
+            month=4,
+            day=27,
+            observance=_sunday_to_saturday,
+            start_date="2014-01-01",
+        ),
+        Holiday("Liberation Day", month=5, day=5),
+        ASCENSION_DAY,
+        WHIT_MONDAY,
+        Holiday("Christmas Day", month=12, day=25),
+        Holiday("Second Day of Christmas", month=12, day=26),
+    ],
+)
 # Keyed by the zones that calibration and detection runs name.
-PUBLIC_HOLIDAYS = {"FR": FRANCE, "DE": GERMANY, "DK1": DENMARK, "DK2": DENMARK}
+PUBLIC_HOLIDAYS = {
+    "FR": FRANCE,
+    "DE": GERMANY,
+    "DK1": DENMARK,
+    "DK2": DENMARK,
+    "NL": NETHERLANDS,
+}
 
 DAY_TYPES = ["working_day", "saturday", "sunday_or_holiday"]
 

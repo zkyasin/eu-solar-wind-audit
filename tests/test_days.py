@@ -138,6 +138,21 @@ def test_danish_public_holidays(year: int, easter_holidays: list[str]) -> None:
     assert days.PUBLIC_HOLIDAYS["DK2"] is days.PUBLIC_HOLIDAYS["DK1"]
 
 
+@pytest.mark.parametrize(
+    ("year", "spring_holidays"),
+    [
+        (2019, ["04-22", "04-27", "05-05", "05-30", "06-10"]),
+        (2020, ["04-13", "04-27", "05-05", "05-21", "06-01"]),
+        (2025, ["04-21", "04-26", "05-05", "05-29", "06-09"]),
+    ],
+    ids=["2019", "2020", "2025 King's Day on Saturday"],
+)
+def test_dutch_public_holidays(year: int, spring_holidays: list[str]) -> None:
+    holidays = days.PUBLIC_HOLIDAYS["NL"].holidays(f"{year}-01-01", f"{year}-12-31")
+
+    assert holidays.strftime("%m-%d").tolist() == ["01-01", *spring_holidays, "12-25", "12-26"]
+
+
 def test_each_country_has_its_own_holidays() -> None:
     # Thursday 14 July 2022 is the French National Day, Monday 3 October German Unity Day and
     # Thursday 6 April 2023 Maundy Thursday.
