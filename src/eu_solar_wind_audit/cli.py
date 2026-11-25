@@ -51,8 +51,8 @@ WEEK_START = pd.Timestamp("2025-06-02", tz="Europe/Paris")
 # The year of findings DE-1 and DE-2 of docs/anomalies-2019-2025.md.
 SUM_OF_PARTS_YEAR = 2025
 TECHNOLOGIES: tuple[physics.Technology, ...] = ("solar", "wind_onshore")
-# The countries that the web page shows.
-SITE_COUNTRIES = ("FR", "DE")
+# The countries and Danish price areas that the web page shows.
+SITE_COUNTRIES = ("FR", "DE", "DK1", "DK2")
 # The published modulation volumes each country is compared with, and the technology of Hirth
 # (2026) that holds onshore wind: his wind is onshore and offshore together.
 REFERENCES = {"FR": Path("references/rte"), "DE": Path("references/hirth")}
@@ -821,8 +821,8 @@ def solar_predictions(
 
 def export_site_data(output: Path, processed: Path) -> list[Path]:
     """Write the JSON documents of the web page from the results under `processed`: the daily
-    output and potential, the model quality, the modulation estimates and the findings of France
-    and Germany, the matrix of axis 3, and the versions of the runs they come from."""
+    output and potential, the model quality, the modulation estimates and the findings of
+    SITE_COUNTRIES, the matrix of axis 3, and the versions of the runs they come from."""
     written = []
     quality = []
     modulations = []
@@ -834,17 +834,6 @@ def export_site_data(output: Path, processed: Path) -> list[Path]:
         modulation_dir = processed / f"modulation-{country.lower()}"
         anomalies_dir = processed / f"anomalies-{country.lower()}"
         for technology in TECHNOLOGIES:
-            predictions = pd.read_parquet(calibration_dir / f"{technology}-predictions.parquet")
-            held_back = pd.read_parquet(modulation_dir / f"{technology}-modulation-hours.parquet")
-            days = site_data.daily(predictions, held_back, time_zone)
-            name = f"daily-{country}-{technology}.json"
-            written.append(
-                site_data.write(output, name, site_data.columns(days, site_data.GWH_DECIMALS))
-            )
-            summary = pd.read_parquet(calibration_dir / f"{technology}-summary.parquet")
-            quality.append(
-                site_data.quality(summary).assign(country=country, technology=technology)
-            )
             run = json.loads(
                 (modulation_dir / f"{technology}-modulation.json").read_text(encoding="utf-8")
             )
@@ -854,11 +843,28 @@ def export_site_data(output: Path, processed: Path) -> list[Path]:
             periods = site_data.modulation_periods(
                 intervals, modulation_references(modulation_dir, technology, country)
             )
+            predictions = pd.read_parquet(calibration_dir / f"{technology}-predictions.parquet")
+            held_back = pd.read_parquet(modulation_dir / f"{technology}-modulation-hours.parquet")
+            days = site_data.daily(predictions, held_back, time_zone)
+            reference = REFERENCE_NAMES.get(country)
+            if reference is None:
+                # Without a reference, no output held back is published below the detectable effect.
+                periods = site_data.detectable_years(periods, run["mde_gwh"])
+                kept = days.index.str[:4].isin(periods["period"])
+                days["held_back_gwh"] = days["held_back_gwh"].where(kept)
+            name = f"daily-{country}-{technology}.json"
+            written.append(
+                site_data.write(output, name, site_data.columns(days, site_data.GWH_DECIMALS))
+            )
+            summary = pd.read_parquet(calibration_dir / f"{technology}-summary.parquet")
+            quality.append(
+                site_data.quality(summary).assign(country=country, technology=technology)
+            )
             modulations.append(
                 {
                     "country": country,
                     "technology": technology,
-                    "reference": REFERENCE_NAMES[country],
+                    "reference": reference,
                     "verdict": run.get("verdict"),
                     "mde_gwh": run["mde_gwh"],
                     "periods": site_data.records(periods, site_data.GWH_DECIMALS),
@@ -904,7 +910,9 @@ def modulation_references(
     modulation_dir: Path, technology: physics.Technology, country: str
 ) -> "pd.Series[float]":
     """The published volumes that the estimates of `modulation_dir` are compared with: RTE's by
-    year and month in France, Hirth's by year in Germany."""
+    year and month in France, Hirth's by year in Germany, none in Denmark."""
+    if country not in REFERENCES:
+        return pd.Series(dtype=float)
     if country == "FR":
         rte = [
             pd.read_parquet(modulation_dir / f"{technology}-rte-{period}.parquet")["rte_gwh"]

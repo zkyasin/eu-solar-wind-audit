@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>EU Solar and Wind Audit · séries solaires et éoliennes publiées, contrôlées par un modèle météo</title>
-  <meta name="description" content="Une référence horaire, construite à partir de la météo, pour la production solaire et éolienne en France et en Allemagne de 2019 à 2025, qui sert à contrôler les séries publiées : qualité du modèle, anomalies, périmètre des séries et production non injectée aux prix négatifs.">
+  <meta name="description" content="Une référence horaire, construite à partir de la météo, pour la production solaire et éolienne en France, en Allemagne et au Danemark de 2019 à 2025, qui sert à contrôler les séries publiées : qualité du modèle, anomalies, périmètre des séries et production non injectée aux prix négatifs.">
   <meta name="theme-color" content="#0a1220">
   <script>
     // Applied before the first paint so a reader who chose daylight never sees the night.
@@ -65,12 +65,12 @@
   <main id="top">
     <section class="hero" aria-labelledby="headline">
       <div>
-        <p class="kicker">Solaire et éolien terrestre · France et Allemagne · 2019–2025</p>
+        <p class="kicker">Solaire et éolien terrestre · France, Allemagne et Danemark · 2019–2025</p>
         <h1 id="headline">
           <span class="headline-figure"><span class="figure" id="hero-figure">1,58</span><span class="unit">TWh</span></span>
           <span class="headline-period">de production solaire non injectée en France continentale en 2025, à prix négatifs</span>
         </h1>
-        <p class="lead">Une série publiée ne montre pas ce qu’un parc n’a pas injecté. Cette étude reconstitue, heure par heure, la production que chaque parc solaire et éolien français et allemand aurait pu fournir d’après la météo ERA5 et sa capacité installée, puis s’en sert comme référence indépendante pour contrôler les données publiées par les GRT.</p>
+        <p class="lead">Une série publiée ne montre pas ce qu’un parc n’a pas injecté. Cette étude reconstitue, heure par heure, la production que chaque parc solaire et éolien français, allemand et danois aurait pu fournir d’après la météo ERA5 et sa capacité installée, puis s’en sert comme référence indépendante pour contrôler les données publiées par les GRT.</p>
         <dl class="facts">
           <div>
             <dt>Chiffre publié par RTE pour 2025</dt>
@@ -97,7 +97,7 @@
       <div class="chapter-head">
         <p class="chapter-number">01 <span>Production modélisée</span></p>
         <h2 id="model-title">Une référence qui ne voit jamais ce qu’elle contrôle</h2>
-        <p class="intro">La météo horaire ERA5, sur sa grille de 0,25°, alimente pvlib sur la capacité solaire de chaque département français et de chaque Kreis allemand, et des courbes de puissance d’éoliennes à hauteur de moyeu pour l’éolien terrestre. Les capacités viennent du SDES et du Marktstammdatenregister.</p>
+        <p class="intro">La météo horaire ERA5, sur sa grille de 0,25°, alimente pvlib sur la capacité solaire de chaque département français, de chaque Kreis allemand et de chaque commune danoise, et des courbes de puissance d’éoliennes à hauteur de moyeu pour l’éolien terrestre. Les capacités viennent du SDES, du Marktstammdatenregister, d’Energinet et du registre des éoliennes de l’Agence danoise de l’énergie.</p>
         <p class="intro">Quelques paramètres sont calés sur les heures à 5&#8239;€/MWh ou plus, en excluant tour à tour chaque année, puis figés. Le potentiel d’une année est donc calé sur les autres années, jamais sur les heures qu’il sert à juger.</p>
         <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/evaluation-plan.md">Plan d’évaluation, rédigé avant le premier résultat</a>
       </div>
@@ -137,7 +137,7 @@
       <div class="chapter-head">
         <p class="chapter-number">02 <span>Anomalies</span></p>
         <h2 id="anomalies-title">Où les séries publiées se trompent</h2>
-        <p class="intro">Chaque série horaire d’éCO2mix (France et ses 12 régions) et de SMARD (Allemagne et ses quatre zones de réglage, avec Energy-Charts comme seconde source) passe par des détecteurs à règles, puis par des détecteurs statistiques sur son résidu par rapport au modèle.</p>
+        <p class="intro">Chaque série horaire d’éCO2mix (France et ses 12 régions), de SMARD (Allemagne et ses quatre zones de réglage, avec Energy-Charts comme seconde source) et d’Energinet (zones de prix danoises DK1 et DK2) passe par des détecteurs à règles, puis par des détecteurs statistiques sur son résidu par rapport au modèle.</p>
         <p class="intro">Les seuils ont été fixés sur 2019–2022, avant toute lecture des années suivantes. Un constat n’est pas un défaut : chacun est soit vérifié sur les fichiers bruts et rédigé en ticket, soit écarté avec sa raison.</p>
         <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/anomalies-2019-2025.md">Tous les constats et les tickets</a>
       </div>
@@ -149,7 +149,7 @@
           <figcaption>Chaque trait est un constat, de sa première à sa dernière heure. Dans chaque groupe, le solaire en haut et l’éolien en bas.</figcaption>
         </figure>
 
-        <h3>Quatre tickets, vérifiés sur les fichiers bruts</h3>
+        <h3>Six tickets, vérifiés sur les fichiers bruts</h3>
         <div class="tickets">
           <article class="ticket">
             <p class="ticket-id">FR-1 <span>éCO2mix, les 26 séries solaires et éoliennes</span></p>
@@ -170,6 +170,16 @@
             <p class="ticket-id">DE-4 <span>Solaire, TransnetBW, 12 avril 2019</span></p>
             <p class="ticket-figure">environ 3&#8239;GWh manquants</p>
             <p>Zéro de 16&#8239;h à 20&#8239;h dans la zone et dans le total national, qui reste égal à la somme de ses parties. Seul le modèle révèle le trou.</p>
+          </article>
+          <article class="ticket">
+            <p class="ticket-id">DK-1 <span>Solaire, DK1 et DK2, 17 août 2019</span></p>
+            <p class="ticket-figure">6 heures à zéro</p>
+            <p>De 15&#8239;h à 21&#8239;h, heure danoise, dans les deux zones de prix, alors que l’éolien et la consommation suivent leur cours. La Transparency Platform répète une même valeur sur ces heures : aucune des deux sources ne donne la production de l’après-midi.</p>
+          </article>
+          <article class="ticket">
+            <p class="ticket-id">DK-2 <span>Solaire autoconsommé, 17 juin au 14 août 2020</span></p>
+            <p class="ticket-figure">environ 2 heures d’avance</p>
+            <p>L’estimation d’autoconsommation d’Energinet devance la production mesurée dans les deux zones. L’après-midi, elle devient négative d’autant que la production mesurée, jusqu’à −213&#8239;MWh, et ramène le solaire publié à zéro bien avant le coucher du soleil.</p>
           </article>
         </div>
         <p class="note">Les conventions horaires sont contrôlées aussi : éCO2mix publie les mêmes lignes pour chaque jour local, comme le prévoit sa documentation, ce qui répète l’heure qui suit chaque passage à l’heure d’été et omet celle qui précède chaque passage à l’heure d’hiver. Les chiffres journaliers de cette page reposent sur des jours locaux, de 23 ou 25 heures aux changements d’heure.</p>
@@ -212,8 +222,9 @@
         <p class="chapter-number">04 <span>Écrêtement et modulation</span></p>
         <h2 id="modulation-title">Production non injectée aux prix négatifs</h2>
         <p class="intro">Sur les heures où le prix day-ahead est négatif, le potentiel moins la production publiée. Les intervalles à 90&#8239;% viennent d’un bootstrap par jours qui refait le calage et retire au sort la capacité et le ratio DC/AC.</p>
-        <p class="intro">La France est comparée aux volumes mensuels publiés par RTE, dont la méthode n’est pas publique : la concordance reproduit ses chiffres sans prouver ni l’un ni l’autre. L’Allemagne est comparée à l’écrêtement par le marché estimé par Hirth (2026).</p>
+        <p class="intro">La France est comparée aux volumes mensuels publiés par RTE, dont la méthode n’est pas publique : la concordance reproduit ses chiffres sans prouver ni l’un ni l’autre. L’Allemagne est comparée à l’écrêtement par le marché estimé par Hirth (2026). Le Danemark n’a pas de volume publié : ses estimations n’apparaissent qu’au-dessus de l’effet minimal détectable.</p>
         <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/modulation-france.md">Verdict et limites pour la France</a>
+        <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit/blob/main/docs/modulation-denmark.md">Estimations et limites pour le Danemark</a>
       </div>
       <div class="chapter-body">
         <div class="controls">
@@ -239,13 +250,13 @@
       <div class="chapter-head">
         <p class="chapter-number">05 <span>Méthode</span></p>
         <h2 id="method-title">Conçue pour être relancée, et pour accueillir le pays suivant</h2>
-        <p class="intro">Une commande par étape, chacune enregistrant la version du code et de ses entrées à côté de ses tables. Un pays est un fichier de configuration : le Danemark et les Pays-Bas alimentent déjà la matrice du chapitre 03, et la Belgique, l’Espagne, le Portugal, l’Italie, l’Autriche et la Pologne suivront, chacun publié avec le niveau de preuve que permet le plan.</p>
+        <p class="intro">Une commande par étape, chacune enregistrant la version du code et de ses entrées à côté de ses tables. Un pays est un fichier de configuration : le Danemark est couvert sur les quatre axes, les Pays-Bas alimentent déjà la matrice du chapitre 03, et la Belgique, l’Espagne, le Portugal, l’Italie, l’Autriche et la Pologne suivront, chacun publié avec le niveau de preuve que permet le plan.</p>
         <a class="more" href="https://github.com/zkyasin/eu-solar-wind-audit#reproduce">Reproduire chaque chiffre</a>
       </div>
       <div class="chapter-body">
         <ol class="pipeline">
           <li><span>Entrées</span>Météo ERA5, capacités SDES et MaStR, éCO2mix, SMARD, Energy-Charts, Energinet, ENTSO-E, Eurostat, prix day-ahead</li>
-          <li><span>Modèle physique</span>pvlib par département ou Kreis, courbes de puissance par période de mise en service</li>
+          <li><span>Modèle physique</span>pvlib par département, Kreis ou commune danoise, courbes de puissance par période de mise en service</li>
           <li><span>Calage</span>Perte de Huber, une année exclue, calages figés sous un tag</li>
           <li><span>Contrôles</span>Détecteurs d’anomalies, matrice de périmètre, modulation avec bootstrap</li>
           <li><span>Publication</span>Tables, figures et données de cette page</li>
@@ -280,6 +291,8 @@
           <li>Allemagne, écrêtement par le marché : Hirth, L. (2026), <span lang="en">Do wind and solar curtail at negative electricity prices?</span>, arXiv 2609.10053v2.</li>
           <li>Energy-Charts.info, Fraunhofer ISE, CC BY 4.0.</li>
           <li>Source : Energinet (www.energidataservice.dk). CC BY 4.0.</li>
+          <li>Danemark, registre des éoliennes : Energistyrelsen (Agence danoise de l’énergie), Stamdataregister for vindkraftanlæg.</li>
+          <li>Communes danoises : © EuroGeographics pour les limites administratives (GISCO, LAU 2024).</li>
           <li>Source de publication : ENTSO-E Transparency Platform (transparency.entsoe.eu). Les valeurs présentées sont dérivées des données publiées.</li>
           <li>Source : Eurostat, nrg_bal_peh. Données modifiées par ce projet ; Eurostat n’est pas responsable des données modifiées.</li>
           <li lang="en">Contains modified Copernicus Climate Change Service information 2026. Neither the European Commission nor ECMWF is responsible for any use that may be made of the Copernicus information or data it contains.</li>
