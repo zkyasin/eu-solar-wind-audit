@@ -108,7 +108,6 @@ def test_unknown_key_is_rejected(tmp_path: Path) -> None:
     [
         ('perimeter = "metropolitan_without_corsica"', 'perimeter = "all"', "perimeter"),
         ("hub_height_m = 100.0", "hub_height_m = 100.0\nlast_commissioning_year = 2020", "last"),
-        ("last_commissioning_year = 2012", "", "last"),
         ('turbine = "IEA_Reference_3.4MW_130"', 'turbine = "IEA_Reference_15MW_240"', "onshore"),
         ("share = 0.25", "share = 0.3", "sum to 1"),
     ],
@@ -116,6 +115,15 @@ def test_unknown_key_is_rejected(tmp_path: Path) -> None:
 def test_invalid_settings_are_rejected(tmp_path: Path, old: str, new: str, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         load_country(write(tmp_path, MINIMAL.replace(old, new)))
+
+
+def test_generations_can_all_go_without_commissioning_years(tmp_path: Path) -> None:
+    country = load_country(write(tmp_path, MINIMAL.replace("last_commissioning_year = 2012", "")))
+
+    assert [generation.last_commissioning_year for generation in country.wind_onshore] == [
+        None,
+        None,
+    ]
 
 
 def test_generations_must_follow_each_other(tmp_path: Path) -> None:

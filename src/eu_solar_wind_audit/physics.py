@@ -204,6 +204,8 @@ def fleet_cells(
         ]
     else:
         last_years = [generation.last_commissioning_year for generation in parameters.wind_onshore]
+        if None in last_years[:-1]:
+            raise ValueError("generations without commissioning years need a generation column")
         parts = split_by_commissioning(capacity, last_years)
     per_cell = [spatial.capacity_weights(fractions, xr.DataArray(part)) for part in parts]
 

@@ -322,6 +322,29 @@ def test_a_window_with_a_net_decrease_gets_no_capacity() -> None:
     assert later["a"].tolist() == [0.0, 0.0, 50.0]
 
 
+def test_generations_without_commissioning_years_need_a_generation_column(
+    store: FakeStore, tmp_path: Path
+) -> None:
+    classes = dataclasses.replace(
+        COUNTRY,
+        wind_onshore=tuple(
+            dataclasses.replace(generation, last_commissioning_year=None)
+            for generation in COUNTRY.wind_onshore
+        ),
+    )
+
+    with pytest.raises(ValueError, match="generation column"):
+        physics.model(
+            "wind_onshore",
+            utc("2020-06-01"),
+            utc("2020-06-02"),
+            classes,
+            panel("wind_onshore", {"01": constant(10.0)}),
+            REGIONS,
+            cache_dir=tmp_path,
+        )
+
+
 def test_window_ending_before_the_panel_is_refused() -> None:
     capacity = pd.DataFrame({"a": [1.0]}, index=pd.DatetimeIndex(["2015-03-31"]))
 
