@@ -82,9 +82,18 @@ def test_file_is_parsed_into_the_model_dataclasses(tmp_path: Path) -> None:
 def test_pv_fields_absent_from_the_file_keep_their_defaults(tmp_path: Path) -> None:
     country = load_country(write(tmp_path, MINIMAL))
 
-    defaults = PVParameters(fleet=country.solar.fleet)
-    assert country.solar.gamma_pdc == defaults.gamma_pdc
-    assert country.solar.dc_losses == defaults.dc_losses
+    defaults = PVParameters(fleet=country.pv().fleet)
+    assert country.pv().gamma_pdc == defaults.gamma_pdc
+    assert country.pv().dc_losses == defaults.dc_losses
+
+
+def test_a_country_can_have_no_solar_model(tmp_path: Path) -> None:
+    start, end = MINIMAL.index("[solar]"), MINIMAL.index("[[wind_onshore")
+    country = load_country(write(tmp_path, MINIMAL[:start] + MINIMAL[end:]))
+
+    assert country.solar is None
+    with pytest.raises(ValueError, match="no solar model"):
+        country.pv()
 
 
 def test_unknown_key_is_rejected(tmp_path: Path) -> None:
@@ -129,8 +138,8 @@ def test_germany_file_is_valid() -> None:
     germany = load_country(GERMANY)
 
     assert germany.perimeter == "germany"
-    assert len(germany.solar.fleet) == 7
-    assert sum(system.share for system in germany.solar.fleet) == pytest.approx(1.0)
+    assert len(germany.pv().fleet) == 7
+    assert sum(system.share for system in germany.pv().fleet) == pytest.approx(1.0)
     assert [generation.last_commissioning_year for generation in germany.wind_onshore] == [
         2005,
         2012,
@@ -146,7 +155,7 @@ def test_danish_files_are_valid(zone: str) -> None:
 
     assert denmark.country == zone
     assert denmark.perimeter == "price_area"
-    assert denmark.solar.fleet == load_country(GERMANY).solar.fleet
+    assert denmark.pv().fleet == load_country(GERMANY).pv().fleet
     assert [generation.last_commissioning_year for generation in denmark.wind_onshore] == [
         2000,
         2012,
@@ -160,4 +169,4 @@ def test_danish_files_are_valid(zone: str) -> None:
     ids=["FR", "DE", "DK1", "DK2"],
 )
 def test_the_dc_ac_ratio_of_each_country_is_on_the_grid_of_precompute(path: Path) -> None:
-    assert load_country(path).solar.dc_ac_ratio in precompute.DC_AC_GRID
+    assert load_country(path).pv().dc_ac_ratio in precompute.DC_AC_GRID

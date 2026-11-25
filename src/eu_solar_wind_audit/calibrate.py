@@ -73,7 +73,7 @@ def report_of(
 ) -> Run:
     """Calibration of `technology` on its yearly inputs `years`, as `run` gives it."""
     if technology == "solar":
-        report = folds.solar(years, parameters.solar)
+        report = folds.solar(years, parameters.pv())
         arrays = [inputs.arrays for inputs in years]
         solar_arrays = [part for part in arrays if isinstance(part, precompute.SolarArrays)]
         profile = dc_ac.report(
@@ -81,7 +81,7 @@ def report_of(
             pd.concat([inputs.published["energy_mwh"] for inputs in years]),
             pd.concat([inputs.eligibility["eligible"] for inputs in years]),
             pd.concat([inputs.price_classes for inputs in years]),
-            parameters.solar,
+            parameters.pv(),
             replicates=replicates,
         )
     else:

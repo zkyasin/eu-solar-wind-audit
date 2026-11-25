@@ -337,7 +337,7 @@ def _capacity_factors(
     # Yielded one by one, so that `model` never holds the three wind generations at once, which
     # raises its peak memory over a year by about 70 MB.
     if technology == "solar":
-        yield pv.capacity_factor(cells, parameters.solar)
+        yield pv.capacity_factor(cells, parameters.pv())
     else:
         for generation in parameters.wind_onshore:
             yield wind.capacity_factor(cells, generation_parameters(generation))

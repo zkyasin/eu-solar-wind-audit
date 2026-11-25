@@ -120,7 +120,7 @@ def solar(
     # Radiation is the mean over the hour, so the sun is placed at its middle.
     times = pd.DatetimeIndex(fleet.cells.indexes["time"]).tz_localize("UTC") + pv.HALF_HOUR
     dni_extra = pvlib.irradiance.get_extra_radiation(times).to_numpy()[:, np.newaxis]
-    params = parameters.solar
+    params = parameters.pv()
     systems = [*params.fleet, HORIZONTAL]
 
     energy = np.zeros((times.size, len(systems), DC_AC_GRID.size))

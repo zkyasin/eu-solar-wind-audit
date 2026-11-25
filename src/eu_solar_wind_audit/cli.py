@@ -396,7 +396,7 @@ def estimate_modulation(
     by_year = estimate.groupby(estimate.index.str[:4]).sum()
     estimates = pd.concat([estimate, by_year]).rename("estimate_gwh")
     report = (
-        folds.solar(years, parameters.solar) if technology == "solar" else folds.wind_onshore(years)
+        folds.solar(years, parameters.pv()) if technology == "solar" else folds.wind_onshore(years)
     )
     covariates = pd.concat([inputs.arrays.covariates for inputs in years])
     errors = detectability.daily_errors(report.predictions, covariates, technology, country)
@@ -427,7 +427,7 @@ def estimate_modulation(
             ratios["intervals-dc-ac-sensitivity"] = bootstrap.DC_AC_SENSITIVITY
         for name, dc_ac_ratios in ratios.items():
             replicated = bootstrap.replicates(
-                years, technology, parameters.solar, count=replicates, dc_ac_ratios=dc_ac_ratios
+                years, technology, parameters.pv(), count=replicates, dc_ac_ratios=dc_ac_ratios
             )
             interval = bootstrap.intervals(replicated).join(estimates)
             tables[f"modulation-{name}"] = interval
@@ -440,7 +440,7 @@ def estimate_modulation(
         checked = placebo.evaluate(
             years,
             technology,
-            parameters.solar,
+            parameters.pv(),
             fit,
             consumption["energy_mwh"],
             count=replicates,

@@ -31,7 +31,8 @@ class Country:
     time_zone: str
     perimeter: Perimeter
     era5_box: Box
-    solar: PVParameters
+    # None for a country without a solar model.
+    solar: PVParameters | None
     wind_onshore: tuple[WindGeneration, ...]
 
     def __post_init__(self) -> None:
@@ -48,18 +49,27 @@ class Country:
         if unknown:
             raise ValueError(f"not onshore turbines of wind.turbines(): {unknown}")
 
+    def pv(self) -> PVParameters:
+        """The solar settings; raises ValueError for a country without a solar model."""
+        if self.solar is None:
+            raise ValueError(f"{self.country} has no solar model")
+        return self.solar
+
 
 def load_country(path: Path) -> Country:
     with path.open("rb") as file:
         raw: dict[str, Any] = tomllib.load(file)
-    solar = dict(raw["solar"])
-    systems = tuple(System(**system) for system in solar.pop("systems"))
+    solar = None
+    if "solar" in raw:
+        settings = dict(raw["solar"])
+        systems = tuple(System(**system) for system in settings.pop("systems"))
+        solar = PVParameters(fleet=systems, **settings)
     return Country(
         country=raw["country"],
         time_zone=raw["time_zone"],
         perimeter=raw["perimeter"],
         era5_box=Box(**raw["era5_box"]),
-        solar=PVParameters(fleet=systems, **solar),
+        solar=solar,
         wind_onshore=tuple(
             WindGeneration(**generation) for generation in raw["wind_onshore"]["generations"]
         ),

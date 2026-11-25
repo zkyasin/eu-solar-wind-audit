@@ -149,8 +149,8 @@ YEAR_2020 = (utc("2020-01-01"), utc("2021-01-01"))
 @pytest.mark.parametrize(
     ("fleet", "dc_ac_ratio", "horizontal_share"),
     [
-        pytest.param(COUNTRY.solar.fleet, 1.2, 0.0, id="configured-1.2"),
-        pytest.param(COUNTRY.solar.fleet, 0.9, 0.0, id="configured-0.9"),
+        pytest.param(COUNTRY.pv().fleet, 1.2, 0.0, id="configured-1.2"),
+        pytest.param(COUNTRY.pv().fleet, 0.9, 0.0, id="configured-0.9"),
         # Spelled out, so that precompute.HORIZONTAL is checked as well.
         pytest.param((System(tilt=0.0, azimuth=180.0, share=1.0),), 1.8, 1.0, id="horizontal-1.8"),
     ],
@@ -162,7 +162,7 @@ def test_solar_equals_the_model_at_every_hour(
     dc_ac_ratio: float,
     horizontal_share: float,
 ) -> None:
-    solar = dataclasses.replace(COUNTRY.solar, fleet=fleet, dc_ac_ratio=dc_ac_ratio)
+    solar = dataclasses.replace(COUNTRY.pv(), fleet=fleet, dc_ac_ratio=dc_ac_ratio)
     country = dataclasses.replace(COUNTRY, solar=solar)
     modelled = physics.model("solar", *YEAR_2020, country, SOLAR_PANEL, REGIONS, tmp_path)
 
