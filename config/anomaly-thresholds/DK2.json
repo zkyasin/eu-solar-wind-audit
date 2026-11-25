@@ -1,0 +1,132 @@
+{
+ "country": "DK2",
+ "fixed_on": [
+  2019,
+  2022
+ ],
+ "reference_model": {
+  "parameters_sha256": "ef72c8e55a045f592cb69971ba04da87c2b153c591d4c0c5790e1cef170ef2d2",
+  "danish_registers": {
+   "solar": "Energi Data Service, CapacityPerMunicipality",
+   "wind_onshore": {
+    "current": "167e8bf514f13cfd7d69846bcda97d64824e8213304c5c9d92b26ce8c772fba9",
+    "historic": "e08632169f78cbfe6cbe6eb9c8c15cc21ac4c1bab9c7478115a3c8afe9fe92b4"
+   }
+  },
+  "era5_store": {
+   "final": "s3://earthmover-icechunk-era5/icechunkV2, group single/temporal",
+   "recent": "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
+  },
+  "regions": "GISCO LAU 2024 municipalities",
+  "git_describe": "anomaly-thresholds-de-v1-97-gfa8ae6d"
+ },
+ "timestamp": {
+  "centroid_bias_minutes": 1.3991728978376194,
+  "shift_series": []
+ },
+ "residual_thresholds": {
+  "solar": 15.0,
+  "wind": 6.0
+ },
+ "level_break_penalties": {
+  "solar": 150.0,
+  "wind": 50.0,
+  "joint": 150.0
+ },
+ "profiles": {
+  "energinet.DK2.solar": {
+   "coefficients": [
+    -0.38402488712700666,
+    -0.28956979658987997,
+    0.02308879384770063,
+    -0.14203976261343595,
+    0.07117701094337624
+   ],
+   "sigma": 0.1739410041992743
+  },
+  "energinet.DK2.wind_onshore": {
+   "coefficients": [
+    -0.6060455163413894,
+    0.04463437624336687,
+    0.07307548243083713,
+    -0.016674816835913896,
+    0.030567880541326354
+   ],
+   "sigma": 0.1778680178219492
+  }
+ },
+ "false_alarms": [
+  {
+   "series": "energinet.DK2.solar",
+   "technology": "solar",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "energinet.DK2.solar",
+   "technology": "solar",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "energinet.DK2.solar",
+   "technology": "solar",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "energinet.DK2.solar",
+   "technology": "solar",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "energinet.DK2.wind_onshore",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  },
+  {
+   "series": "energinet.DK2.wind_onshore",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "energinet.DK2.wind_onshore",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 1,
+   "level_break": 0,
+   "total": 1
+  },
+  {
+   "series": "energinet.DK2.wind_onshore",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  }
+ ]
+}
