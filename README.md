@@ -45,7 +45,7 @@ Solar and onshore wind in mainland France and Germany, 2019-2025:
 | Axis | Mainland France | Germany | Denmark (DK1, DK2) |
 |---|---|---|---|
 | 1. Model quality | Calibrated on 2019-2025 | Calibrated on 2019-2025 | Calibrated on 2019-2025 per price area |
-| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | Next |
+| 2. Anomalies | All detectors, 2019-2025 | All detectors, 2019-2025 | All detectors, 2019-2025 |
 | 3. Content of the series | Distribution grids covered; self-consumption inconclusive | SMARD feed-in only; Energy-Charts total complete | Size classes feed-in only; with self-consumption complete |
 | 4. Modulation at negative prices | Estimated and compared with RTE | Estimated and compared with Hirth (2026) | Estimated, no reference; published above the detectable effect |
 
@@ -112,12 +112,13 @@ Fraunhofer ISE puts it at 6 % of German solar output in 2019 and 22 % in 2025.
 
 ### Anomalies in the published series
 
-Every hourly solar and wind series of mainland France (national and 12 regions, éCO2mix) and
-Germany (national and four control areas, SMARD, with Energy-Charts as a second source) goes
-through rule-based detectors, and through statistical detectors on its residual against the model
-of its area, with thresholds fixed on 2019-2022 (tags `anomaly-thresholds-fr-v1` and
-`anomaly-thresholds-de-v1`). The 2019-2025 runs give 194 findings in France and 110 in Germany. The
-cases checked against the raw files are written as tickets in
+Every hourly solar and wind series of mainland France (national and 12 regions, éCO2mix),
+Germany (national and four control areas, SMARD, with Energy-Charts as a second source) and the
+Danish price areas (Energinet settlement data) goes through rule-based detectors, and through
+statistical detectors on its residual against the model of its area, with thresholds fixed on
+2019-2022 (tags `anomaly-thresholds-fr-v1`, `anomaly-thresholds-de-v1` and
+`anomaly-thresholds-dk-v1`). The 2019-2025 runs give 194 findings in France, 110 in Germany, 13 in
+DK1 and 8 in DK2. The cases checked against the raw files are written as tickets in
 [docs/anomalies-2019-2025.md](docs/anomalies-2019-2025.md), among them:
 
 - éCO2mix: the half-hour ending at midnight on 31 December 2025 is empty in all 26 solar and wind
@@ -129,6 +130,11 @@ cases checked against the raw files are written as tickets in
 - SMARD: Amprion solar at about 50 MWh an hour at night from 12 June to 14 July 2025 (DE-3).
 - SMARD: TransnetBW solar published as zero from 16:00 to 20:00 on 12 April 2019, a hole of about
   3 GWh that the national total carries too, so that only the model shows it (DE-4).
+- Energinet: solar published as zero in both price areas from 13:00 to 19:00 on 17 August 2019,
+  where the Transparency Platform repeats one value (DK-1).
+- Energinet: the self-consumed solar output that Energinet estimates runs about two hours early
+  from 17 June to 14 August 2020, and its negative afternoon values cancel the metered output
+  (DK-2).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/figures/sum-of-parts-dark.svg">
