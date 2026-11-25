@@ -6,7 +6,7 @@ Transparency Platform appear only as yearly ratios (docs/data-licences.md).
 """
 
 import json
-from collections.abc import Hashable
+from collections.abc import Hashable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,8 @@ HOUR = pd.Timedelta(hours=1)
 # Decimals kept in the documents: GWh to the MWh, ratios and errors to 1e-4.
 GWH_DECIMALS = 3
 RATIO_DECIMALS = 4
+# A period of four characters is a year, "2025"; months are "2025-06".
+YEAR_DIGITS = 4
 # Columns of the yearly levels of audit-perimeter on the page: ratios and decisions, without the
 # published GWh, which for the Transparency Platform may not be republished.
 LEVEL_COLUMNS = [
@@ -84,6 +86,15 @@ def modulation_periods(intervals: pd.DataFrame, references: "pd.Series[float]") 
     period, with the published reference of the period where there is one."""
     reference = references.rename(index=str).rename("reference_gwh")
     return intervals.rename(index=str).join(reference).rename_axis("period").reset_index()
+
+
+def detectable_years(periods: pd.DataFrame, mde_gwh: Mapping[str, float | None]) -> pd.DataFrame:
+    """The years of `periods`, as modulation_periods gives them, whose estimate reaches the
+    minimal detectable effect of the year in `mde_gwh`: the only estimates the evaluation plan
+    publishes without a reference."""
+    years = periods[periods["period"].str.len() == YEAR_DIGITS]
+    mde = years["period"].map(mde_gwh).astype(float)
+    return years[years["estimate_gwh"] >= mde].reset_index(drop=True)
 
 
 def perimeter(cells: pd.DataFrame, levels: pd.DataFrame, audit: dict[str, Any]) -> dict[str, Any]:

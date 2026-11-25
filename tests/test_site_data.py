@@ -99,6 +99,23 @@ def test_each_period_of_the_modulation_takes_its_reference_where_there_is_one() 
     assert pd.isna(periods["reference_gwh"].iloc[2])
 
 
+def test_without_a_reference_only_years_above_the_detectable_effect_are_kept() -> None:
+    periods = pd.DataFrame(
+        {
+            "period": ["2023", "2024", "2025", "2025-06"],
+            "low_gwh": [1.0, 5.0, 20.0, 2.0],
+            "high_gwh": [9.0, 15.0, 40.0, 4.0],
+            "estimate_gwh": [5.0, 10.0, 30.0, 3.0],
+            "reference_gwh": [np.nan] * 4,
+        }
+    )
+
+    kept = site_data.detectable_years(periods, {"2023": 6.0, "2024": 10.0, "2025": None})
+
+    # 2023 is below its effect, 2025 has none and the month is no year.
+    assert kept["period"].tolist() == ["2024"]
+
+
 def test_the_perimeter_document_leaves_out_published_energy() -> None:
     levels = pd.DataFrame(
         [
@@ -137,9 +154,9 @@ def test_documents_are_written_as_strict_json(tmp_path: Path) -> None:
 
 
 def write_results(root: Path) -> None:
-    """Results of calibrate, estimate-modulation and detect-anomalies for France and Germany, and
-    of audit-perimeter, reduced to what the page reads."""
-    for country in ("FR", "DE"):
+    """Results of calibrate, estimate-modulation and detect-anomalies for France, Germany and the
+    Danish price areas, and of audit-perimeter, reduced to what the page reads."""
+    for country in cli.SITE_COUNTRIES:
         calibration = root / f"calibration-{country.lower()}"
         modulation = root / f"modulation-{country.lower()}"
         anomalies = root / f"anomalies-{country.lower()}"
@@ -171,6 +188,8 @@ def write_results(root: Path) -> None:
             (modulation / f"{technology}-modulation.json").write_text(
                 '{"git_describe": "m1", "mde_gwh": {"2024": 0.5}}'
             )
+            if country.startswith("DK"):
+                continue
             if country == "FR":
                 for period, label in (("years", 2024), ("months", "2024-06")):
                     pd.DataFrame(
@@ -220,7 +239,11 @@ def test_the_command_writes_the_documents_of_the_page(tmp_path: Path) -> None:
     site = tmp_path / "site"
     assert sorted(path.name for path in site.iterdir()) == sorted(
         [
-            *(f"daily-{c}-{t}.json" for c in ("FR", "DE") for t in ("solar", "wind_onshore")),
+            *(
+                f"daily-{c}-{t}.json"
+                for c in ("FR", "DE", "DK1", "DK2")
+                for t in ("solar", "wind_onshore")
+            ),
             "quality.json",
             "modulation.json",
             "findings.json",
@@ -231,7 +254,13 @@ def test_the_command_writes_the_documents_of_the_page(tmp_path: Path) -> None:
     days = json.loads((site / "daily-DE-solar.json").read_text())
     assert days["day"] == ["2024-06-01", "2024-06-02"]
     assert days["negative_price_hours"] == [2, 0]
-    french, *_ = json.loads((site / "modulation.json").read_text())
+    # The modulation of DK2 is published for 2024, the only year above its detectable effect.
+    danish_days = json.loads((site / "daily-DK2-solar.json").read_text())
+    assert danish_days["held_back_gwh"] == [0.2, 0.0]
+    french, *_, danish = json.loads((site / "modulation.json").read_text())
+    assert danish["country"] == "DK2"
+    assert danish["reference"] is None
+    assert [period["period"] for period in danish["periods"]] == ["2024"]
     assert french["reference"] == "RTE"
     assert french["periods"] == [
         {
@@ -242,5 +271,5 @@ def test_the_command_writes_the_documents_of_the_page(tmp_path: Path) -> None:
             "reference_gwh": 2.5,
         }
     ]
-    assert len(json.loads((site / "findings.json").read_text())) == 2
+    assert len(json.loads((site / "findings.json").read_text())) == 4
     assert json.loads((site / "meta.json").read_text())["runs"]["audit-perimeter"] == "p1"
