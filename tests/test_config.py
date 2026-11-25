@@ -171,6 +171,21 @@ def test_danish_files_are_valid(zone: str) -> None:
     ]
 
 
+def test_the_netherlands_file_is_valid() -> None:
+    netherlands = load_country(COUNTRIES / "nl.toml")
+
+    assert netherlands.country == "NL"
+    assert netherlands.solar is None
+    assert [generation.hub_height_m for generation in netherlands.wind_onshore] == [
+        54.7,
+        85.8,
+        126.9,
+    ]
+    assert all(
+        generation.last_commissioning_year is None for generation in netherlands.wind_onshore
+    )
+
+
 @pytest.mark.parametrize(
     "path",
     [FRANCE, GERMANY, COUNTRIES / "dk1.toml", COUNTRIES / "dk2.toml"],

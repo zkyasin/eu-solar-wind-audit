@@ -1,0 +1,31 @@
+# The Netherlands, bidding zone NL: onshore wind only, on the whole onshore fleet of CBS (wind on
+# land, which includes inland waters). Solar and offshore wind are not modelled.
+country = "NL"
+time_zone = "Europe/Amsterdam"
+perimeter = "price_area"
+
+# The municipalities span 3.36 E to 7.22 E and 50.75 N to 53.55 N (GISCO LAU 2024); the box adds
+# at least one 0.25 degree ERA5 cell on each side.
+[era5_box]
+west = 3.0
+south = 50.5
+east = 7.5
+north = 54.0
+
+# The hub height classes of CBS (table 71227ned), whose capacity physics.netherlands_capacity
+# gives: hub heights weighted by capacity of the turbines on land and inland water of the RIVM map
+# of 1 January 2026 (rivm.hub_height_classes), and the curve of wind.turbines() closest in their
+# specific power: 415 W m-2 up to 70 m (EWT 1 MW, 378), 356 from 71 to 95 m (BAR high specific
+# power 5 MW, 350), 330 from 96 m (V82, 312).
+
+[[wind_onshore.generations]]
+turbine = "EWT_DW58_1MW_58"
+hub_height_m = 54.7
+
+[[wind_onshore.generations]]
+turbine = "BAR_HighSP_5.0MW_134.9"
+hub_height_m = 85.8
+
+[[wind_onshore.generations]]
+turbine = "VestasV82_1.65MW_82"
+hub_height_m = 126.9
