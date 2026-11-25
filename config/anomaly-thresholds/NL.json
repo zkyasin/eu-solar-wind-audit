@@ -1,0 +1,85 @@
+{
+ "country": "NL",
+ "fixed_on": [
+  2019,
+  2022
+ ],
+ "reference_model": {
+  "parameters_sha256": "6a83f1bc94c8bc7c903d998696374c3813cd0d2ce28fb8dddc6f168c16985c77",
+  "dutch_capacity": {
+   "cbs": {
+    "70960ned": "2026-11-13",
+    "71227ned": "2026-11-13"
+   },
+   "rivm_rows_sha256": "94fc5479a4d7342faaa00a10138545d94a256df50d722ce5ecdc0f7d21145981"
+  },
+  "era5_store": {
+   "final": "s3://earthmover-icechunk-era5/icechunkV2, group single/temporal",
+   "recent": "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.zarr-v3"
+  },
+  "regions": "GISCO LAU 2024 municipalities",
+  "git_describe": "calibration-dk-v1-44-gb2b3e18"
+ },
+ "timestamp": {
+  "centroid_bias_minutes": null,
+  "shift_series": []
+ },
+ "residual_thresholds": {
+  "wind": 10.0
+ },
+ "level_break_penalties": {
+  "solar": null,
+  "wind": 150.0,
+  "joint": null
+ },
+ "profiles": {
+  "entsoe.NL.wind_onshore": {
+   "coefficients": [
+    -0.3818653314662378,
+    0.06917074303270715,
+    0.0391742256437955,
+    0.04074852285533298,
+    -0.014002444607930863
+   ],
+   "sigma": 0.111224675180058
+  }
+ },
+ "false_alarms": [
+  {
+   "series": "entsoe.NL.wind_onshore",
+   "technology": "wind",
+   "year": 2019,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "entsoe.NL.wind_onshore",
+   "technology": "wind",
+   "year": 2020,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "entsoe.NL.wind_onshore",
+   "technology": "wind",
+   "year": 2021,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 1,
+   "total": 1
+  },
+  {
+   "series": "entsoe.NL.wind_onshore",
+   "technology": "wind",
+   "year": 2022,
+   "timestamp_shift": 0,
+   "residual_outlier": 0,
+   "level_break": 0,
+   "total": 0
+  }
+ ]
+}
