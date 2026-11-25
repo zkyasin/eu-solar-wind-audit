@@ -201,3 +201,62 @@ def test_price_area_of_municipality_numbers() -> None:
 
     assert areas.tolist()[:4] == ["DK2", "DK2", "DK1", "DK1"]
     assert areas.iloc[4:].isna().all()
+
+
+def test_settlement_values_keep_each_record_of_one_area(tmp_path: Path) -> None:
+    client, _ = serving(
+        {
+            "records": [
+                record("2024-06-01T11:00:00", "DK1", OnshoreWindGe50kW_MWh=300.0),
+                record("2024-06-01T10:00:00", "DK1", OnshoreWindLt50kW_MWh=None),
+                record("2024-06-01T10:00:00", "DK1"),
+                record("2024-06-01T10:00:00", "DK2"),
+                record("2024-06-01T12:00:00", "DK1"),
+            ]
+        }
+    )
+
+    values = energinet.fetch_settlement_values(
+        "DK1", "wind_onshore", START, START + 2 * HOUR, client=client, cache_dir=tmp_path
+    )
+
+    # The repeated hour keeps both records, in the order they came; the hour after the period goes.
+    assert values.index.tolist() == [START, START, START + HOUR]
+    assert np.isnan(values.iloc[0])
+    assert values.iloc[1:].tolist() == [2.0, 301.0]
+
+
+def capacity_of(month_starts: list[str], solar: list[float]) -> pd.DataFrame:
+    return energinet.parse_capacity(
+        {
+            "records": [
+                {
+                    "Month": f"{month}T00:00:00",
+                    "MunicipalityNo": number,
+                    "SolarPowerCapacity": mw / 2,
+                    "OnshoreWindCapacity": 1.0,
+                    "OffshoreWindCapacity": 0.0,
+                }
+                for month, mw in zip(month_starts, solar, strict=True)
+                for number in ("730", "751", "101")
+            ]
+        }
+    )
+
+
+def test_capacity_is_linear_between_the_first_days_of_months_in_danish_time() -> None:
+    capacity = capacity_of(["2024-06-01", "2024-07-01"], [100.0, 130.0])
+    # Midnight on 1 June 2024 in Copenhagen is 22:00 UTC on 31 May.
+    start = pd.Timestamp("2024-05-31 22:00", tz="UTC")
+
+    hourly = energinet.hourly_capacity(capacity, "DK1", "solar", start, start + 720 * HOUR)
+
+    # Two municipalities of DK1 hold half of the figure each; Copenhagen is in DK2.
+    assert hourly.iloc[0] == pytest.approx(100.0)
+    assert hourly.iloc[360] == pytest.approx(115.0)
+    assert (
+        energinet.hourly_capacity(capacity, "DK2", "wind_onshore", start, start + HOUR).iloc[0]
+        == 1.0
+    )
+    with pytest.raises(ValueError, match="no solar capacity of DK1"):
+        energinet.hourly_capacity(capacity, "DK1", "solar", start - HOUR, start)

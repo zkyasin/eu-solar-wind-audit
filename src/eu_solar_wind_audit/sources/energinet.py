@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Literal
 
 import httpx
+import numpy as np
 import pandas as pd
 import pandera.pandas as pa
 from pandera.typing import DataFrame, Series
@@ -55,7 +56,8 @@ SOLAR_SPLIT_YEAR = 2020
 CAPACITY = "CapacityPerMunicipality"
 
 Area = Literal["DK1", "DK2", "DK"]
-PRICE_AREAS = ("DK1", "DK2")
+PriceArea = Literal["DK1", "DK2"]
+PRICE_AREAS: tuple[PriceArea, ...] = ("DK1", "DK2")
 Quantity = Literal[
     "solar",
     "solar_self_consumption",
@@ -125,11 +127,7 @@ def fetch_hourly_settlement(
             return fetch_hourly_settlement(
                 area, quantity, start, end, client=own_client, cache_dir=cache_dir
             )
-    first = start.tz_convert(TIMEZONE).year
-    last = (end - grid.HOUR).tz_convert(TIMEZONE).year
-    records = pd.concat(
-        [_year(client, year, cache_dir) for year in range(first, last + 1)], ignore_index=True
-    )
+    records = _records(client, start, end, cache_dir)
     columns = list(QUANTITIES[quantity])
     by_area = (
         records.set_index(["time", "PriceArea"])[columns]
@@ -140,6 +138,56 @@ def fetch_hourly_settlement(
     energy = by_area.reindex(columns=areas).sum(axis="columns", min_count=len(areas))
     hourly = pd.DataFrame({"energy_mwh": energy, "complete": energy.notna()})
     return grid.Hourly.validate(grid.on_hours(hourly, start, end))
+
+
+def fetch_settlement_values(
+    area: PriceArea,
+    quantity: Quantity,
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+    *,
+    client: httpx.Client | None = None,
+    cache_dir: Path = CACHE_DIR,
+) -> "pd.Series[float]":
+    """Values of `quantity` in the price area `area` as published: one per record of the UTC
+    hours of [start, end), indexed by its hour in time order, repeated hours kept, and NaN where a
+    column of the quantity is missing."""
+    grid.check_period(start, end)
+    if client is None:
+        with httpx.Client(timeout=TIMEOUT_SECONDS) as own_client:
+            return fetch_settlement_values(
+                area, quantity, start, end, client=own_client, cache_dir=cache_dir
+            )
+    records = _records(client, start, end, cache_dir)
+    columns = list(QUANTITIES[quantity])
+    rows = records[records["PriceArea"].eq(area)].set_index("time")[columns]
+    values: pd.Series[float] = rows.sum(axis="columns", min_count=len(columns))
+    in_period = (values.index >= start) & (values.index < end)
+    return values[in_period].sort_index(kind="stable").rename("energy_mwh")
+
+
+def hourly_capacity(
+    capacity: pd.DataFrame,
+    area: PriceArea,
+    technology: Literal["solar", "wind_onshore"],
+    start: pd.Timestamp,
+    end: pd.Timestamp,
+) -> "pd.Series[float]":
+    """Capacity in MW of `technology` in the municipalities of the price area `area` at the start
+    of each hour of [start, end), both hour starts in UTC, from a `MunicipalityCapacity` frame:
+    linear in time between the first days of months at midnight, Danish time. Raises ValueError for
+    hours outside the panel."""
+    grid.check_period(start, end)
+    column = f"{technology}_mw"
+    monthly = capacity[capacity["price_area"].eq(area)].groupby("month_start")[column].sum()
+    instants = pd.DatetimeIndex(monthly.index).tz_localize(TIMEZONE).tz_convert("UTC")
+    hours = pd.date_range(start, end, freq="h", inclusive="left", unit="ns", name="time")
+    capacity_mw = np.interp(
+        hours.asi8, instants.as_unit("ns").asi8, monthly.to_numpy(), left=np.nan, right=np.nan
+    )
+    if np.isnan(capacity_mw).any():
+        raise ValueError(f"no {technology} capacity of {area} for some hours from {start} to {end}")
+    return pd.Series(capacity_mw, index=hours, name="capacity_mw")
 
 
 def fetch_capacity(
@@ -183,6 +231,17 @@ def price_area(municipality: pd.Series) -> "pd.Series[str]":
     areas[number.between(101, 400)] = "DK2"
     areas[number >= 410] = "DK1"
     return areas
+
+
+def _records(
+    client: httpx.Client, start: pd.Timestamp, end: pd.Timestamp, cache_dir: Path
+) -> pd.DataFrame:
+    """Settlement records of the local Danish years that the UTC hours [start, end) reach."""
+    first = start.tz_convert(TIMEZONE).year
+    last = (end - grid.HOUR).tz_convert(TIMEZONE).year
+    return pd.concat(
+        [_year(client, year, cache_dir) for year in range(first, last + 1)], ignore_index=True
+    )
 
 
 def _year(client: httpx.Client, year: int, cache_dir: Path) -> pd.DataFrame:
